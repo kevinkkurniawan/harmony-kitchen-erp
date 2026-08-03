@@ -1,17 +1,35 @@
 export interface ERPProduct {
   id: string;
-  noBarang: string;
+  inventoryNo: string;
   barcode: string;
-  nama: string;
+  inventoryName: string;
+  inventoryBrandId?: number;
+  brandName?: string;
+  inventoryCategoryId?: number;
+  categoryName?: string;
+  inventoryProductId?: number;
+  productName?: string;
+  uoMId?: number;
+  uomName?: string;
+  minStock: number;
+  maxStock: number;
+  kodeHarga: string;
   description: string;
-  kode: string;
-  hargaRetail: number;
+  price: number; // Harga Jual Retail
+  disc: number;
+  isActive: boolean;
+  hpp: number; // HPP / Cost Price
+  priceBuy: number;
   grosir1: number;
   grosir2: number;
   grosir3: number;
-  hargaBeli: number;
-  grPr: string;
-  stok: number;
+  disc1?: number;
+  disc2?: number;
+  stokAwal: number;
+  stokAkhir: number;
+  stokUpdate?: number;
+  modifiedUser?: string;
+  modifiedDate?: string;
 }
 
 export interface StockSyncItem {
@@ -41,19 +59,21 @@ export interface Supplier {
   id: string;
   supplierNo: string;
   supplierName: string;
-  supplierType: string;
+  supplierType?: string;
   address: string;
   city: string;
   phone1: string;
-  phone2: string;
-  fax: string;
-  bankId: string;
-  bankAccount: string;
-  onBehalfOf: string;
-  creditLimit: number;
+  phone2?: string;
+  fax?: string;
+  bankId?: string;
+  bankAccount?: string;
+  onBehalfOf?: string;
+  creditLimit?: number;
   contactPerson: string;
-  email: string;
-  modifiedDate: string;
+  email?: string;
+  taxNo?: string;
+  isTaxable?: boolean;
+  modifiedDate?: string;
 }
 
 export interface GoodsReceiptItem {

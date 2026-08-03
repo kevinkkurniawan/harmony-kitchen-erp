@@ -23,17 +23,10 @@ import {
   Trash2,
   Lock,
 } from 'lucide-react';
-import {
-  MOCK_ERP_PRODUCTS,
-  MOCK_STOCK_SYNC,
-  MOCK_PROMO_RULES,
-  MOCK_SUPPLIERS,
-  MOCK_GOODS_RECEIPTS,
-  MOCK_SALES_MONITORING,
-  MOCK_SALES_REPORT_DAILY,
-} from '@/data/mockErp';
 import { MOCK_ERP_USERS, ERPUser } from '@/types/user';
+import { ERPProduct, Supplier, StockSyncItem, PromoRule, GoodsReceipt, SalesMonitoringRow, SalesReportDailyRow } from '@/types/erp';
 import LoginModal from '@/components/LoginModal';
+import MasterBarangManager from '@/components/MasterBarangManager';
 
 export default function ERPDashboard() {
   const [currentUser, setCurrentUser] = useState<ERPUser | null>(MOCK_ERP_USERS[0]); // Default Admin ERP
@@ -54,6 +47,46 @@ export default function ERPDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState('31 Jul 2026');
 
+  // Live PostgreSQL State
+  const [productsList, setProductsList] = useState<ERPProduct[]>([]);
+  const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch live inventory data from local PostgreSQL
+  React.useEffect(() => {
+    async function fetchInventory() {
+      setIsLoading(true);
+      try {
+        const res = await fetch(`/api/inventory?q=${encodeURIComponent(searchQuery)}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setProductsList(json.data);
+        }
+      } catch (err) {
+        console.error('Failed to load PostgreSQL inventory:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchInventory();
+  }, [searchQuery]);
+
+  // Fetch live supplier data from local PostgreSQL
+  React.useEffect(() => {
+    async function fetchSuppliers() {
+      try {
+        const res = await fetch('/api/suppliers');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setSuppliersList(json.data);
+        }
+      } catch (err) {
+        console.error('Failed to load PostgreSQL suppliers:', err);
+      }
+    }
+    fetchSuppliers();
+  }, []);
+
   // ERP User Management State (Terpisah dari POS)
   const [usersList, setUsersList] = useState<ERPUser[]>(MOCK_ERP_USERS);
   const [newUsername, setNewUsername] = useState('');
@@ -64,19 +97,19 @@ export default function ERPDashboard() {
   const isAdmin = currentUser?.role === 'admin';
 
   // Sales Monitoring Totals
-  const totalNomTransaksi = MOCK_SALES_MONITORING.reduce((acc, row) => acc + row.nomTransaksi, 0);
-  const totalDiskon = MOCK_SALES_MONITORING.reduce((acc, row) => acc + row.diskonAkhir, 0);
-  const totalTunai = MOCK_SALES_MONITORING.reduce((acc, row) => acc + row.tunai, 0);
-  const totalDebit = MOCK_SALES_MONITORING.reduce((acc, row) => acc + row.debit, 0);
-  const totalQris = MOCK_SALES_MONITORING.reduce((acc, row) => acc + row.qris, 0);
-  const totalCc = MOCK_SALES_MONITORING.reduce((acc, row) => acc + row.cc, 0);
+  const totalNomTransaksi = 0;
+  const totalDiskon = 0;
+  const totalTunai = 0;
+  const totalDebit = 0;
+  const totalQris = 0;
+  const totalCc = 0;
 
   // Laporan Total Penjualan Totals
-  const reportTotalTunai = MOCK_SALES_REPORT_DAILY.reduce((acc, r) => acc + r.tunai, 0);
-  const reportTotalDebit = MOCK_SALES_REPORT_DAILY.reduce((acc, r) => acc + r.debit, 0);
-  const reportTotalKredit = MOCK_SALES_REPORT_DAILY.reduce((acc, r) => acc + r.kredit, 0);
-  const reportTotalQris = MOCK_SALES_REPORT_DAILY.reduce((acc, r) => acc + r.qris, 0);
-  const reportGrandTotal = MOCK_SALES_REPORT_DAILY.reduce((acc, r) => acc + r.totalHarian, 0);
+  const reportTotalTunai = 0;
+  const reportTotalDebit = 0;
+  const reportTotalKredit = 0;
+  const reportTotalQris = 0;
+  const reportGrandTotal = 0;
 
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,117 +221,164 @@ export default function ERPDashboard() {
             Modul Utama ERP
           </div>
           <nav className="p-2 space-y-1 overflow-y-auto flex-1">
-            <button
-              onClick={() => setActiveTab('master-barang')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'master-barang'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              <span>1. Master Barang</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('sync-stok')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'sync-stok'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>2. Sync Stok & Opname</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('master-promo')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'master-promo'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Tag className="w-4 h-4" />
-              <span>3. Master Promo Grosir</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('master-supplier')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'master-supplier'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>4. Master Supplier</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('penerimaan-barang')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'penerimaan-barang'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <ShoppingBag className="w-4 h-4" />
-              <span>5. Penerimaan Barang</span>
-            </button>
-
-            <div className="pt-2 pb-1 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              Sales & Reporting
+            {/* 1. MASTER DATA GROUP */}
+            <div className="space-y-1">
+              <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-amber-500" />
+                <span>Master Data</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('master-barang')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'master-barang'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Package className="w-4 h-4 text-amber-400" />
+                <span>Master Barang</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('sync-stok')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'sync-stok'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <RefreshCw className="w-4 h-4 text-emerald-400" />
+                <span>Inventory Stock</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('master-promo')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'master-promo'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Tag className="w-4 h-4 text-purple-400" />
+                <span>Master Promo</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('master-supplier')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'master-supplier'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Users className="w-4 h-4 text-blue-400" />
+                <span>Master Supplier</span>
+              </button>
             </div>
 
-            <button
-              onClick={() => setActiveTab('sales-monitoring')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'sales-monitoring'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span>6. Bill Opname (Monitoring)</span>
-            </button>
+            {/* 2. PURCHASING GROUP */}
+            <div className="space-y-1 pt-2">
+              <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
+                <ShoppingBag className="w-3.5 h-3.5 text-amber-500" />
+                <span>Purchasing</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('penerimaan-barang')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'penerimaan-barang'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Package className="w-4 h-4 text-orange-400" />
+                <span>Penerimaan Barang Ekspress</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('penerimaan-barang')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'penerimaan-barang'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <ShoppingBag className="w-4 h-4 text-amber-400" />
+                <span>Penerimaan Barang dengan Harga</span>
+              </button>
+            </div>
 
-            <button
-              onClick={() => setActiveTab('laporan-penjualan')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
-                activeTab === 'laporan-penjualan'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                  : isDark
-                  ? 'text-slate-300 hover:bg-slate-800'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>7. Laporan Penjualan</span>
-            </button>
+            {/* 3. SALES GROUP */}
+            <div className="space-y-1 pt-2">
+              <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
+                <BarChart3 className="w-3.5 h-3.5 text-amber-500" />
+                <span>Sales</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('sync-stok')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'sync-stok'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <RefreshCw className="w-4 h-4 text-teal-400" />
+                <span>Sync Stock</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('sales-monitoring')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'sales-monitoring'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 text-indigo-400" />
+                <span>Sales Monitoring</span>
+              </button>
+            </div>
 
+            {/* 4. REPORT GROUP */}
+            <div className="space-y-1 pt-2">
+              <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
+                <span>Report</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('laporan-penjualan')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  activeTab === 'laporan-penjualan'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-pink-400" />
+                <span>Laporan Penjualan</span>
+              </button>
+            </div>
             {/* ADMIN EXCLUSIVE TAB: USER ERP MANAGEMENT */}
             {isAdmin && (
-              <>
-                <div className="pt-2 pb-1 px-3 text-[10px] font-bold text-amber-500 uppercase tracking-wider">
-                  Admin System
+              <div className="pt-2">
+                <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Admin System</span>
                 </div>
                 <button
                   onClick={() => setActiveTab('user-management')}
-                  className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
+                  className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all ${
                     activeTab === 'user-management'
                       ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
                       : isDark
@@ -306,97 +386,45 @@ export default function ERPDashboard() {
                       : 'text-emerald-600 hover:bg-slate-100'
                   }`}
                 >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>8. User ERP & Hak Akses</span>
+                  <UserCheck className="w-4 h-4 text-emerald-400" />
+                  <span>User ERP & Hak Akses</span>
                 </button>
-              </>
+              </div>
             )}
           </nav>
         </aside>
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {activeTab === 'master-barang' && (
-            <div className="flex-1 flex flex-col p-4 overflow-hidden">
-              <div className="flex items-center justify-between gap-4 pb-3">
-                <div className="flex items-center gap-3 flex-1">
-                  <div className="relative flex-1 max-w-md">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Cari Barang (Ketik nama / barcode)..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className={`w-full border rounded-xl pl-9 pr-4 py-2 text-xs font-medium ${
-                        isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className={`flex-1 overflow-auto rounded-2xl border ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className={`border-b uppercase text-[11px] font-bold ${isDark ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
-                      <th className="py-3 px-3">No. Barang</th>
-                      <th className="py-3 px-3">Barcode</th>
-                      <th className="py-3 px-3">Nama Barang</th>
-                      <th className="py-3 px-3">Description</th>
-                      <th className="py-3 px-3 text-right">Harga Retail</th>
-                      <th className="py-3 px-3 text-right text-amber-500">Grosir 1</th>
-                      <th className="py-3 px-3 text-right text-amber-500">Grosir 2</th>
-                      <th className="py-3 px-3 text-right text-amber-500">Grosir 3</th>
-                      <th className="py-3 px-3 text-right text-emerald-500">Harga Beli</th>
-                      <th className="py-3 px-3 text-center">Stok</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y font-medium ${isDark ? 'divide-slate-800/60' : 'divide-slate-200'}`}>
-                    {MOCK_ERP_PRODUCTS.map((item) => (
-                      <tr key={item.id} className={isDark ? 'hover:bg-slate-800/40 text-slate-200' : 'hover:bg-slate-50 text-slate-800'}>
-                        <td className="py-3 px-3 font-mono text-[11px] text-slate-400">{item.noBarang}</td>
-                        <td className="py-3 px-3 font-mono text-[11px] text-slate-400">{item.barcode}</td>
-                        <td className="py-3 px-3 font-semibold">{item.nama}</td>
-                        <td className="py-3 px-3 text-slate-400">{item.description}</td>
-                        <td className="py-3 px-3 text-right font-bold">Rp {item.hargaRetail.toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-3 text-right text-amber-500">Rp {item.grosir1.toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-3 text-right text-amber-500">Rp {item.grosir2.toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-3 text-right text-amber-500">Rp {item.grosir3.toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-3 text-right text-emerald-500">Rp {item.hargaBeli.toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${item.stok < 0 ? 'bg-rose-500/20 text-rose-500' : 'bg-emerald-500/15 text-emerald-500'}`}>
-                            {item.stok}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} />}
 
           {activeTab === 'sync-stok' && (
             <div className="flex-1 flex p-4 gap-4 overflow-hidden">
               <div className="flex-1 flex flex-col min-w-0">
-                <h2 className="font-bold text-sm mb-3">Sync Stok dan Laporan Opname</h2>
+                <h2 className="font-bold text-sm mb-3">Sync Stok dan Laporan Opname ({productsList.length} Item)</h2>
                 <div className={`flex-1 overflow-auto rounded-2xl border ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className={`border-b uppercase font-bold ${isDark ? 'bg-slate-900 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
+                        <th className="py-3 px-4">Inventory No</th>
                         <th className="py-3 px-4">Nama Barang</th>
-                        <th className="py-3 px-4 text-center">Inv. Stok</th>
-                        <th className="py-3 px-4 text-center">RT. Stok</th>
-                        <th className="py-3 px-4 text-center">Status</th>
+                        <th className="py-3 px-4 text-center">Stok Awal</th>
+                        <th className="py-3 px-4 text-center">Stok Akhir</th>
+                        <th className="py-3 px-4 text-center">Status Sync</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {MOCK_STOCK_SYNC.map((s) => (
+                      {productsList.map((s) => (
                         <tr key={s.id} className="border-b border-slate-800/40">
-                          <td className="py-3 px-4 font-semibold">{s.namaBarang}</td>
-                          <td className="py-3 px-4 text-center">{s.invStok}</td>
-                          <td className="py-3 px-4 text-center text-emerald-400 font-bold">{s.rtStok}</td>
-                          <td className="py-3 px-4 text-center">{s.status}</td>
+                          <td className="py-3 px-4 font-mono text-amber-400 font-semibold">{s.inventoryNo}</td>
+                          <td className="py-3 px-4 font-semibold">{s.inventoryName}</td>
+                          <td className="py-3 px-4 text-center">{s.stokAwal}</td>
+                          <td className="py-3 px-4 text-center text-emerald-400 font-bold">{s.stokAkhir}</td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${s.stokAkhir >= s.minStock ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                              {s.stokAkhir >= s.minStock ? 'OK' : 'PERLU SYNC'}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -413,8 +441,42 @@ export default function ERPDashboard() {
           )}
 
           {activeTab === 'master-supplier' && (
-            <div className="flex-1 p-4 overflow-hidden">
-              <h2 className="font-bold text-sm mb-3">Daftar Master Supplier</h2>
+            <div className="flex-1 flex flex-col p-4 overflow-hidden">
+              <h2 className="font-bold text-sm mb-3">Daftar Master Supplier ({suppliersList.length} Supplier)</h2>
+              <div className={`flex-1 overflow-auto rounded-2xl border ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className={`border-b uppercase text-[11px] font-bold ${isDark ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600'}`}>
+                      <th className="py-3 px-3">Supplier No</th>
+                      <th className="py-3 px-3">Supplier Name</th>
+                      <th className="py-3 px-3">Address</th>
+                      <th className="py-3 px-3">City</th>
+                      <th className="py-3 px-3">Phone</th>
+                      <th className="py-3 px-3">Contact Person</th>
+                      <th className="py-3 px-3">Tax No</th>
+                      <th className="py-3 px-3 text-center">PKP / Taxable</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y font-medium ${isDark ? 'divide-slate-800/60' : 'divide-slate-200'}`}>
+                    {suppliersList.map((sup) => (
+                      <tr key={sup.id} className={isDark ? 'hover:bg-slate-800/40 text-slate-200' : 'hover:bg-slate-50 text-slate-800'}>
+                        <td className="py-3 px-3 font-mono text-[11px] text-amber-400 font-semibold">{sup.supplierNo}</td>
+                        <td className="py-3 px-3 font-semibold">{sup.supplierName}</td>
+                        <td className="py-3 px-3 text-slate-300">{sup.address || '-'}</td>
+                        <td className="py-3 px-3 text-slate-300">{sup.city || '-'}</td>
+                        <td className="py-3 px-3 font-mono text-slate-400">{sup.phone1 || '-'}</td>
+                        <td className="py-3 px-3 text-slate-300">{sup.contactPerson || '-'}</td>
+                        <td className="py-3 px-3 font-mono text-slate-400">{sup.taxNo || '-'}</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${sup.isTaxable ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>
+                            {sup.isTaxable ? 'YA' : 'TIDAK'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
