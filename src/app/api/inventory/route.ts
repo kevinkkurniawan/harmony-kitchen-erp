@@ -6,7 +6,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q') || '';
     const minusStock = searchParams.get('minusStock') === 'true';
-    const limit = parseInt(searchParams.get('limit') || '200');
+    const onlyActive = searchParams.get('onlyActive') === 'true';
+    const limit = parseInt(searchParams.get('limit') || '500');
 
     let queryText = `
       SELECT 
@@ -51,6 +52,10 @@ export async function GET(request: Request) {
       whereConditions.push(`(i.inventory_no ILIKE $${values.length} OR i.barcode ILIKE $${values.length} OR i.inventory_name ILIKE $${values.length})`);
     }
 
+    if (onlyActive) {
+      whereConditions.push(`i.is_active = TRUE`);
+    }
+
     if (minusStock) {
       whereConditions.push(`(i.stok_update < 0 OR i.stok_update < i.min_stock)`);
     }
@@ -59,7 +64,7 @@ export async function GET(request: Request) {
       queryText += ` WHERE ` + whereConditions.join(' AND ');
     }
 
-    queryText += ` ORDER BY i.id DESC LIMIT ${limit};`;
+    queryText += ` ORDER BY i.id ASC LIMIT ${limit};`;
 
     const result = await pool.query(queryText, values);
     return NextResponse.json({ success: true, data: result.rows, count: result.rowCount });
@@ -94,7 +99,6 @@ export async function POST(request: Request) {
       stokAwal = 0,
     } = body;
 
-    // Get max ID
     const maxIdRes = await pool.query(`SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM m_inventory`);
     const newId = maxIdRes.rows[0].next_id;
 
@@ -131,7 +135,7 @@ export async function POST(request: Request) {
       parseFloat(grosir2),
       parseFloat(grosir3),
       parseInt(stokAwal),
-      parseInt(stokAwal), // stok_update initial equals stok_awal
+      parseInt(stokAwal),
     ];
 
     await pool.query(insertQuery, values);
