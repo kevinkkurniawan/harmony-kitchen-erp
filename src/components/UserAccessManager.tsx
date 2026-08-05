@@ -13,7 +13,6 @@ import {
   Users,
   CheckSquare,
   Square,
-  Sparkles,
   Lock,
   Eye,
   Edit,
@@ -44,18 +43,55 @@ export interface ModulePermission {
 }
 
 export const MODULE_LABEL_MAP: Record<string, { label: string; group: string }> = {
-  'memo-sync-stok': { label: 'Memo: Cek Sync Stock', group: '📌 Memo Operasional' },
-  'stok-opname': { label: 'Memo: Stok Opname', group: '📌 Memo Operasional' },
-  'master-barang': { label: 'Master Data: Master Barang', group: '🏬 Master Data' },
-  'inventory-stok': { label: 'Master Data: Inventory Stock', group: '🏬 Master Data' },
-  'master-promo': { label: 'Master Data: Master Promo', group: '🏬 Master Data' },
-  'master-supplier': { label: 'Master Data: Master Supplier', group: '🏬 Master Data' },
-  'penerimaan-barang': { label: 'Purchasing: Penerimaan Barang Ekspress', group: '📦 Purchasing' },
-  'penerimaan-barang-harga': { label: 'Purchasing: Penerimaan Barang dengan Harga', group: '📦 Purchasing' },
-  'sales-sync-stok': { label: 'Sales: Sync Stock', group: '📊 Sales' },
-  'sales-monitoring': { label: 'Sales: Sales Monitoring', group: '📊 Sales' },
-  'laporan-penjualan': { label: 'Report: Laporan Penjualan', group: '📑 Report' },
-  'user-management': { label: 'Admin: User ERP & Hak Akses', group: '🛡️ Admin System' },
+  // Master Data (MD)
+  'MD_INV': { label: 'Master Data: Master Barang (MD_INV)', group: '🏬 Master Data' },
+  'master-barang': { label: 'Master Data: Master Barang (Tab)', group: '🏬 Master Data' },
+  'MD_STOCK': { label: 'Master Data: Inventory Stock & Kartu Stok (MD_STOCK)', group: '🏬 Master Data' },
+  'inventory-stok': { label: 'Master Data: Inventory Stock (Tab)', group: '🏬 Master Data' },
+  'MD_USAGE': { label: 'Master Data: Pemakaian Barang / Usage (MD_USAGE)', group: '🏬 Master Data' },
+  'pemakaian-barang': { label: 'Master Data: Pemakaian Barang (Tab)', group: '🏬 Master Data' },
+  'MD_BARCODE': { label: 'Master Data: Cetak Label Barcode (MD_BARCODE)', group: '🏬 Master Data' },
+  'cetak-barcode': { label: 'Master Data: Cetak Label Barcode (Tab)', group: '🏬 Master Data' },
+  'MD_EMP': { label: 'Master Data: Master Karyawan (MD_EMP)', group: '🏬 Master Data' },
+  'master-karyawan': { label: 'Master Data: Master Karyawan (Tab)', group: '🏬 Master Data' },
+  'MD_CUST': { label: 'Master Data: Master Customer (MD_CUST)', group: '🏬 Master Data' },
+  'master-customer': { label: 'Master Data: Master Customer (Tab)', group: '🏬 Master Data' },
+  'MD_BANK': { label: 'Master Data: Master Bank & Rekening (MD_BANK)', group: '🏬 Master Data' },
+  'master-bank': { label: 'Master Data: Master Bank (Tab)', group: '🏬 Master Data' },
+  'MD_SUPP': { label: 'Master Data: Master Supplier (MD_SUPP)', group: '🏬 Master Data' },
+  'master-supplier': { label: 'Master Data: Master Supplier (Tab)', group: '🏬 Master Data' },
+  'MD_PROMO': { label: 'Master Data: Master Promo & Diskon (MD_PROMO)', group: '🏬 Master Data' },
+  'master-promo': { label: 'Master Data: Master Promo (Tab)', group: '🏬 Master Data' },
+
+  // Purchasing (PUR)
+  'PUR_PR': { label: 'Purchasing: Pengajuan Pembelian PR (PUR_PR)', group: '📦 Purchasing' },
+  'pengajuan-pembelian': { label: 'Purchasing: Pengajuan Pembelian PR (Tab)', group: '📦 Purchasing' },
+  'PUR_PO': { label: 'Purchasing: Order Pembelian PO (PUR_PO)', group: '📦 Purchasing' },
+  'order-pembelian': { label: 'Purchasing: Order Pembelian PO (Tab)', group: '📦 Purchasing' },
+  'PUR_EXP': { label: 'Purchasing: Penerimaan Barang Ekspress (PUR_EXP)', group: '📦 Purchasing' },
+  'penerimaan-barang': { label: 'Purchasing: Penerimaan Barang Ekspress (Tab)', group: '📦 Purchasing' },
+  'PUR_RCV': { label: 'Purchasing: Penerimaan dengan Harga (PUR_RCV)', group: '📦 Purchasing' },
+  'penerimaan-barang-harga': { label: 'Purchasing: Penerimaan dengan Harga (Tab)', group: '📦 Purchasing' },
+  'PUR_PAY': { label: 'Purchasing: Pembayaran Supplier (PUR_PAY)', group: '📦 Purchasing' },
+  'pembayaran-supplier': { label: 'Purchasing: Pembayaran Supplier (Tab)', group: '📦 Purchasing' },
+  'PUR_RET': { label: 'Purchasing: Retur Pembelian (PUR_RET)', group: '📦 Purchasing' },
+  'retur-pembelian': { label: 'Purchasing: Retur Pembelian (Tab)', group: '📦 Purchasing' },
+
+  // Inventory & Opname (INV)
+  'INV_OPN': { label: 'Inventory: Stock Opname (INV_OPN)', group: '📌 Inventory & Stock' },
+  'stok-opname': { label: 'Inventory: Stock Opname (Tab)', group: '📌 Inventory & Stock' },
+  'SLS_SYNC': { label: 'Inventory: Sync Stock & Memo (SLS_SYNC)', group: '📌 Inventory & Stock' },
+  'sync-stok': { label: 'Inventory: Sync Stock (Tab)', group: '📌 Inventory & Stock' },
+
+  // Sales & Report (SLS & RPT)
+  'SLS_MON': { label: 'Sales: Sales Monitoring (SLS_MON)', group: '📊 Sales & Report' },
+  'sales-monitoring': { label: 'Sales: Sales Monitoring (Tab)', group: '📊 Sales & Report' },
+  'RPT_SALES': { label: 'Report: Laporan Penjualan (RPT_SALES)', group: '📊 Sales & Report' },
+  'laporan-penjualan': { label: 'Report: Laporan Penjualan (Tab)', group: '📊 Sales & Report' },
+
+  // Admin System (ADM)
+  'ADM_USER': { label: 'Admin: User ERP & Hak Akses (ADM_USER)', group: '🛡️ Admin System' },
+  'user-management': { label: 'Admin: User ERP & Hak Akses (Tab)', group: '🛡️ Admin System' },
 };
 
 interface UserAccessManagerProps {
@@ -107,57 +143,35 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     loadUsers();
   }, [loadUsers]);
 
-  // Open Permission Matrix Editor Modal
-  const handleEditPermissions = async (user: UserRecord) => {
+  // Load Permissions for Selected User
+  const loadPermissionsForUser = async (user: UserRecord) => {
     setSelectedUser(user);
-    setIsLoading(true);
+    setIsPermModalOpen(true);
     try {
       const res = await fetch(`/api/users/permissions?userId=${user.id}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setUserPermissions(json.data);
-        setIsPermModalOpen(true);
-      } else {
-        showToast('Gagal memuat permission user', 'error');
       }
     } catch (err) {
-      console.error('Error fetching user permissions:', err);
-      showToast('Terjadi kesalahan saat memuat hak akses', 'error');
-    } finally {
-      setIsLoading(false);
+      console.error('Failed to load permissions:', err);
+      showToast('Gagal memuat data hak akses user', 'error');
     }
   };
 
-  // Toggle single permission checkbox
-  const handleTogglePerm = (moduleCode: string, field: 'canView' | 'canAdd' | 'canEdit' | 'canDelete' | 'canPrint') => {
+  const handleTogglePermission = (moduleCode: string, field: 'canView' | 'canAdd' | 'canEdit' | 'canDelete' | 'canPrint') => {
     setUserPermissions((prev) =>
-      prev.map((item) => {
-        if (item.moduleCode === moduleCode) {
-          return { ...item, [field]: !item[field] };
+      prev.map((p) => {
+        if (p.moduleCode === moduleCode) {
+          return { ...p, [field]: !p[field] };
         }
-        return item;
+        return p;
       })
     );
   };
 
-  // Check / Uncheck All for a user
-  const handleCheckAll = (value: boolean) => {
-    setUserPermissions((prev) =>
-      prev.map((item) => ({
-        ...item,
-        canView: value,
-        canAdd: value,
-        canEdit: value,
-        canDelete: value,
-        canPrint: value,
-      }))
-    );
-  };
-
-  // Save Permission Matrix to Server
   const handleSavePermissions = async () => {
     if (!selectedUser) return;
-
     setIsSaving(true);
     try {
       const res = await fetch('/api/users/permissions', {
@@ -171,7 +185,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
 
       const json = await res.json();
       if (json.success) {
-        showToast(json.message || 'Hak akses berhasil disimpan!', 'success');
+        showToast(`Hak akses per halaman untuk ${selectedUser.username} berhasil disimpan!`, 'success');
         setIsPermModalOpen(false);
       } else {
         showToast(json.error || 'Gagal menyimpan hak akses', 'error');
@@ -184,15 +198,12 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     }
   };
 
-  // Create New User
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsername || !newFullName) {
-      showToast('Isi Username dan Nama Lengkap!', 'error');
+  const handleAddUser = async () => {
+    if (!newUsername.trim() || !newFullName.trim()) {
+      showToast('Username dan Nama Lengkap wajib diisi', 'error');
       return;
     }
 
-    setIsSaving(true);
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -201,432 +212,392 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           username: newUsername,
           fullName: newFullName,
           userLevel: newUserLevel,
-          isActive: true,
         }),
       });
 
       const json = await res.json();
       if (json.success) {
-        showToast(`User "${newUsername}" berhasil ditambahkan!`, 'success');
-        setIsAddUserOpen(false);
+        showToast(`User ${newUsername} berhasil ditambahkan!`, 'success');
         setNewUsername('');
         setNewFullName('');
-        setNewUserLevel('Kasir');
+        setIsAddUserOpen(false);
         loadUsers();
       } else {
-        showToast(json.error || 'Gagal membuat user', 'error');
+        showToast(json.error || 'Gagal membuat user baru', 'error');
       }
     } catch (err) {
-      console.error('Create user error:', err);
-      showToast('Terjadi kesalahan saat membuat user', 'error');
-    } finally {
-      setIsSaving(false);
+      console.error('Add user error:', err);
+      showToast('Gagal membuat user baru', 'error');
     }
   };
 
-  // Group permissions by category for nice UI matrix display
-  const groupedPermissions = userPermissions.reduce((acc, perm) => {
-    const info = MODULE_LABEL_MAP[perm.moduleCode] || { label: perm.moduleCode, group: 'Lainnya' };
-    if (!acc[info.group]) acc[info.group] = [];
-    acc[info.group].push({ ...perm, labelName: info.label });
+  const groupedModules = Object.entries(MODULE_LABEL_MAP).reduce((acc, [code, meta]) => {
+    if (!acc[meta.group]) acc[meta.group] = [];
+    acc[meta.group].push({ code, label: meta.label });
     return acc;
-  }, {} as Record<string, (ModulePermission & { labelName: string })[]>);
+  }, {} as Record<string, { code: string; label: string }[]>);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
-      {/* Toast Notification */}
+    <div
+      className={`h-full w-full flex flex-col font-sans transition-colors duration-200 ${
+        isDark ? 'bg-[#0b0f19] text-slate-100' : 'bg-slate-50 text-slate-900'
+      }`}
+    >
+      {/* Toast Popup */}
       {toastMessage && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center gap-2.5 transition-all animate-bounce ${
-            toastMessage.type === 'success'
-              ? 'bg-emerald-500 text-white border-emerald-400'
-              : toastMessage.type === 'error'
-              ? 'bg-red-500 text-white border-red-400'
-              : 'bg-amber-500 text-slate-950 border-amber-400'
-          }`}
-        >
-          {toastMessage.type === 'success' && <CheckCircle className="w-4 h-4" />}
-          {toastMessage.type === 'error' && <XCircle className="w-4 h-4" />}
-          {toastMessage.type === 'info' && <Sparkles className="w-4 h-4" />}
-          <span>{toastMessage.text}</span>
+        <div className="fixed bottom-5 right-5 z-50 animate-in slide-in-from-bottom-5 duration-200 pointer-events-none">
+          <div
+            className={`px-4 py-3 rounded-xl shadow-xl border flex items-center gap-3 text-xs font-semibold ${
+              toastMessage.type === 'success'
+                ? 'bg-emerald-500 text-white border-emerald-400'
+                : toastMessage.type === 'error'
+                ? 'bg-rose-500 text-white border-rose-400'
+                : 'bg-blue-500 text-white border-blue-400'
+            }`}
+          >
+            {toastMessage.type === 'success' && <CheckCircle className="w-4 h-4" />}
+            {toastMessage.type === 'error' && <XCircle className="w-4 h-4" />}
+            <span>{toastMessage.text}</span>
+          </div>
         </div>
       )}
 
-      {/* 🛡️ PAGE HEADER */}
-      <div
-        className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-          isDark
-            ? 'bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900 border-slate-800'
-            : 'bg-gradient-to-r from-emerald-50/70 via-white to-emerald-50/40 border-emerald-200'
+      {/* TOP HEADER */}
+      <header
+        className={`h-16 px-6 border-b flex items-center justify-between shrink-0 shadow-sm ${
+          isDark ? 'border-slate-800 bg-slate-900/80' : 'border-slate-200 bg-white'
         }`}
       >
-        <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-2xl bg-emerald-500 text-slate-950 font-black shadow-lg shadow-emerald-500/20">
-            <ShieldCheck className="w-7 h-7" />
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+            <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                User ERP & Hak Akses Management
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                1:1 Module Manager (ControlPanel.frmUserSetting)
+            <h1 className="font-extrabold text-base tracking-tight flex items-center gap-2">
+              User ERP & Pengaturan Hak Akses Per Halaman (ADM_USER)
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                ADM_USER 1:1
               </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Manajemen Pengguna ERP dan Matriks Hak Akses Modul (View, Add, Edit, Delete, Print)
-            </p>
+            </h1>
+            <p className="text-xs text-slate-400">Pengaturan izin akses per halaman (CanView, CanAdd, CanEdit, CanDelete, CanPrint)</p>
           </div>
         </div>
 
-        {/* Header Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setIsAddUserOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Tambah User Baru</span>
-          </button>
-
-          <button
-            onClick={loadUsers}
-            className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 active:scale-95 cursor-pointer transition-all ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            Tambah User ERP
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* 👥 USERS TABLE GRID */}
-      <div
-        className={`rounded-2xl border shadow-lg overflow-hidden transition-all ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
-        }`}
-      >
-        <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
-          <span className="font-black text-xs uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Daftar User & Hak Akses ERP
-          </span>
-          <span className="text-xs text-slate-400 font-semibold">Total: {usersList.length} User Terdaftar</span>
-        </div>
+      {/* MAIN CONTENT TABLE */}
+      <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6">
+        <div
+          className={`rounded-2xl border overflow-hidden ${
+            isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200 shadow-sm'
+          }`}
+        >
+          <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+            <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-400 flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-500" /> Daftar Pengguna Sistem ERP & Tipe Otoritas
+            </h3>
+            <button
+              onClick={loadUsers}
+              className={`p-1.5 rounded-lg border text-slate-400 hover:text-white ${
+                isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'
+              }`}
+              title="Refresh User"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr
-                className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                  isDark ? 'bg-slate-800/60 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead
+                className={`uppercase font-bold border-b tracking-wider ${
+                  isDark ? 'bg-slate-800/50 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600'
                 }`}
               >
-                <th className="py-3.5 px-4 text-center">#ID</th>
-                <th className="py-3.5 px-4">Username</th>
-                <th className="py-3.5 px-4">Nama Lengkap</th>
-                <th className="py-3.5 px-4">Level Akses</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-center">Aksi Hak Akses</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/40 text-xs">
-              {usersList.map((user) => (
-                <tr
-                  key={user.id}
-                  className={`transition-colors ${
-                    isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
-                  }`}
-                >
-                  <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">{user.id}</td>
-                  <td className="py-3.5 px-4 font-mono font-black text-emerald-400">@{user.username}</td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{user.fullName}</td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
-                        user.userLevel === 'Admin'
-                          ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                          : user.userLevel === 'Manager'
-                          ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                          : user.userLevel === 'Supervisor'
-                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                      }`}
-                    >
-                      {user.userLevel}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      Aktif
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <button
-                      onClick={() => handleEditPermissions(user)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-[11px] flex items-center gap-1.5 mx-auto shadow cursor-pointer transition-all"
-                    >
-                      <Key className="w-3.5 h-3.5" />
-                      <span>Pengaturan Hak Akses</span>
-                    </button>
-                  </td>
+                <tr>
+                  <th className="px-4 py-3.5">ID</th>
+                  <th className="px-4 py-3.5">Username</th>
+                  <th className="px-4 py-3.5">Nama Lengkap</th>
+                  <th className="px-4 py-3.5">User Level</th>
+                  <th className="px-4 py-3.5 text-center">Status</th>
+                  <th className="px-4 py-3.5 text-center">Pengaturan Hak Akses</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-800/40">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                      <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
+                      <span>Memuat data User ERP...</span>
+                    </td>
+                  </tr>
+                ) : (
+                  usersList.map((u) => (
+                    <tr key={u.id} className={isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
+                      <td className="px-4 py-3 font-mono font-bold text-slate-400">#{u.id}</td>
+                      <td className="px-4 py-3 font-extrabold text-emerald-400 flex items-center gap-2">
+                        <UserIcon className="w-4 h-4 text-emerald-500" />
+                        <span>{u.username}</span>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-white">{u.fullName}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            u.userLevel === 'Admin'
+                              ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                              : u.userLevel === 'Manager'
+                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                              : u.userLevel === 'Supervisor'
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              : 'bg-slate-800 text-slate-300 border-slate-700'
+                          }`}
+                        >
+                          {u.userLevel}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                          Aktif
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => loadPermissionsForUser(u)}
+                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs flex items-center gap-1.5 mx-auto shadow-md shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                          Edit Hak Akses Per Halaman
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      {/* 🔐 MODAL EDIT PERMISSION MATRIX (1:1 ControlPanel.frmUserSetting) */}
+      {/* PERMISSION EDITOR MODAL */}
       {isPermModalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div
-            className={`w-full max-w-4xl rounded-3xl border shadow-2xl overflow-hidden my-8 transition-all ${
+            className={`w-full max-w-4xl rounded-2xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}
           >
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800/60 flex items-center justify-between bg-gradient-to-r from-emerald-950/30 via-slate-900 to-slate-900">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black shadow">
-                  <Key className="w-5 h-5" />
-                </div>
+                <ShieldCheck className="w-5 h-5 text-emerald-500" />
                 <div>
-                  <h2 className="text-base font-black tracking-tight">
-                    Pengaturan Hak Akses: <span className="text-emerald-400">{selectedUser.fullName}</span> (@{selectedUser.username})
-                  </h2>
-                  <p className="text-xs text-slate-400 font-medium">
-                    Level Access: <strong className="text-amber-400 uppercase">{selectedUser.userLevel}</strong> | Sesuaikan matriks fungsi modul
-                  </p>
+                  <h3 className="font-extrabold text-sm">
+                    Edit Hak Akses Halaman untuk: <span className="text-emerald-400">{selectedUser.username}</span> ({selectedUser.fullName})
+                  </h3>
+                  <p className="text-[11px] text-slate-400">Atur izin per halaman (CanView, CanAdd, CanEdit, CanDelete, CanPrint)</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsPermModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Quick Action Controls */}
-            <div className="px-6 py-3 border-b border-slate-800/40 bg-slate-950/40 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 font-bold text-slate-400">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span>Pilih Opsi Hak Akses Massal:</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleCheckAll(true)}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold border border-emerald-500/30 cursor-pointer transition-all"
-                >
-                  ☑️ Centang Semua
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCheckAll(false)}
-                  className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold border border-red-500/30 cursor-pointer transition-all"
-                >
-                  ⬜ Uncentang Semua
-                </button>
-              </div>
-            </div>
-
-            {/* Permission Matrix Tree / Table */}
-            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
-              {Object.entries(groupedPermissions).map(([groupName, items]) => (
-                <div key={groupName} className="space-y-2">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 border-b border-slate-800 pb-1.5">
+            <div className="p-6 overflow-y-auto flex-1 font-sans space-y-6">
+              {Object.entries(groupedModules).map(([groupName, modules]) => (
+                <div key={groupName} className="space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-emerald-500 border-b border-slate-800 pb-2">
                     {groupName}
-                  </h3>
-                  <div className="space-y-2">
-                    {items.map((perm) => (
-                      <div
-                        key={perm.moduleCode}
-                        className={`p-3 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
-                          isDark ? 'bg-slate-950/50 border-slate-800/80' : 'bg-slate-50 border-slate-200'
-                        }`}
-                      >
-                        <div className="font-bold text-xs">
-                          {perm.labelName}
-                          <span className="block text-[10px] font-mono text-slate-500">{perm.moduleCode}</span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {modules.map(({ code, label }) => {
+                      const perm = userPermissions.find((p) => p.moduleCode === code) || {
+                        moduleCode: code,
+                        canView: true,
+                        canAdd: true,
+                        canEdit: true,
+                        canDelete: true,
+                        canPrint: true,
+                      };
+
+                      return (
+                        <div
+                          key={code}
+                          className={`p-3 rounded-xl border flex flex-col gap-2 ${
+                            isDark ? 'bg-slate-800/40 border-slate-700/80' : 'bg-slate-50 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-bold text-xs text-white">{label}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePermission(code, 'canView')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                                perm.canView
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-rose-500/20 text-rose-400 border-rose-500/30'
+                              }`}
+                            >
+                              {perm.canView ? 'Akses Buka' : 'Tutup Akses'}
+                            </button>
+                          </div>
+
+                          {/* Detail Checkboxes */}
+                          <div className="grid grid-cols-4 gap-1 pt-1 border-t border-slate-700/50 text-[10px]">
+                            <label className="flex items-center gap-1 cursor-pointer select-none text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={perm.canAdd}
+                                onChange={() => handleTogglePermission(code, 'canAdd')}
+                                className="rounded accent-emerald-500"
+                              />
+                              <span>Tambah</span>
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer select-none text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={perm.canEdit}
+                                onChange={() => handleTogglePermission(code, 'canEdit')}
+                                className="rounded accent-emerald-500"
+                              />
+                              <span>Edit</span>
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer select-none text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={perm.canDelete}
+                                onChange={() => handleTogglePermission(code, 'canDelete')}
+                                className="rounded accent-emerald-500"
+                              />
+                              <span>Hapus</span>
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer select-none text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={perm.canPrint}
+                                onChange={() => handleTogglePermission(code, 'canPrint')}
+                                className="rounded accent-emerald-500"
+                              />
+                              <span>Cetak</span>
+                            </label>
+                          </div>
                         </div>
-
-                        {/* 5 Function Checkboxes (View, Add, Edit, Delete, Print) */}
-                        <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canView}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canView')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canView ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Lihat (View)
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canAdd}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canAdd')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canAdd ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Tambah
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canEdit}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canEdit')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canEdit ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Edit
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canDelete}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canDelete')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canDelete ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Hapus
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canPrint}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canPrint')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canPrint ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Cetak
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800/60 bg-slate-950/80 flex items-center justify-end gap-3">
+            <div className="p-4 border-t border-slate-800 flex items-center justify-end gap-3 bg-slate-950/50">
               <button
-                type="button"
                 onClick={() => setIsPermModalOpen(false)}
-                className="px-4 py-2 rounded-xl border text-xs font-bold border-slate-700 hover:bg-slate-800 cursor-pointer"
+                className="px-4 py-2 rounded-xl border text-xs font-bold text-slate-400 hover:text-white border-slate-700"
               >
                 Batal
               </button>
               <button
-                type="button"
                 onClick={handleSavePermissions}
                 disabled={isSaving}
-                className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow cursor-pointer transition-all"
+                className="px-6 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
-                <span>{isSaving ? 'Menyimpan...' : 'Simpan Hak Akses'}</span>
+                {isSaving ? 'Menyimpan...' : 'Simpan Hak Akses Per Halaman'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ➕ MODAL TAMBAH USER BARU */}
+      {/* ADD USER MODAL */}
       {isAddUserOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div
-            className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 transition-all ${
+            className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden flex flex-col ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-black flex items-center gap-2">
-                <UserIcon className="w-4 h-4 text-emerald-400" />
-                Tambah User ERP Baru
-              </h3>
-              <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-extrabold text-sm">Tambah User ERP Baru</h3>
+              </div>
+              <button
+                onClick={() => setIsAddUserOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} className="space-y-4 mt-4 text-xs">
-              <div className="space-y-1">
-                <label className="font-bold text-slate-400">Username :</label>
+            <div className="p-6 overflow-y-auto flex-1 font-sans space-y-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-slate-400">Username *</label>
                 <input
                   type="text"
-                  required
                   value={newUsername}
                   onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder="e.g. kasir2"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+                  placeholder="Contoh: rina.kasir"
+                  className={`w-full px-3.5 py-2 text-xs rounded-xl border outline-none ${
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="font-bold text-slate-400">Nama Lengkap :</label>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-slate-400">Nama Lengkap *</label>
                 <input
                   type="text"
-                  required
                   value={newFullName}
                   onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="e.g. Dewi Sartika"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+                  placeholder="Contoh: Rina Kartika"
+                  className={`w-full px-3.5 py-2 text-xs rounded-xl border outline-none ${
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="font-bold text-slate-400">Level Access / Role :</label>
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-slate-400">User Level</label>
                 <select
                   value={newUserLevel}
                   onChange={(e) => setNewUserLevel(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+                  className={`w-full px-3 py-2 text-xs rounded-xl border outline-none cursor-pointer ${
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 >
-                  <option value="Kasir">Kasir POS</option>
-                  <option value="Supervisor">Supervisor Floor</option>
-                  <option value="Manager">Manager ERP</option>
-                  <option value="Admin">Super Admin</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Supervisor">Supervisor</option>
+                  <option value="Kasir">Kasir</option>
                 </select>
               </div>
+            </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddUserOpen(false)}
-                  className="px-4 py-2 rounded-xl border text-xs font-bold border-slate-700 hover:bg-slate-800"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow"
-                >
-                  {isSaving ? 'Menyimpan...' : 'Simpan User'}
-                </button>
-              </div>
-            </form>
+            <div className="p-4 border-t border-slate-800 flex items-center justify-end gap-3 bg-slate-950/50">
+              <button
+                onClick={() => setIsAddUserOpen(false)}
+                className="px-4 py-2 rounded-xl border text-xs font-bold text-slate-400 hover:text-white border-slate-700"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleAddUser}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all cursor-pointer"
+              >
+                Simpan User Baru
+              </button>
+            </div>
           </div>
         </div>
       )}
