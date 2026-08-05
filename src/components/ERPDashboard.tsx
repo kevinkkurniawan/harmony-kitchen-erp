@@ -19,6 +19,14 @@ import {
   Database,
   Sparkles,
   DollarSign,
+  FileText,
+  ClipboardList,
+  CreditCard,
+  RotateCcw,
+  Utensils,
+  Barcode,
+  Crown,
+  Landmark,
 } from 'lucide-react';
 import { MOCK_ERP_USERS, ERPUser } from '@/types/user';
 import LoginModal from '@/components/LoginModal';
@@ -27,6 +35,15 @@ import MasterPromoManager from '@/components/MasterPromoManager';
 import MasterSupplierManager from '@/components/MasterSupplierManager';
 import PenerimaanBarangEkspressManager from '@/components/PenerimaanBarangEkspressManager';
 import PenerimaanBarangHargaManager from '@/components/PenerimaanBarangHargaManager';
+import PurchaseOrderManager from '@/components/PurchaseOrderManager';
+import PurchaseRequestManager from '@/components/PurchaseRequestManager';
+import PurchasePaymentManager from '@/components/PurchasePaymentManager';
+import PurchaseReturnManager from '@/components/PurchaseReturnManager';
+import InventoryUsageManager from '@/components/InventoryUsageManager';
+import BarcodePrinterManager from '@/components/BarcodePrinterManager';
+import MasterEmployeeManager from '@/components/MasterEmployeeManager';
+import MasterCustomerManager from '@/components/MasterCustomerManager';
+import MasterBankManager from '@/components/MasterBankManager';
 import SyncStockManager from '@/components/SyncStockManager';
 import MemoWidget from '@/components/MemoWidget';
 import SalesMonitoringManager from '@/components/SalesMonitoringManager';
@@ -47,14 +64,23 @@ export default function ERPDashboard() {
   const [activeTab, setActiveTab] = useState<
     | 'master-barang'
     | 'inventory-stok'
+    | 'pemakaian-barang'
+    | 'cetak-barcode'
+    | 'master-karyawan'
+    | 'master-customer'
+    | 'master-bank'
     | 'stok-opname'
     | 'sync-stok'
     | 'memo-sync-stok'
     | 'sales-sync-stok'
     | 'master-promo'
     | 'master-supplier'
+    | 'pengajuan-pembelian'
+    | 'order-pembelian'
     | 'penerimaan-barang'
     | 'penerimaan-barang-harga'
+    | 'pembayaran-supplier'
+    | 'retur-pembelian'
     | 'sales-monitoring'
     | 'laporan-penjualan'
     | 'user-management'
@@ -253,6 +279,86 @@ export default function ERPDashboard() {
                   </button>
                 )}
 
+                {canView('MD_USAGE') && (
+                  <button
+                    onClick={() => setActiveTab('pemakaian-barang')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'pemakaian-barang'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Utensils className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-left leading-snug">Pemakaian Barang (Usage)</span>
+                  </button>
+                )}
+
+                {canView('MD_BARCODE') && (
+                  <button
+                    onClick={() => setActiveTab('cetak-barcode')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'cetak-barcode'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Barcode className="w-4 h-4 text-purple-400 shrink-0" />
+                    <span className="text-left leading-snug">Cetak Label Barcode</span>
+                  </button>
+                )}
+
+                {canView('MD_EMP') && (
+                  <button
+                    onClick={() => setActiveTab('master-karyawan')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'master-karyawan'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Users className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <span className="text-left leading-snug">Master Karyawan</span>
+                  </button>
+                )}
+
+                {canView('MD_CUST') && (
+                  <button
+                    onClick={() => setActiveTab('master-customer')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'master-customer'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Crown className="w-4 h-4 text-pink-400 shrink-0" />
+                    <span className="text-left leading-snug">Master Customer</span>
+                  </button>
+                )}
+
+                {canView('MD_BANK') && (
+                  <button
+                    onClick={() => setActiveTab('master-bank')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'master-bank'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Landmark className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="text-left leading-snug">Master Bank & Rekening</span>
+                  </button>
+                )}
+
                 {canView('master-promo') && (
                   <button
                     onClick={() => setActiveTab('master-promo')}
@@ -288,12 +394,44 @@ export default function ERPDashboard() {
             )}
 
             {/* 2. PURCHASING GROUP */}
-            {(canView('penerimaan-barang') || canView('penerimaan-barang-harga')) && (
+            {(canView('PUR_PR') || canView('PUR_PO') || canView('PUR_PAY') || canView('PUR_RET') || canView('penerimaan-barang') || canView('penerimaan-barang-harga')) && (
               <div className="space-y-1 pt-2">
                 <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
                   <ShoppingBag className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   <span>Purchasing</span>
                 </div>
+
+                {canView('PUR_PR') && (
+                  <button
+                    onClick={() => setActiveTab('pengajuan-pembelian')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'pengajuan-pembelian'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <ClipboardList className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-left leading-snug">Pengajuan Pembelian (PR)</span>
+                  </button>
+                )}
+
+                {canView('PUR_PO') && (
+                  <button
+                    onClick={() => setActiveTab('order-pembelian')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'order-pembelian'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4 text-orange-400 shrink-0" />
+                    <span className="text-left leading-snug">Order Pembelian (PO)</span>
+                  </button>
+                )}
 
                 {canView('penerimaan-barang') && (
                   <button
@@ -324,6 +462,38 @@ export default function ERPDashboard() {
                   >
                     <DollarSign className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                     <span className="text-left leading-snug">Penerimaan Barang dengan Harga</span>
+                  </button>
+                )}
+
+                {canView('PUR_PAY') && (
+                  <button
+                    onClick={() => setActiveTab('pembayaran-supplier')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'pembayaran-supplier'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="text-left leading-snug">Pembayaran Supplier (Hutang)</span>
+                  </button>
+                )}
+
+                {canView('PUR_RET') && (
+                  <button
+                    onClick={() => setActiveTab('retur-pembelian')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'retur-pembelian'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark
+                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <RotateCcw className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span className="text-left leading-snug">Retur Pembelian</span>
                   </button>
                 )}
               </div>
@@ -423,6 +593,11 @@ export default function ERPDashboard() {
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" />}
           {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" />}
+          {activeTab === 'pemakaian-barang' && <InventoryUsageManager isDark={isDark} />}
+          {activeTab === 'cetak-barcode' && <BarcodePrinterManager isDark={isDark} />}
+          {activeTab === 'master-karyawan' && <MasterEmployeeManager isDark={isDark} />}
+          {activeTab === 'master-customer' && <MasterCustomerManager isDark={isDark} />}
+          {activeTab === 'master-bank' && <MasterBankManager isDark={isDark} />}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
           {(activeTab === 'sync-stok' || activeTab === 'memo-sync-stok' || activeTab === 'sales-sync-stok') && (
             <SyncStockManager isDark={isDark} />
@@ -432,8 +607,13 @@ export default function ERPDashboard() {
 
           {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
+          {activeTab === 'pengajuan-pembelian' && <PurchaseRequestManager isDark={isDark} />}
+          {activeTab === 'order-pembelian' && <PurchaseOrderManager isDark={isDark} />}
+
           {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} />}
           {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
+          {activeTab === 'pembayaran-supplier' && <PurchasePaymentManager isDark={isDark} />}
+          {activeTab === 'retur-pembelian' && <PurchaseReturnManager isDark={isDark} />}
 
           {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} />}
 
