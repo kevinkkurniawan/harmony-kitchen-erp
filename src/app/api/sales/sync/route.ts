@@ -16,20 +16,30 @@ export async function GET(req: Request) {
             ],
           }
         : undefined,
-      include: { category: true },
+      include: { category: true, uom: true },
       orderBy: { id: 'asc' },
     });
 
     const mapped = items.map((inv) => ({
-      id: inv.id,
+      id: String(inv.id),
       barcode: inv.barcode,
+      inventoryNo: inv.inventoryNo,
       inventory_no: inv.inventoryNo,
+      inventoryName: inv.inventoryName,
       inventory_name: inv.inventoryName,
+      categoryName: inv.category?.categoryName || 'General',
       category_name: inv.category?.categoryName || 'General',
+      uomName: inv.uom?.uomName || 'Pcs',
+      uom_name: inv.uom?.uomName || 'Pcs',
+      stokGudang: inv.stock,
+      qtyTransaksi: 0,
+      stokSetelahSync: inv.stock,
       hpp: inv.hpp,
       price: inv.price,
       stock: inv.stock,
+      syncStatus: 'SYNCED',
       sync_status: 'SYNCED',
+      lastSync: new Date().toLocaleTimeString(),
       last_sync: new Date().toISOString(),
     }));
 

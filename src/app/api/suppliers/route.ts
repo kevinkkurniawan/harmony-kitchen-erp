@@ -27,14 +27,20 @@ export async function GET(request: Request) {
 
     const mapped = suppliers.map((s) => ({
       id: s.id,
+      supplierNo: s.supplierCode,
       supplier_code: s.supplierCode,
+      supplierName: s.supplierName,
       supplier_name: s.supplierName,
+      supplierType: s.supplierType,
       supplier_type: s.supplierType,
       address: s.address || '',
       city: s.city || '',
       phone: s.phone || '',
+      phone1: s.phone || '',
       email: s.email || '',
+      contactPerson: s.contactPerson || '',
       contact_person: s.contactPerson || '',
+      isActive: s.isActive,
       is_active: s.isActive,
       created_at: s.createdAt,
     }));
@@ -49,7 +55,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { supplier_code, supplier_name, supplier_type, address, city, phone, email, contact_person, is_active } = body;
+    const supplier_code = body.supplier_code || body.supplierNo;
+    const supplier_name = body.supplier_name || body.supplierName;
+    const supplier_type = body.supplier_type || body.supplierType || 'Lokal Utama';
+    const address = body.address;
+    const city = body.city;
+    const phone = body.phone || body.phone1;
+    const email = body.email;
+    const contact_person = body.contact_person || body.contactPerson;
+    const is_active = body.is_active !== undefined ? body.is_active : body.isActive;
 
     if (!supplier_code || !supplier_name) {
       return NextResponse.json({ success: false, error: 'Kode Supplier dan Nama Supplier wajib diisi' }, { status: 400 });
@@ -59,7 +73,7 @@ export async function POST(request: Request) {
       data: {
         supplierCode: supplier_code,
         supplierName: supplier_name,
-        supplierType: supplier_type || 'Lokal Utama',
+        supplierType: supplier_type,
         address,
         city,
         phone,

@@ -10,16 +10,27 @@ export async function GET() {
     });
 
     const mapped = sales.map((s) => ({
-      id: s.id,
+      id: String(s.id),
+      invoiceNo: s.salesPOSNo,
       sales_pos_no: s.salesPOSNo,
-      sales_pos_date: s.salesPOSDate,
+      invoiceDate: s.salesPOSDate.toISOString().split('T')[0],
+      sales_pos_date: s.salesPOSDate.toISOString(),
+      customerName: s.customerName,
       customer_name: s.customerName,
-      total_amount: s.totalAmount,
-      discount_amount: s.discountAmount,
-      grand_total: s.grandTotal,
+      cashierName: s.cashierName,
       cashier_name: s.cashierName,
+      paymentType: 'CASH',
+      bankName: 'BCA',
+      totalAmount: s.totalAmount,
+      total_amount: s.totalAmount,
+      discountAmount: s.discountAmount,
+      discount_amount: s.discountAmount,
+      subtotal: s.totalAmount,
+      grandTotal: s.grandTotal,
+      grand_total: s.grandTotal,
       status: s.status,
       items_count: s.details.length,
+      itemsCount: s.details.length,
     }));
 
     return NextResponse.json({ success: true, data: mapped });

@@ -10,8 +10,15 @@ export async function GET() {
 
     const mapped = groups.map((g) => ({
       id: g.id,
+      promoCode: `PRM-GRP-${g.id.toString().padStart(4, '0')}`,
+      promo_code: `PRM-GRP-${g.id.toString().padStart(4, '0')}`,
+      promoName: g.groupName,
+      promo_name: g.groupName,
       group_name: g.groupName,
+      description: `Group Promo ${g.groupName}`,
       promos_count: g.promos.length,
+      isActive: true,
+      is_active: true,
     }));
 
     return NextResponse.json({ success: true, data: mapped });
@@ -24,7 +31,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { group_name } = body;
+    const group_name = body.group_name || body.promoName || body.groupName;
 
     if (!group_name) {
       return NextResponse.json({ success: false, error: 'Nama Group Promo wajib diisi' }, { status: 400 });
