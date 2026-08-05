@@ -383,9 +383,9 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     </td>
                   </tr>
                 ) : (
-                  dailyData.map((row) => (
+                  dailyData.map((row, idx) => (
                     <tr
-                      key={row.date}
+                      key={row.date || `daily-${idx}`}
                       className={`transition-colors ${
                         isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
                       }`}
@@ -448,9 +448,9 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     </td>
                   </tr>
                 ) : (
-                  monthlyData.map((row) => (
+                  monthlyData.map((row, idx) => (
                     <tr
-                      key={row.month}
+                      key={row.month || `monthly-${idx}`}
                       className={`transition-colors ${
                         isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
                       }`}

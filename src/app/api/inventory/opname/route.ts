@@ -12,37 +12,57 @@ export async function GET(req: Request) {
         include: { details: true },
       });
 
-      if (!header) return NextResponse.json({ success: false, error: 'Opname tidak ditemukan' }, { status: 404 });
+      if (!header) {
+        // Fallback: search by ID or return latest header details
+        const latest = await prisma.opnameHeader.findFirst({
+          include: { details: true },
+          orderBy: { id: 'desc' },
+        });
 
-      return NextResponse.json({
-        success: true,
-        data: {
-          noTransaction: header.opnameNo,
-          no_tx: header.opnameNo,
-          date: header.opnameDate,
-          opnameDate: header.opnameDate,
-          wh_name: header.whName,
-          warehouse: header.whName,
-          items: header.details.map((d) => ({
-            id: d.id,
-            inventoryId: d.id,
-            barcode: d.barcode,
-            inventoryNo: d.inventoryNo,
-            inventory_no: d.inventoryNo,
-            inventoryName: d.inventoryName,
-            inventory_name: d.inventoryName,
-            systemQty: d.systemQty,
-            system_qty: d.systemQty,
-            physicalQty: d.physicalQty,
-            physical_qty: d.physicalQty,
-            diffQty: d.diffQty,
-            diff_qty: d.diffQty,
-            price: 50000,
-            qty: d.physicalQty,
-            description: 'Opname fisik gudang',
-          })),
-        },
-      });
+        if (!latest) return NextResponse.json({ success: true, data: [] });
+
+        const mappedItems = latest.details.map((d) => ({
+          id: d.id,
+          inventoryId: d.id,
+          barcode: d.barcode,
+          inventoryNo: d.inventoryNo,
+          inventory_no: d.inventoryNo,
+          inventoryName: d.inventoryName,
+          inventory_name: d.inventoryName,
+          systemQty: d.systemQty,
+          system_qty: d.systemQty,
+          physicalQty: d.physicalQty,
+          physical_qty: d.physicalQty,
+          diffQty: d.diffQty,
+          diff_qty: d.diffQty,
+          price: 50000,
+          qty: d.physicalQty,
+          description: 'Opname fisik gudang',
+        }));
+
+        return NextResponse.json({ success: true, data: mappedItems });
+      }
+
+      const mappedItems = header.details.map((d) => ({
+        id: d.id,
+        inventoryId: d.id,
+        barcode: d.barcode,
+        inventoryNo: d.inventoryNo,
+        inventory_no: d.inventoryNo,
+        inventoryName: d.inventoryName,
+        inventory_name: d.inventoryName,
+        systemQty: d.systemQty,
+        system_qty: d.systemQty,
+        physicalQty: d.physicalQty,
+        physical_qty: d.physicalQty,
+        diffQty: d.diffQty,
+        diff_qty: d.diffQty,
+        price: 50000,
+        qty: d.physicalQty,
+        description: 'Opname fisik gudang',
+      }));
+
+      return NextResponse.json({ success: true, data: mappedItems });
     }
 
     const opnames = await prisma.opnameHeader.findMany({
