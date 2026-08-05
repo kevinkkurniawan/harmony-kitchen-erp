@@ -9401,8 +9401,58 @@ ALTER TABLE ONLY public.m_uom
 
 
 --
--- PostgreSQL database dump complete
+-- Name: t_memo; Type: TABLE; Schema: public; Owner: postgres
 --
+
+CREATE TABLE IF NOT EXISTS public.t_memo (
+    id SERIAL PRIMARY KEY,
+    title character varying(255) DEFAULT 'Memo Utama'::character varying,
+    content text NOT NULL,
+    category character varying(50) DEFAULT 'operational'::character varying,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO public.t_memo (title, content, category)
+VALUES ('Memo Operasional', 'Cek Sync Stock dan Opname', 'operational')
+ON CONFLICT DO NOTHING;
+
+--
+-- Name: t_pos_order_header & t_pos_order_detail; Type: TABLE; Schema: public
+--
+
+CREATE TABLE IF NOT EXISTS public.t_pos_order_header (
+    id SERIAL PRIMARY KEY,
+    order_no VARCHAR(50) UNIQUE NOT NULL,
+    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    table_no VARCHAR(20) DEFAULT 'Takeaway',
+    customer_name VARCHAR(100) DEFAULT 'Pelanggan POS',
+    sub_total NUMERIC(15, 2) DEFAULT 0,
+    discount NUMERIC(15, 2) DEFAULT 0,
+    tax NUMERIC(15, 2) DEFAULT 0,
+    grand_total NUMERIC(15, 2) DEFAULT 0,
+    payment_method VARCHAR(50) DEFAULT 'Cash',
+    payment_status VARCHAR(20) DEFAULT 'Paid',
+    total_items INT DEFAULT 1,
+    created_by VARCHAR(100) DEFAULT 'Kasir 1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.t_pos_order_detail (
+    id SERIAL PRIMARY KEY,
+    order_id INT REFERENCES public.t_pos_order_header(id) ON DELETE CASCADE,
+    order_no VARCHAR(50) NOT NULL,
+    inventory_id INT,
+    barcode VARCHAR(100),
+    inventory_name VARCHAR(255),
+    qty INT NOT NULL DEFAULT 1,
+    unit_price NUMERIC(15, 2) DEFAULT 0,
+    cost_price NUMERIC(15, 2) DEFAULT 0,
+    sub_total NUMERIC(15, 2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 \unrestrict nk62eawrP7JWwhySj4BpdsJnezvn7UJALqc3QzMoicIN5GSEU6U1TR2ekwm1N3N
 

@@ -28,7 +28,10 @@ import MasterSupplierManager from '@/components/MasterSupplierManager';
 import PenerimaanBarangEkspressManager from '@/components/PenerimaanBarangEkspressManager';
 import PenerimaanBarangHargaManager from '@/components/PenerimaanBarangHargaManager';
 import SyncStockManager from '@/components/SyncStockManager';
+import MemoWidget from '@/components/MemoWidget';
 import SalesMonitoringManager from '@/components/SalesMonitoringManager';
+import StockOpnameManager from '@/components/StockOpnameManager';
+import SalesReportManager from '@/components/SalesReportManager';
 
 export default function ERPDashboard() {
   const [currentUser, setCurrentUser] = useState<ERPUser | null>(MOCK_ERP_USERS[0]); // Default Admin ERP
@@ -37,7 +40,10 @@ export default function ERPDashboard() {
   const [activeTab, setActiveTab] = useState<
     | 'master-barang'
     | 'inventory-stok'
+    | 'stok-opname'
     | 'sync-stok'
+    | 'memo-sync-stok'
+    | 'sales-sync-stok'
     | 'master-promo'
     | 'master-supplier'
     | 'penerimaan-barang'
@@ -137,15 +143,51 @@ export default function ERPDashboard() {
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
           </div>
           <nav className="p-2 space-y-1 overflow-y-auto flex-1">
+            {/* 📌 MEMO GROUP (BEFORE MASTER DATA) */}
+            <div className="space-y-1 pb-1">
+              <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span>Memo</span>
+              </div>
+
+              <button
+                onClick={() => setActiveTab('memo-sync-stok')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                  activeTab === 'memo-sync-stok'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                    : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                }`}
+              >
+                <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-left leading-snug">Cek Sync Stock</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('stok-opname')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                  activeTab === 'stok-opname'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                    : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                }`}
+              >
+                <Package className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-left leading-snug">Opname</span>
+              </button>
+            </div>
+
             {/* 1. MASTER DATA GROUP */}
             <div className="space-y-1">
               <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
-                <Store className="w-3.5 h-3.5 text-amber-500" />
+                <Store className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>Master Data</span>
               </div>
               <button
                 onClick={() => setActiveTab('master-barang')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'master-barang'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -153,12 +195,12 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <Package className="w-4 h-4 text-amber-400" />
-                <span>Master Barang</span>
+                <Package className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-left leading-snug">Master Barang</span>
               </button>
               <button
                 onClick={() => setActiveTab('inventory-stok')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'inventory-stok'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -166,12 +208,12 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <RefreshCw className="w-4 h-4 text-emerald-400" />
-                <span>Inventory Stock</span>
+                <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-left leading-snug">Inventory Stock</span>
               </button>
               <button
                 onClick={() => setActiveTab('master-promo')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'master-promo'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -179,12 +221,12 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <Tag className="w-4 h-4 text-purple-400" />
-                <span>Master Promo</span>
+                <Tag className="w-4 h-4 text-purple-400 shrink-0" />
+                <span className="text-left leading-snug">Master Promo</span>
               </button>
               <button
                 onClick={() => setActiveTab('master-supplier')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'master-supplier'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -192,20 +234,20 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <Users className="w-4 h-4 text-blue-400" />
-                <span>Master Supplier</span>
+                <Users className="w-4 h-4 text-blue-400 shrink-0" />
+                <span className="text-left leading-snug">Master Supplier</span>
               </button>
             </div>
 
             {/* 2. PURCHASING GROUP */}
             <div className="space-y-1 pt-2">
               <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
-                <ShoppingBag className="w-3.5 h-3.5 text-amber-500" />
+                <ShoppingBag className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>Purchasing</span>
               </div>
               <button
                 onClick={() => setActiveTab('penerimaan-barang')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-start gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'penerimaan-barang'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -213,12 +255,12 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <Package className="w-4 h-4 text-orange-400" />
-                <span>Penerimaan Barang Ekspress</span>
+                <Package className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                <span className="text-left leading-snug">Penerimaan Barang Ekspress</span>
               </button>
               <button
                 onClick={() => setActiveTab('penerimaan-barang-harga')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-start gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'penerimaan-barang-harga'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -226,33 +268,33 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <DollarSign className="w-4 h-4 text-emerald-400" />
-                <span>Penerimaan Barang dengan Harga</span>
+                <DollarSign className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <span className="text-left leading-snug">Penerimaan Barang dengan Harga</span>
               </button>
             </div>
 
             {/* 3. SALES GROUP */}
             <div className="space-y-1 pt-2">
               <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
-                <BarChart3 className="w-3.5 h-3.5 text-amber-500" />
+                <BarChart3 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>Sales</span>
               </div>
               <button
-                onClick={() => setActiveTab('sync-stok')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
-                  activeTab === 'sync-stok'
+                onClick={() => setActiveTab('sales-sync-stok')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                  activeTab === 'sales-sync-stok'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
                     ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <RefreshCw className="w-4 h-4 text-emerald-400" />
-                <span>Sync Stock</span>
+                <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-left leading-snug">Sync Stock</span>
               </button>
               <button
                 onClick={() => setActiveTab('sales-monitoring')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'sales-monitoring'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -260,20 +302,20 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <BarChart3 className="w-4 h-4 text-indigo-400" />
-                <span>Sales Monitoring</span>
+                <BarChart3 className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="text-left leading-snug">Sales Monitoring</span>
               </button>
             </div>
 
             {/* 4. REPORT GROUP */}
             <div className="space-y-1 pt-2">
               <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-amber-500/80 uppercase tracking-wider flex items-center gap-1.5">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>Report</span>
               </div>
               <button
                 onClick={() => setActiveTab('laporan-penjualan')}
-                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                   activeTab === 'laporan-penjualan'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
@@ -281,8 +323,8 @@ export default function ERPDashboard() {
                     : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                 }`}
               >
-                <FileSpreadsheet className="w-4 h-4 text-pink-400" />
-                <span>Laporan Penjualan</span>
+                <FileSpreadsheet className="w-4 h-4 text-pink-400 shrink-0" />
+                <span className="text-left leading-snug">Laporan Penjualan</span>
               </button>
             </div>
 
@@ -290,12 +332,12 @@ export default function ERPDashboard() {
             {isAdmin && (
               <div className="pt-2">
                 <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <span>Admin System</span>
                 </div>
                 <button
                   onClick={() => setActiveTab('user-management')}
-                  className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                  className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                     activeTab === 'user-management'
                       ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
                       : isDark
@@ -303,8 +345,8 @@ export default function ERPDashboard() {
                       : 'text-emerald-600 hover:bg-slate-100 hover:translate-x-0.5'
                   }`}
                 >
-                  <UserCheck className="w-4 h-4 text-emerald-400" />
-                  <span>User ERP & Hak Akses</span>
+                  <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="text-left leading-snug">User ERP & Hak Akses</span>
                 </button>
               </div>
             )}
@@ -315,7 +357,10 @@ export default function ERPDashboard() {
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" />}
           {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" />}
-          {activeTab === 'sync-stok' && <SyncStockManager isDark={isDark} />}
+          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
+          {(activeTab === 'sync-stok' || activeTab === 'memo-sync-stok' || activeTab === 'sales-sync-stok') && (
+            <SyncStockManager isDark={isDark} />
+          )}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}
 
@@ -326,14 +371,7 @@ export default function ERPDashboard() {
 
           {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} />}
 
-          {activeTab === 'laporan-penjualan' && (
-            <div className="flex-1 p-4 overflow-hidden">
-              <div className="rounded-2xl border bg-slate-900 border-slate-800 p-4">
-                <h3 className="font-bold text-sm text-white mb-2">Laporan Penjualan Harian & Bulanan</h3>
-                <p className="text-xs text-slate-400">Rekapitulasi omset, metode pembayaran, dan profit.</p>
-              </div>
-            </div>
-          )}
+          {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} />}
 
           {activeTab === 'user-management' && (
             <div className="flex-1 p-6 overflow-y-auto space-y-6">
