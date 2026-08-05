@@ -1,43 +1,42 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Search,
   RefreshCw,
   Plus,
   Tag,
-  FileSpreadsheet,
   BarChart3,
   Edit,
   Trash2,
   Package,
-  Layers,
-  DollarSign,
-  History,
   CheckCircle,
   XCircle,
   Printer,
   X,
   AlertTriangle,
-  ChevronRight,
   Sliders,
   Eye,
   EyeOff,
   Download,
   Info,
-  ArrowUpDown,
   ChevronUp,
   ChevronDown,
-  Check,
   Zap,
-  Filter,
-  Sparkles,
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
 
 interface LookupItem {
   id: number;
-  [key: string]: any;
+  brandNo?: string;
+  brandName?: string;
+  categoryNo?: string;
+  categoryName?: string;
+  productNo?: string;
+  productName?: string;
+  uomCode?: string;
+  uomName?: string;
+  [key: string]: unknown;
 }
 
 interface LookupsData {
@@ -63,17 +62,18 @@ interface ToastMessage {
 
 interface MasterBarangManagerProps {
   isDark: boolean;
+  mode?: 'master' | 'stock';
 }
 
-export default function MasterBarangManager({ isDark }: MasterBarangManagerProps) {
+export default function MasterBarangManager({ isDark, mode = 'master' }: MasterBarangManagerProps) {
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Explicit Filter Checkboxes from Frm_Inventory
+  // Explicit Filter Checkboxes from Frm_Inventory / Frm_InventoryStock
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
-  const [filterMinusStock, setFilterMinusStock] = useState<boolean>(false);
+  const [filterMinusStock, setFilterMinusStock] = useState<boolean>(mode === 'stock');
   const [showDetailPane, setShowDetailPane] = useState<boolean>(true);
 
   // Sorting State
@@ -99,7 +99,6 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
 
   // Selected Row & Context Menu States
   const [selectedProduct, setSelectedProduct] = useState<ERPProduct | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ERPProduct } | null>(null);
 
   // Form Modal States
@@ -145,16 +144,16 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
   });
 
   // Toast Trigger Helper
-  const addToast = (text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
+  const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = Date.now().toString();
     setToasts((prev) => [...prev, { id, type, text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
-  };
+  }, []);
 
   // Fetch Inventory List from PostgreSQL
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
       let url = `/api/inventory?q=${encodeURIComponent(searchQuery)}&limit=1000`;
@@ -165,8 +164,7 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
       if (json.success && Array.isArray(json.data)) {
         setProducts(json.data);
         if (json.data.length > 0) {
-          setSelectedProduct(json.data[0]);
-          setSelectedIndex(0);
+          setSelectedProduct((prev) => prev || json.data[0]);
         }
       }
     } catch (err) {
@@ -175,32 +173,52 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchQuery, filterMinusStock, filterOnlyActive, addToast]);
 
-  // Fetch Dropdown Lookups
-  const fetchLookups = async () => {
-    try {
-      const res = await fetch('/api/inventory/lookups');
-      const json = await res.json();
-      if (json.success && json.data) {
-        setLookups(json.data);
-      }
-    } catch (err) {
-      console.error('Error fetching lookups:', err);
-    }
-  };
-
+  // Initial load and filter change trigger
   useEffect(() => {
-    fetchProducts();
-    setCurrentPage(1);
+    let isMounted = true;
+    const runFetch = async () => {
+      try {
+        let url = `/api/inventory?q=${encodeURIComponent(searchQuery)}&limit=1000`;
+        if (filterMinusStock) url += `&minusStock=true`;
+        if (filterOnlyActive) url += `&onlyActive=true`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (isMounted && json.success && Array.isArray(json.data)) {
+          setProducts(json.data);
+          if (json.data.length > 0) {
+            setSelectedProduct((prev) => prev || json.data[0]);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching inventory:', err);
+      }
+    };
+    runFetch();
+    return () => { isMounted = false; };
   }, [searchQuery, filterMinusStock, filterOnlyActive]);
 
+  // Fetch Dropdown Lookups on Mount
   useEffect(() => {
-    fetchLookups();
+    let isMounted = true;
+    const runLookups = async () => {
+      try {
+        const res = await fetch('/api/inventory/lookups');
+        const json = await res.json();
+        if (isMounted && json.success && json.data) {
+          setLookups(json.data);
+        }
+      } catch (err) {
+        console.error('Error fetching lookups:', err);
+      }
+    };
+    runLookups();
+    return () => { isMounted = false; };
   }, []);
 
   // Fetch HPP History when selecting a product
-  const fetchHppHistory = async (productId: string) => {
+  const fetchHppHistory = useCallback(async (productId: string) => {
     try {
       const res = await fetch(`/api/inventory/${productId}/hpp-history`);
       const json = await res.json();
@@ -209,16 +227,62 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
       } else {
         setHppHistory([]);
       }
-    } catch (err) {
+    } catch {
       setHppHistory([]);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (selectedProduct) {
-      fetchHppHistory(selectedProduct.id);
-    }
-  }, [selectedProduct?.id]);
+    let isMounted = true;
+    if (!selectedProduct) return;
+    const runHppHistory = async () => {
+      try {
+        const res = await fetch(`/api/inventory/${selectedProduct.id}/hpp-history`);
+        const json = await res.json();
+        if (isMounted) {
+          if (json.success && Array.isArray(json.data)) {
+            setHppHistory(json.data);
+          } else {
+            setHppHistory([]);
+          }
+        }
+      } catch {
+        if (isMounted) setHppHistory([]);
+      }
+    };
+    runHppHistory();
+    return () => { isMounted = false; };
+  }, [selectedProduct]);
+
+  // Open Add Modal
+  const handleOpenCreateModal = useCallback(() => {
+    setModalMode('create');
+    setActiveFormTab('general');
+    setFormData({
+      inventoryNo: `BRG-${Date.now().toString().slice(-4)}`,
+      barcode: `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
+      inventoryName: '',
+      inventoryBrandId: lookups.brands[0]?.id || 1,
+      inventoryCategoryId: lookups.categories[0]?.id || 1,
+      inventoryProductId: lookups.productTypes[0]?.id || 1,
+      uoMId: lookups.uoms[0]?.id || 1,
+      minStock: 5,
+      maxStock: 50,
+      kodeHarga: '1 Okt 2026',
+      description: '',
+      price: 0,
+      disc: 0,
+      isActive: true,
+      hpp: 0,
+      priceBuy: 0,
+      grosir1: 0,
+      grosir2: 0,
+      grosir3: 0,
+      stokAwal: 0,
+      stokAkhir: 0,
+    });
+    setIsFormModalOpen(true);
+  }, [lookups]);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -239,7 +303,7 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFormModalOpen, isOpnameModalOpen]);
+  }, [isFormModalOpen, isOpnameModalOpen, handleOpenCreateModal]);
 
   // Sort Handler
   const handleSort = (field: keyof ERPProduct) => {
@@ -333,36 +397,6 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
     addToast(`Berhasil mengexport ${products.length} data barang ke CSV`, 'success');
   };
 
-  // Open Add Modal
-  const handleOpenCreateModal = () => {
-    setModalMode('create');
-    setActiveFormTab('general');
-    setFormData({
-      inventoryNo: `BRG-${Date.now().toString().slice(-4)}`,
-      barcode: `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
-      inventoryName: '',
-      inventoryBrandId: lookups.brands[0]?.id || 1,
-      inventoryCategoryId: lookups.categories[0]?.id || 1,
-      inventoryProductId: lookups.productTypes[0]?.id || 1,
-      uoMId: lookups.uoms[0]?.id || 1,
-      minStock: 5,
-      maxStock: 50,
-      kodeHarga: '1 Okt 2026',
-      description: '',
-      price: 0,
-      disc: 0,
-      isActive: true,
-      hpp: 0,
-      priceBuy: 0,
-      grosir1: 0,
-      grosir2: 0,
-      grosir3: 0,
-      stokAwal: 0,
-      stokAkhir: 0,
-    });
-    setIsFormModalOpen(true);
-  };
-
   // Open Edit Modal
   const handleOpenEditModal = (product: ERPProduct) => {
     setSelectedProduct(product);
@@ -395,8 +429,9 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
       } else {
         addToast(`Gagal menyimpan: ${json.error}`, 'error');
       }
-    } catch (err: any) {
-      addToast(`Terjadi kesalahan: ${err.message}`, 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Terjadi kesalahan: ${message}`, 'error');
     }
   };
 
@@ -412,8 +447,9 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
       } else {
         addToast(`Gagal menghapus: ${json.error}`, 'error');
       }
-    } catch (err: any) {
-      addToast(`Error: ${err.message}`, 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Error: ${message}`, 'error');
     }
   };
 
@@ -444,8 +480,9 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
       } else {
         addToast(`Gagal opname: ${json.error}`, 'error');
       }
-    } catch (err: any) {
-      addToast(`Error: ${err.message}`, 'error');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Error: ${message}`, 'error');
     }
   };
 
@@ -801,12 +838,11 @@ export default function MasterBarangManager({ isDark }: MasterBarangManagerProps
                     </td>
                   </tr>
                 ) : (
-                  paginatedProducts.map((item, idx) => (
+                  paginatedProducts.map((item) => (
                     <tr
                       key={item.id}
                       onClick={() => {
                         setSelectedProduct(item);
-                        setSelectedIndex(idx);
                       }}
                       onDoubleClick={() => handleOpenEditModal(item)}
                       onContextMenu={(e) => {

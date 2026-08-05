@@ -70,9 +70,14 @@ export interface Supplier {
   onBehalfOf?: string;
   creditLimit?: number;
   contactPerson: string;
+  contactPersonAddress?: string;
+  contactPersonPhone1?: string;
+  contactPersonPhone2?: string;
   email?: string;
   taxNo?: string;
   isTaxable?: boolean;
+  description?: string;
+  isActive?: boolean;
   modifiedDate?: string;
 }
 

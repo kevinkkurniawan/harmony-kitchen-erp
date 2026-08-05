@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     `;
 
     const whereConditions: string[] = [];
-    const values: any[] = [];
+    const values: (string | number | boolean)[] = [];
 
     if (q) {
       values.push(`%${q}%`);
@@ -68,8 +68,9 @@ export async function GET(request: Request) {
 
     const result = await pool.query(queryText, values);
     return NextResponse.json({ success: true, data: result.rows, count: result.rowCount });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
@@ -140,7 +141,8 @@ export async function POST(request: Request) {
 
     await pool.query(insertQuery, values);
     return NextResponse.json({ success: true, message: 'Barang berhasil ditambahkan', id: newId });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

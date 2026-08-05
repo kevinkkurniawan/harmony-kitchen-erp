@@ -10,26 +10,25 @@ import {
   ShoppingBag,
   Sun,
   Moon,
-  Search,
   BarChart3,
-  Calendar,
   FileSpreadsheet,
   ShieldCheck,
   UserCheck,
   User as UserIcon,
-  Check,
-  X,
-  Plus,
   Trash2,
-  Lock,
   Database,
-  ChevronRight,
   Sparkles,
+  DollarSign,
 } from 'lucide-react';
 import { MOCK_ERP_USERS, ERPUser } from '@/types/user';
-import { ERPProduct, Supplier, StockSyncItem, PromoRule, GoodsReceipt, SalesMonitoringRow, SalesReportDailyRow } from '@/types/erp';
 import LoginModal from '@/components/LoginModal';
 import MasterBarangManager from '@/components/MasterBarangManager';
+import MasterPromoManager from '@/components/MasterPromoManager';
+import MasterSupplierManager from '@/components/MasterSupplierManager';
+import PenerimaanBarangEkspressManager from '@/components/PenerimaanBarangEkspressManager';
+import PenerimaanBarangHargaManager from '@/components/PenerimaanBarangHargaManager';
+import SyncStockManager from '@/components/SyncStockManager';
+import SalesMonitoringManager from '@/components/SalesMonitoringManager';
 
 export default function ERPDashboard() {
   const [currentUser, setCurrentUser] = useState<ERPUser | null>(MOCK_ERP_USERS[0]); // Default Admin ERP
@@ -37,58 +36,18 @@ export default function ERPDashboard() {
 
   const [activeTab, setActiveTab] = useState<
     | 'master-barang'
+    | 'inventory-stok'
     | 'sync-stok'
     | 'master-promo'
     | 'master-supplier'
     | 'penerimaan-barang'
+    | 'penerimaan-barang-harga'
     | 'sales-monitoring'
     | 'laporan-penjualan'
     | 'user-management'
   >('master-barang');
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDate, setSelectedDate] = useState('31 Jul 2026');
-
-  // Live PostgreSQL State
-  const [productsList, setProductsList] = useState<ERPProduct[]>([]);
-  const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Fetch live inventory data from local PostgreSQL
-  React.useEffect(() => {
-    async function fetchInventory() {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`/api/inventory?q=${encodeURIComponent(searchQuery)}`);
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          setProductsList(json.data);
-        }
-      } catch (err) {
-        console.error('Failed to load PostgreSQL inventory:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchInventory();
-  }, [searchQuery]);
-
-  // Fetch live supplier data from local PostgreSQL
-  React.useEffect(() => {
-    async function fetchSuppliers() {
-      try {
-        const res = await fetch('/api/suppliers');
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          setSuppliersList(json.data);
-        }
-      } catch (err) {
-        console.error('Failed to load PostgreSQL suppliers:', err);
-      }
-    }
-    fetchSuppliers();
-  }, []);
 
   // ERP User Management State
   const [usersList, setUsersList] = useState<ERPUser[]>(MOCK_ERP_USERS);
@@ -96,9 +55,7 @@ export default function ERPDashboard() {
   const handleDeleteUser = (id: string) => {
     setUsersList((prev) => prev.filter((u) => u.id !== id));
   };
-  const [newUsername, setNewUsername] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState<'admin' | 'staff' | 'manager'>('staff');
+
 
   const isDark = theme === 'dark';
   const isAdmin = currentUser?.role === 'admin';
@@ -200,9 +157,9 @@ export default function ERPDashboard() {
                 <span>Master Barang</span>
               </button>
               <button
-                onClick={() => setActiveTab('sync-stok')}
+                onClick={() => setActiveTab('inventory-stok')}
                 className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
-                  activeTab === 'sync-stok'
+                  activeTab === 'inventory-stok'
                     ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
                     : isDark
                     ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
@@ -259,6 +216,19 @@ export default function ERPDashboard() {
                 <Package className="w-4 h-4 text-orange-400" />
                 <span>Penerimaan Barang Ekspress</span>
               </button>
+              <button
+                onClick={() => setActiveTab('penerimaan-barang-harga')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                  activeTab === 'penerimaan-barang-harga'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                    : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                }`}
+              >
+                <DollarSign className="w-4 h-4 text-emerald-400" />
+                <span>Penerimaan Barang dengan Harga</span>
+              </button>
             </div>
 
             {/* 3. SALES GROUP */}
@@ -267,6 +237,19 @@ export default function ERPDashboard() {
                 <BarChart3 className="w-3.5 h-3.5 text-amber-500" />
                 <span>Sales</span>
               </div>
+              <button
+                onClick={() => setActiveTab('sync-stok')}
+                className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
+                  activeTab === 'sync-stok'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                    : isDark
+                    ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
+                    : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                }`}
+              >
+                <RefreshCw className="w-4 h-4 text-emerald-400" />
+                <span>Sync Stock</span>
+              </button>
               <button
                 onClick={() => setActiveTab('sales-monitoring')}
                 className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 ${
@@ -330,65 +313,18 @@ export default function ERPDashboard() {
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" />}
+          {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" />}
+          {activeTab === 'sync-stok' && <SyncStockManager isDark={isDark} />}
 
-          {activeTab === 'sync-stok' && (
-            <div className="flex-1 flex p-4 gap-4 overflow-hidden">
-              <div className="flex-1 flex flex-col rounded-2xl border bg-slate-900 border-slate-800 p-4">
-                <h3 className="font-bold text-sm text-white mb-2">Sync Inventory Stock</h3>
-                <p className="text-xs text-slate-400">Sinkronisasi stok barang antara ERP dan POS secara real-time.</p>
-              </div>
-            </div>
-          )}
+          {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}
 
-          {activeTab === 'master-promo' && (
-            <div className="flex-1 p-4 overflow-hidden">
-              <div className="rounded-2xl border bg-slate-900 border-slate-800 p-4">
-                <h3 className="font-bold text-sm text-white mb-2">Master Promo & Grosir Tier</h3>
-                <p className="text-xs text-slate-400">Pengaturan diskon bertingkat dan promo grosir.</p>
-              </div>
-            </div>
-          )}
+          {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
-          {activeTab === 'master-supplier' && (
-            <div className="flex-1 p-4 overflow-auto">
-              <div className="rounded-2xl border bg-slate-900 border-slate-800 p-4">
-                <h3 className="font-bold text-sm text-white mb-4">Master Supplier ({suppliersList.length})</h3>
-                <div className="space-y-2">
-                  {suppliersList.map((sup) => (
-                    <div key={sup.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex justify-between text-xs">
-                      <div>
-                        <div className="font-bold text-amber-400">{sup.supplierName}</div>
-                        <div className="text-slate-400">{sup.address}</div>
-                      </div>
-                      <div className="text-right text-slate-400">
-                        <div>Telp: {sup.phone1 || '-'}</div>
-                        <div className="font-mono text-emerald-400">{sup.supplierNo}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} />}
+          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
 
-          {activeTab === 'penerimaan-barang' && (
-            <div className="flex-1 p-4 overflow-hidden">
-              <div className="rounded-2xl border bg-slate-900 border-slate-800 p-4">
-                <h3 className="font-bold text-sm text-white mb-2">Penerimaan Barang (Goods Receipt)</h3>
-                <p className="text-xs text-slate-400">Input material receive (MR) dan update HPP otomatis.</p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'sales-monitoring' && (
-            <div className="flex-1 p-4 overflow-hidden">
-              <div className="rounded-2xl border bg-slate-900 border-slate-800 p-4">
-                <h3 className="font-bold text-sm text-white mb-2">Sales Monitoring Real-time</h3>
-                <p className="text-xs text-slate-400">Pantau seluruh kasir dan transaksi POS aktif.</p>
-              </div>
-            </div>
-          )}
+          {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} />}
 
           {activeTab === 'laporan-penjualan' && (
             <div className="flex-1 p-4 overflow-hidden">

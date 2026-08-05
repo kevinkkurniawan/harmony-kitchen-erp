@@ -79,8 +79,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     await pool.query(updateQuery, values);
     return NextResponse.json({ success: true, message: 'Data barang berhasil diperbarui' });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
@@ -89,7 +90,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params;
     await pool.query(`DELETE FROM m_inventory WHERE id = $1`, [parseInt(id)]);
     return NextResponse.json({ success: true, message: 'Barang berhasil dihapus' });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

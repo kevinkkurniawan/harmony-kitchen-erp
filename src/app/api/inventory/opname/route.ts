@@ -4,7 +4,7 @@ import { pool } from '@/lib/db';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { inventoryId, qtyOpname, notes = 'Adjust Stok Opname' } = body;
+    const { inventoryId, qtyOpname } = body;
 
     if (!inventoryId || qtyOpname === undefined) {
       return NextResponse.json({ success: false, error: 'inventoryId and qtyOpname are required' }, { status: 400 });
@@ -20,7 +20,8 @@ export async function POST(request: Request) {
       success: true,
       message: `Opname berhasil! Stok fisik diperbarui menjadi ${qtyOpname}`,
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
