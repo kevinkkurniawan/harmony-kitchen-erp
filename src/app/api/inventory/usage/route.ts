@@ -1,192 +1,45 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
-
-async function ensureTablesExist() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS t_inventory_usage_header (
-      id SERIAL PRIMARY KEY,
-      usage_no VARCHAR(100) UNIQUE NOT NULL,
-      usage_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      department_name VARCHAR(100) DEFAULT 'Gudang Utama',
-      usage_type VARCHAR(100) DEFAULT 'Display Showroom / Sample Produk',
-      wh_name VARCHAR(100) DEFAULT 'Gudang Utama Kitchenware',
-      pic_name VARCHAR(100) DEFAULT 'Supervisor Gudang',
-      description TEXT,
-      total_amount NUMERIC(15, 2) DEFAULT 0,
-      status VARCHAR(50) DEFAULT 'Approved',
-      created_by VARCHAR(100) DEFAULT 'Admin',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS t_inventory_usage_detail (
-      id SERIAL PRIMARY KEY,
-      header_id INT REFERENCES t_inventory_usage_header(id) ON DELETE CASCADE,
-      inventory_id INT,
-      barcode VARCHAR(100),
-      inventory_no VARCHAR(100),
-      inventory_name VARCHAR(255),
-      uom_name VARCHAR(50),
-      qty INT NOT NULL DEFAULT 1,
-      unit_price NUMERIC(15, 2) DEFAULT 0,
-      subtotal NUMERIC(15, 2) DEFAULT 0,
-      notes TEXT
-    );
-  `);
-
-  // Reset if count > 0 and contains legacy restaurant terms
-  const checkRes = await pool.query(`SELECT COUNT(*)::int AS count FROM t_inventory_usage_header WHERE pic_name LIKE '%Chef%' OR description LIKE '%masak%';`);
-  if (checkRes.rows[0].count > 0) {
-    await pool.query(`DELETE FROM t_inventory_usage_header;`);
-  }
-
-  // Seed Inventory Usage entries if count < 3
-  const countRes = await pool.query(`SELECT COUNT(*)::int AS count FROM t_inventory_usage_header;`);
-  if (countRes.rows[0].count < 3) {
-    const invRes = await pool.query(`SELECT id, barcode, inventory_no, inventory_name, hpp, price FROM m_inventory ORDER BY id ASC LIMIT 20;`);
-
-    const invs = invRes.rows.length > 0 ? invRes.rows : [
-      { id: 1, barcode: '8991001', inventory_no: 'INV-001', inventory_name: 'Wajan Anti Lengket Maspion 30cm', hpp: 175000 },
-      { id: 2, barcode: '8991002', inventory_no: 'INV-002', inventory_name: 'Panci Stockpot Stainless Steel 40L', hpp: 650000 },
-      { id: 3, barcode: '8991003', inventory_no: 'INV-003', inventory_name: 'Pisau Dapur Chef Knife 8 inch', hpp: 125000 }
-    ];
-
-    const seedUsages = [
-      {
-        usage_no: 'USG-241101-001',
-        department_name: 'Showroom / Toko Utama',
-        usage_type: 'Display Showroom / Sample Produk',
-        wh_name: 'Gudang Utama Kitchenware',
-        pic_name: 'Joko Widodo (Supervisor)',
-        description: 'Pemakaian wajan & panci stainless untuk sampel pajangan toko',
-        status: 'Completed',
-        items: [
-          { inv: invs[0], qty: 2, unit_price: 175000, notes: 'Display etalase depan' }
-        ]
-      },
-      {
-        usage_no: 'USG-241102-002',
-        department_name: 'Divisi Logistik',
-        usage_type: 'Barang Cacat / Damaged Pack',
-        wh_name: 'Gudang Utama Kitchenware',
-        pic_name: 'Bambang Sudirman (Manager)',
-        description: 'Pencatatan dus penyok dan produk pisau yang penyok kardusnya',
-        status: 'Approved',
-        items: [
-          { inv: invs[2] || invs[0], qty: 1, unit_price: 125000, notes: 'Kemasan rusak saat proses unloading' }
-        ]
-      },
-      {
-        usage_no: 'USG-241103-003',
-        department_name: 'Showroom / Toko Utama',
-        usage_type: 'Operasional Toko / Demonstration',
-        wh_name: 'Gudang Utama Kitchenware',
-        pic_name: 'Siti Aminah (Sales)',
-        description: 'Pemakaian produk demo timbangan digital untuk customer B2B',
-        status: 'Approved',
-        items: [
-          { inv: invs[0], qty: 1, unit_price: 175000, notes: 'Demo unit customer catering' }
-        ]
-      }
-    ];
-
-    for (const usg of seedUsages) {
-      let totalAmount = 0;
-      for (const item of usg.items) {
-        totalAmount += item.qty * item.unit_price;
-      }
-
-      const headerIns = await pool.query(
-        `INSERT INTO t_inventory_usage_header (
-          usage_no, department_name, usage_type, wh_name, pic_name, description, total_amount, status, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Admin')
-        ON CONFLICT (usage_no) DO NOTHING
-        RETURNING id;`,
-        [
-          usg.usage_no,
-          usg.department_name,
-          usg.usage_type,
-          usg.wh_name,
-          usg.pic_name,
-          usg.description,
-          totalAmount,
-          usg.status
-        ]
-      );
-
-      const headerId = headerIns.rows[0]?.id;
-      if (headerId) {
-        for (const item of usg.items) {
-          const itemSub = item.qty * item.unit_price;
-          await pool.query(
-            `INSERT INTO t_inventory_usage_detail (
-              header_id, inventory_id, barcode, inventory_no, inventory_name, uom_name, qty, unit_price, subtotal, notes
-            ) VALUES ($1, $2, $3, $4, $5, 'PCS', $6, $7, $8, $9);`,
-            [
-              headerId,
-              item.inv.id,
-              item.inv.barcode || '8991000',
-              item.inv.inventory_no || 'INV-000',
-              item.inv.inventory_name || 'Kitchenware Product',
-              item.qty,
-              item.unit_price,
-              itemSub,
-              item.notes || ''
-            ]
-          );
-        }
-      }
-    }
-  }
-}
+import { prisma } from '@/lib/db';
 
 export async function GET(req: Request) {
   try {
-    await ensureTablesExist();
-
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
     const q = searchParams.get('q') || '';
-    const status = searchParams.get('status');
 
-    if (id) {
-      const headerRes = await pool.query(`SELECT * FROM t_inventory_usage_header WHERE id = $1;`, [id]);
-      if (headerRes.rows.length === 0) {
-        return NextResponse.json({ success: false, error: 'Pemakaian Barang tidak ditemukan' }, { status: 404 });
-      }
-      const detailRes = await pool.query(`SELECT * FROM t_inventory_usage_detail WHERE header_id = $1 ORDER BY id ASC;`, [id]);
-      return NextResponse.json({
-        success: true,
-        data: {
-          header: headerRes.rows[0],
-          items: detailRes.rows
-        }
-      });
-    }
+    const headers = await prisma.inventoryUsageHeader.findMany({
+      where: q
+        ? {
+            OR: [
+              { usageNo: { contains: q, mode: 'insensitive' } },
+              { whName: { contains: q, mode: 'insensitive' } },
+              { description: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      include: {
+        details: true,
+      },
+      orderBy: { id: 'desc' },
+    });
 
-    let query = `
-      SELECT h.*, 
-        COUNT(d.id)::int AS item_count, 
-        COALESCE(SUM(d.qty), 0)::int AS total_qty
-      FROM t_inventory_usage_header h
-      LEFT JOIN t_inventory_usage_detail d ON h.id = d.header_id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
+    const mapped = headers.map((h) => ({
+      id: h.id,
+      usage_no: h.usageNo,
+      usage_date: h.usageDate,
+      wh_name: h.whName,
+      description: h.description || '',
+      items: h.details.map((d) => ({
+        id: d.id,
+        barcode: d.barcode,
+        inventory_no: d.inventoryNo,
+        inventory_name: d.inventoryName,
+        qty: d.qty,
+        uom_name: d.uomName,
+        notes: d.notes || '',
+      })),
+    }));
 
-    if (q) {
-      params.push(`%${q}%`);
-      query += ` AND (h.usage_no ILIKE $${params.length} OR h.department_name ILIKE $${params.length} OR h.usage_type ILIKE $${params.length} OR h.pic_name ILIKE $${params.length} OR h.description ILIKE $${params.length})`;
-    }
-
-    if (status && status !== 'ALL') {
-      params.push(status);
-      query += ` AND h.status = $${params.length}`;
-    }
-
-    query += ` GROUP BY h.id ORDER BY h.id DESC;`;
-
-    const res = await pool.query(query, params);
-    return NextResponse.json({ success: true, data: res.rows });
+    return NextResponse.json({ success: true, data: mapped });
   } catch (error: any) {
     console.error('Error in GET /api/inventory/usage:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -195,134 +48,47 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    await ensureTablesExist();
-
     const body = await req.json();
-    const {
-      usage_no,
-      usage_date,
-      department_name = 'Gudang Utama',
-      usage_type = 'Display Showroom / Sample Produk',
-      wh_name = 'Gudang Utama Kitchenware',
-      pic_name = 'Supervisor Gudang',
-      description = '',
-      status = 'Approved',
-      created_by = 'Admin',
-      items = []
-    } = body;
+    const { usage_no, usage_date, wh_name, description, items } = body;
 
-    if (!usage_no || !items || items.length === 0) {
-      return NextResponse.json({ success: false, error: 'Data pemakaian tidak lengkap / item kosong' }, { status: 400 });
+    if (!usage_no || !items || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ success: false, error: 'No. Pemakaian dan detail barang wajib diisi' }, { status: 400 });
     }
 
-    let totalAmount = 0;
-    for (const item of items) {
-      const itemPrice = Number(item.unitPrice || item.unit_price || 0);
-      const qty = Number(item.qty || 1);
-      totalAmount += qty * itemPrice;
+    const created = await prisma.inventoryUsageHeader.create({
+      data: {
+        usageNo: usage_no,
+        usageDate: usage_date ? new Date(usage_date) : new Date(),
+        whName: wh_name || 'Gudang Utama',
+        description,
+        details: {
+          create: items.map((it: any) => ({
+            barcode: it.barcode,
+            inventoryNo: it.inventory_no || it.inventoryNo,
+            inventoryName: it.inventory_name || it.inventoryName,
+            qty: Number(it.qty),
+            uomName: it.uom_name || it.uomName || 'Pcs',
+            notes: it.notes || null,
+          })),
+        },
+      },
+      include: {
+        details: true,
+      },
+    });
+
+    for (const it of items) {
+      await prisma.inventory.updateMany({
+        where: { barcode: it.barcode },
+        data: {
+          stock: { decrement: Number(it.qty) },
+        },
+      }).catch(() => {});
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const headerRes = await client.query(
-        `INSERT INTO t_inventory_usage_header (
-          usage_no, usage_date, department_name, usage_type, wh_name, pic_name, description,
-          total_amount, status, created_by
-        ) VALUES ($1, COALESCE($2::timestamp, NOW()), $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING id;`,
-        [
-          usage_no,
-          usage_date || null,
-          department_name,
-          usage_type,
-          wh_name,
-          pic_name,
-          description,
-          totalAmount,
-          status,
-          created_by
-        ]
-      );
-
-      const headerId = headerRes.rows[0].id;
-
-      for (const item of items) {
-        const itemPrice = Number(item.unitPrice || item.unit_price || 0);
-        const qty = Number(item.qty || 1);
-        const itemSub = qty * itemPrice;
-
-        await client.query(
-          `INSERT INTO t_inventory_usage_detail (
-            header_id, inventory_id, barcode, inventory_no, inventory_name, uom_name, qty, unit_price, subtotal, notes
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);`,
-          [
-            headerId,
-            item.inventoryId || item.inventory_id || null,
-            item.barcode || '',
-            item.inventoryNo || item.inventory_no || '',
-            item.inventoryName || item.inventory_name || '',
-            item.uomName || item.uom_name || 'PCS',
-            qty,
-            itemPrice,
-            itemSub,
-            item.notes || ''
-          ]
-        );
-      }
-
-      await client.query('COMMIT');
-      return NextResponse.json({ success: true, message: 'Pemakaian barang berhasil disimpan', id: headerId });
-    } catch (err: any) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    return NextResponse.json({ success: true, message: 'Pemakaian barang berhasil disimpan', data: created });
   } catch (error: any) {
     console.error('Error in POST /api/inventory/usage:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
-}
-
-export async function PUT(req: Request) {
-  try {
-    await ensureTablesExist();
-    const body = await req.json();
-    const { id, status, description } = body;
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID Pemakaian Barang diperlukan' }, { status: 400 });
-    }
-
-    if (status) {
-      await pool.query(`UPDATE t_inventory_usage_header SET status = $1 WHERE id = $2;`, [status, id]);
-    } else {
-      await pool.query(`UPDATE t_inventory_usage_header SET description = $1 WHERE id = $2;`, [description, id]);
-    }
-
-    return NextResponse.json({ success: true, message: 'Status pemakaian berhasil diperbarui' });
-  } catch (error: any) {
-    console.error('Error in PUT /api/inventory/usage:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    await ensureTablesExist();
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID Pemakaian Barang diperlukan' }, { status: 400 });
-    }
-
-    await pool.query(`UPDATE t_inventory_usage_header SET status = 'Cancelled' WHERE id = $1;`, [id]);
-    return NextResponse.json({ success: true, message: 'Pemakaian Barang berhasil dibatalkan' });
-  } catch (error: any) {
-    console.error('Error in DELETE /api/inventory/usage:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
