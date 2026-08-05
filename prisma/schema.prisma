@@ -1,0 +1,423 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User & Access Permissions
+model User {
+  id          Int                  @id @default(autoincrement())
+  username    String               @unique
+  password    String               @default("123456")
+  fullName    String               @map("full_name")
+  userLevel   String               @default("Staff") @map("user_level")
+  isActive    Boolean              @default(true) @map("is_active")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  permissions UserModulePermission[]
+
+  @@map("t_access_user")
+}
+
+model UserModulePermission {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleCode String   @map("module_code")
+  canView    Boolean  @default(true) @map("can_view")
+  canAdd     Boolean  @default(true) @map("can_add")
+  canEdit    Boolean  @default(true) @map("can_edit")
+  canDelete  Boolean  @default(true) @map("can_delete")
+  canPrint   Boolean  @default(true) @map("can_print")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, moduleCode])
+  @@map("t_access_user_module")
+}
+
+// Master Employee & Position
+model Position {
+  id           Int        @id @default(autoincrement())
+  positionNo   String     @unique @map("position_no")
+  positionName String     @map("position_name")
+  description  String?
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  employees    Employee[]
+
+  @@map("m_position")
+}
+
+model Employee {
+  id           Int       @id @default(autoincrement())
+  employeeNo   String    @unique @map("employee_no")
+  employeeName String    @map("employee_name")
+  positionId   Int?      @map("position_id")
+  position     Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  positionName String?   @map("position_name")
+  description  String?
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@map("m_employee")
+}
+
+// Master Customer
+model Customer {
+  id            Int      @id @default(autoincrement())
+  customerCode  String   @unique @map("customer_code")
+  customerName  String   @map("customer_name")
+  customerType  String   @default("Reguler") @map("customer_type")
+  address       String?
+  city          String?
+  phone         String?
+  fax           String?
+  email         String?
+  contactPerson String?  @map("contact_person")
+  creditLimit   Float    @default(0) @map("credit_limit")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("m_customer")
+}
+
+// Master Bank
+model BankAccount {
+  id            Int      @id @default(autoincrement())
+  bankCode      String   @unique @map("bank_code")
+  bankName      String   @map("bank_name")
+  accountNo     String?  @map("account_no")
+  accountHolder String?  @map("account_holder")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("m_bank_account")
+}
+
+// Master Supplier
+model Supplier {
+  id           Int      @id @default(autoincrement())
+  supplierCode String   @unique @map("supplier_code")
+  supplierName String   @map("supplier_name")
+  supplierType String   @default("Lokal") @map("supplier_type")
+  address      String?
+  city         String?
+  phone        String?
+  fax          String?
+  email        String?
+  contactPerson String? @map("contact_person")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("m_supplier")
+}
+
+// Master Inventory
+model Category {
+  id           Int         @id @default(autoincrement())
+  categoryCode String      @unique @map("category_code")
+  categoryName String      @map("category_name")
+  inventories  Inventory[]
+
+  @@map("m_category")
+}
+
+model Brand {
+  id          Int         @id @default(autoincrement())
+  brandCode   String      @unique @map("brand_code")
+  brandName   String      @map("brand_name")
+  inventories Inventory[]
+
+  @@map("m_brand")
+}
+
+model UoM {
+  id          Int         @id @default(autoincrement())
+  uomCode     String      @unique @map("uom_code")
+  uomName     String      @map("uom_name")
+  inventories Inventory[]
+
+  @@map("m_uom")
+}
+
+model Inventory {
+  id            Int       @id @default(autoincrement())
+  barcode       String    @unique
+  inventoryNo   String    @unique @map("inventory_no")
+  inventoryName String    @map("inventory_name")
+  categoryId    Int?      @map("category_id")
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brandId       Int?      @map("brand_id")
+  brand         Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  uomId         Int?      @map("uom_id")
+  uom           UoM?      @relation(fields: [uomId], references: [id], onDelete: SetNull)
+  hpp           Float     @default(0)
+  price         Float     @default(0)
+  stock         Int       @default(0)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("m_inventory")
+}
+
+// Master Promo
+model PromoGroup {
+  id        Int      @id @default(autoincrement())
+  groupName String   @map("group_name")
+  promos    Promo[]
+
+  @@map("m_promo_group")
+}
+
+model Promo {
+  id          Int         @id @default(autoincrement())
+  promoNo     String      @unique @map("promo_no")
+  promoName   String      @map("promo_name")
+  groupId     Int?        @map("group_id")
+  group       PromoGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  discountPct Float       @default(0) @map("discount_pct")
+  startDate   DateTime    @map("start_date")
+  endDate     DateTime    @map("end_date")
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@map("m_promo")
+}
+
+// Transaction: Inventory Usage
+model InventoryUsageHeader {
+  id          Int                    @id @default(autoincrement())
+  usageNo     String                 @unique @map("usage_no")
+  usageDate   DateTime               @map("usage_date")
+  whName      String                 @map("wh_name")
+  description String?
+  createdAt   DateTime               @default(now()) @map("created_at")
+  details     InventoryUsageDetail[]
+
+  @@map("t_inventory_usage_header")
+}
+
+model InventoryUsageDetail {
+  id            Int                  @id @default(autoincrement())
+  headerId      Int                  @map("header_id")
+  header        InventoryUsageHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String               @map("inventory_no")
+  inventoryName String               @map("inventory_name")
+  qty           Int
+  uomName       String               @map("uom_name")
+  notes         String?
+
+  @@map("t_inventory_usage_detail")
+}
+
+// Transaction: Opname
+model OpnameHeader {
+  id         Int            @id @default(autoincrement())
+  opnameNo   String         @unique @map("opname_no")
+  opnameDate DateTime       @map("opname_date")
+  whName     String         @map("wh_name")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  details    OpnameDetail[]
+
+  @@map("t_opname_header")
+}
+
+model OpnameDetail {
+  id            Int          @id @default(autoincrement())
+  headerId      Int          @map("header_id")
+  header        OpnameHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String       @map("inventory_no")
+  inventoryName String       @map("inventory_name")
+  systemQty     Int          @map("system_qty")
+  physicalQty   Int          @map("physical_qty")
+  diffQty       Int          @map("diff_qty")
+
+  @@map("t_opname_detail")
+}
+
+// Transaction: Purchase Request (PR)
+model PurchaseRequestHeader {
+  id           Int                     @id @default(autoincrement())
+  prNo         String                  @unique @map("pr_no")
+  prDate       DateTime                @map("pr_date")
+  requiredDate DateTime                @map("required_date")
+  description  String?
+  status       String                  @default("Draft")
+  createdAt    DateTime                @default(now()) @map("created_at")
+  details      PurchaseRequestDetail[]
+
+  @@map("t_purchase_request_header")
+}
+
+model PurchaseRequestDetail {
+  id            Int                   @id @default(autoincrement())
+  headerId      Int                   @map("header_id")
+  header        PurchaseRequestHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String                @map("inventory_no")
+  inventoryName String                @map("inventory_name")
+  qty           Int
+  uomName       String                @map("uom_name")
+  notes         String?
+
+  @@map("t_purchase_request_detail")
+}
+
+// Transaction: Purchase Order (PO)
+model PurchaseOrderHeader {
+  id           Int                   @id @default(autoincrement())
+  poNo         String                @unique @map("po_no")
+  poDate       DateTime              @map("po_date")
+  supplierName String                @map("supplier_name")
+  deliveryDate DateTime              @map("delivery_date")
+  description  String?
+  subtotal     Float                 @default(0)
+  tax          Float                 @default(0)
+  grandTotal   Float                 @default(0) @map("grand_total")
+  status       String                @default("Approved")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  details      PurchaseOrderDetail[]
+
+  @@map("t_purchase_order_header")
+}
+
+model PurchaseOrderDetail {
+  id            Int                 @id @default(autoincrement())
+  headerId      Int                 @map("header_id")
+  header        PurchaseOrderHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String              @map("inventory_no")
+  inventoryName String              @map("inventory_name")
+  qty           Int
+  unitPrice     Float               @default(0) @map("unit_price")
+  subtotal      Float               @default(0)
+
+  @@map("t_purchase_order_detail")
+}
+
+// Transaction: Material Receivement (MR / Express & Priced)
+model MaterialReceiveHeader {
+  id           Int                     @id @default(autoincrement())
+  mrNo         String                  @unique @map("mr_no")
+  mrDate       DateTime                @map("mr_date")
+  poNo         String?                 @map("po_no")
+  supplierName String                  @map("supplier_name")
+  isPriced     Boolean                 @default(false) @map("is_priced")
+  createdAt    DateTime                @default(now()) @map("created_at")
+  details      MaterialReceiveDetail[]
+
+  @@map("t_material_receive_header")
+}
+
+model MaterialReceiveDetail {
+  id            Int                   @id @default(autoincrement())
+  headerId      Int                   @map("header_id")
+  header        MaterialReceiveHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String                @map("inventory_no")
+  inventoryName String                @map("inventory_name")
+  qty           Int
+  unitPrice     Float                 @default(0) @map("unit_price")
+  subtotal      Float                 @default(0)
+
+  @@map("t_material_receive_detail")
+}
+
+// Transaction: Purchase Payment
+model PurchasePaymentHeader {
+  id            Int                     @id @default(autoincrement())
+  paymentNo     String                  @unique @map("payment_no")
+  paymentDate   DateTime                @map("payment_date")
+  supplierName  String                  @map("supplier_name")
+  bankName      String                  @map("bank_name")
+  referenceNo   String?                 @map("reference_no")
+  grandTotal    Float                   @default(0) @map("grand_total")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  details       PurchasePaymentDetail[]
+
+  @@map("t_purchase_payment_header")
+}
+
+model PurchasePaymentDetail {
+  id          Int                   @id @default(autoincrement())
+  headerId    Int                   @map("header_id")
+  header      PurchasePaymentHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  invoiceNo   String                @map("invoice_no")
+  amountPaid  Float                 @map("amount_paid")
+
+  @@map("t_purchase_payment_detail")
+}
+
+// Transaction: Purchase Return
+model PurchaseReturnHeader {
+  id           Int                    @id @default(autoincrement())
+  returnNo     String                 @unique @map("return_no")
+  returnDate   DateTime               @map("return_date")
+  mrNo         String                 @map("mr_no")
+  supplierName String                 @map("supplier_name")
+  returnReason String?                @map("return_reason")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  details      PurchaseReturnDetail[]
+
+  @@map("t_purchase_return_header")
+}
+
+model PurchaseReturnDetail {
+  id            Int                  @id @default(autoincrement())
+  headerId      Int                  @map("header_id")
+  header        PurchaseReturnHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String               @map("inventory_no")
+  inventoryName String               @map("inventory_name")
+  qty           Int
+
+  @@map("t_purchase_return_detail")
+}
+
+// Transaction: Sales POS
+model SalesPOSHeader {
+  id             Int              @id @default(autoincrement())
+  salesPOSNo     String           @unique @map("sales_pos_no")
+  salesPOSDate   DateTime         @map("sales_pos_date")
+  customerName   String           @default("Umum") @map("customer_name")
+  totalAmount    Float            @default(0) @map("total_amount")
+  discountAmount Float            @default(0) @map("discount_amount")
+  grandTotal     Float            @default(0) @map("grand_total")
+  cashierName    String           @default("Kasir ERP") @map("cashier_name")
+  status         String           @default("COMPLETED")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  details        SalesPOSDetail[]
+
+  @@map("t_sales_pos_header")
+}
+
+model SalesPOSDetail {
+  id            Int            @id @default(autoincrement())
+  headerId      Int            @map("header_id")
+  header        SalesPOSHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  barcode       String
+  inventoryNo   String         @map("inventory_no")
+  inventoryName String         @map("inventory_name")
+  qty           Int
+  price         Float          @default(0)
+  subtotal      Float          @default(0)
+
+  @@map("t_sales_pos_detail")
+}
+
+// Memo System
+model Memo {
+  id          Int      @id @default(autoincrement())
+  memoNo      String   @unique @map("memo_no")
+  title       String
+  content     String
+  author      String
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("t_memo")
+}

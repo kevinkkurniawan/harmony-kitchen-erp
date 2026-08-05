@@ -1,59 +1,38 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { prisma } from '@/lib/db';
 
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
+    const body = await req.json();
     const { username, password } = body;
 
-    if (!username) {
-      return NextResponse.json({ success: false, error: 'Username required' }, { status: 400 });
+    if (!username || !password) {
+      return NextResponse.json({ success: false, error: 'Username dan Password wajib diisi' }, { status: 400 });
     }
 
-    const cleanUsername = username.toLowerCase().trim();
+    const user = await prisma.user.findUnique({
+      where: { username },
+    });
 
-    // Query user record
-    const userRes = await pool.query(`
-      SELECT 
-        id,
-        username,
-        full_name AS "fullName",
-        user_level AS "userLevel",
-        is_active AS "isActive"
-      FROM public.t_access_user
-      WHERE LOWER(username) = $1 AND is_active = true;
-    `, [cleanUsername]);
-
-    if (userRes.rows.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'User not registered. Please contact your administrator',
-      }, { status: 401 });
+    if (!user || user.password !== password) {
+      return NextResponse.json({ success: false, error: 'Username atau Password salah' }, { status: 401 });
     }
 
-    const user = userRes.rows[0];
-
-    // Query permissions for user
-    const permRes = await pool.query(`
-      SELECT 
-        module_code AS "moduleCode",
-        can_view AS "canView",
-        can_add AS "canAdd",
-        can_edit AS "canEdit",
-        can_delete AS "canDelete",
-        can_print AS "canPrint"
-      FROM public.t_access_user_module
-      WHERE user_id = $1;
-    `, [user.id]);
+    if (!user.isActive) {
+      return NextResponse.json({ success: false, error: 'Akun Anda sedang non-aktif' }, { status: 403 });
+    }
 
     return NextResponse.json({
       success: true,
-      user,
-      permissions: permRes.rows,
-      message: `Login berhasil sebagai ${user.fullName} (${user.userLevel})`,
+      user: {
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        userLevel: user.userLevel,
+      },
     });
   } catch (error: any) {
-    console.error('Error during login process:', error);
+    console.error('Error in POST /api/auth/login:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
