@@ -9453,6 +9453,28 @@ CREATE TABLE IF NOT EXISTS public.t_pos_order_detail (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS public.t_access_user (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    full_name VARCHAR(100) NOT NULL,
+    user_level VARCHAR(50) NOT NULL DEFAULT 'Kasir',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS public.t_access_user_module (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES public.t_access_user(id) ON DELETE CASCADE,
+    module_code VARCHAR(100) NOT NULL,
+    can_view BOOLEAN DEFAULT true,
+    can_add BOOLEAN DEFAULT true,
+    can_edit BOOLEAN DEFAULT true,
+    can_delete BOOLEAN DEFAULT true,
+    can_print BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, module_code)
+);
+
 
 \unrestrict nk62eawrP7JWwhySj4BpdsJnezvn7UJALqc3QzMoicIN5GSEU6U1TR2ekwm1N3N
 
