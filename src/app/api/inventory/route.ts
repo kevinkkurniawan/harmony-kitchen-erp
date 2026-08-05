@@ -1,148 +1,89 @@
 import { NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { prisma } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q') || '';
-    const minusStock = searchParams.get('minusStock') === 'true';
+    const category = searchParams.get('category') || '';
+    const brand = searchParams.get('brand') || '';
     const onlyActive = searchParams.get('onlyActive') === 'true';
-    const limit = parseInt(searchParams.get('limit') || '500');
+    const minusStock = searchParams.get('minusStock') === 'true';
+    const limit = Number(searchParams.get('limit')) || 100;
 
-    let queryText = `
-      SELECT 
-        i.id::text AS id,
-        i.inventory_no AS "inventoryNo",
-        i.barcode,
-        i.inventory_name AS "inventoryName",
-        i.inventory_brand_id AS "inventoryBrandId",
-        b.brand_name AS "brandName",
-        i.inventory_category_id AS "inventoryCategoryId",
-        c.category_name AS "categoryName",
-        i.inventory_product_id AS "inventoryProductId",
-        pt.product_name AS "productName",
-        i.uom_id AS "uoMId",
-        u.uom_code AS "uomName",
-        i.min_stock AS "minStock",
-        i.max_stock AS "maxStock",
-        i.kode_harga AS "kodeHarga",
-        i.description,
-        i.price::float AS price,
-        i.disc::float AS disc,
-        i.is_active AS "isActive",
-        i.hpp::float AS hpp,
-        i.price_buy::float AS "priceBuy",
-        i.grosir1::float AS grosir1,
-        i.grosir2::float AS grosir2,
-        i.grosir3::float AS grosir3,
-        i.stok_awal AS "stokAwal",
-        i.stok_update AS "stokAkhir"
-      FROM m_inventory i
-      LEFT JOIN m_brand b ON i.inventory_brand_id = b.id
-      LEFT JOIN m_category c ON i.inventory_category_id = c.id
-      LEFT JOIN m_product_type pt ON i.inventory_product_id = pt.id
-      LEFT JOIN m_uom u ON i.uom_id = u.id
-    `;
-
-    const whereConditions: string[] = [];
-    const values: (string | number | boolean)[] = [];
-
+    const whereCondition: any = {};
+    if (onlyActive) whereCondition.isActive = true;
+    if (minusStock) whereCondition.stock = { lt: 20 };
+    if (category) whereCondition.category = { categoryName: category };
+    if (brand) whereCondition.brand = { brandName: brand };
     if (q) {
-      values.push(`%${q}%`);
-      whereConditions.push(`(i.inventory_no ILIKE $${values.length} OR i.barcode ILIKE $${values.length} OR i.inventory_name ILIKE $${values.length})`);
+      whereCondition.OR = [
+        { barcode: { contains: q, mode: 'insensitive' } },
+        { inventoryNo: { contains: q, mode: 'insensitive' } },
+        { inventoryName: { contains: q, mode: 'insensitive' } },
+      ];
     }
 
-    if (onlyActive) {
-      whereConditions.push(`i.is_active = TRUE`);
-    }
+    const items = await prisma.inventory.findMany({
+      where: whereCondition,
+      include: {
+        category: true,
+        brand: true,
+        uom: true,
+      },
+      orderBy: { id: 'asc' },
+      take: limit,
+    });
 
-    if (minusStock) {
-      whereConditions.push(`(i.stok_update < 0 OR i.stok_update < i.min_stock)`);
-    }
+    const mapped = items.map((inv) => ({
+      id: inv.id,
+      barcode: inv.barcode,
+      inventory_no: inv.inventoryNo,
+      inventory_name: inv.inventoryName,
+      category_name: inv.category?.categoryName || 'General',
+      brand_name: inv.brand?.brandName || 'General',
+      uom_name: inv.uom?.uomName || 'Pcs',
+      hpp: inv.hpp,
+      price: inv.price,
+      stock: inv.stock,
+      is_active: inv.isActive,
+      created_at: inv.createdAt,
+    }));
 
-    if (whereConditions.length > 0) {
-      queryText += ` WHERE ` + whereConditions.join(' AND ');
-    }
-
-    queryText += ` ORDER BY i.id ASC LIMIT ${limit};`;
-
-    const result = await pool.query(queryText, values);
-    return NextResponse.json({ success: true, data: result.rows, count: result.rowCount });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: true, data: mapped });
+  } catch (error: any) {
+    console.error('Error in GET /api/inventory:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const {
-      inventoryNo,
-      barcode,
-      inventoryName,
-      inventoryBrandId,
-      inventoryCategoryId,
-      inventoryProductId,
-      uoMId,
-      minStock = 0,
-      maxStock = 0,
-      kodeHarga = '',
-      description = '',
-      price = 0,
-      disc = 0,
-      isActive = true,
-      hpp = 0,
-      priceBuy = 0,
-      grosir1 = 0,
-      grosir2 = 0,
-      grosir3 = 0,
-      stokAwal = 0,
-    } = body;
+    const { barcode, inventory_no, inventory_name, category_id, brand_id, uom_id, hpp, price, stock, is_active } = body;
 
-    const maxIdRes = await pool.query(`SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM m_inventory`);
-    const newId = maxIdRes.rows[0].next_id;
+    if (!barcode || !inventory_no || !inventory_name) {
+      return NextResponse.json({ success: false, error: 'Barcode, Kode Barang, dan Nama Barang wajib diisi' }, { status: 400 });
+    }
 
-    const insertQuery = `
-      INSERT INTO m_inventory (
-        id, barcode, inventory_no, inventory_name, inventory_brand_id, 
-        inventory_category_id, inventory_product_id, uom_id, min_stock, 
-        max_stock, kode_harga, description, price, disc, is_active, 
-        hpp, price_buy, grosir1, grosir2, grosir3, stok_awal, stok_update
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
-      ) RETURNING id;
-    `;
+    const created = await prisma.inventory.create({
+      data: {
+        barcode,
+        inventoryNo: inventory_no,
+        inventoryName: inventory_name,
+        categoryId: category_id ? Number(category_id) : null,
+        brandId: brand_id ? Number(brand_id) : null,
+        uomId: uom_id ? Number(uom_id) : null,
+        hpp: Number(hpp || 0),
+        price: Number(price || 0),
+        stock: Number(stock || 0),
+        isActive: is_active !== undefined ? Boolean(is_active) : true,
+      },
+    });
 
-    const values = [
-      newId,
-      barcode || '',
-      inventoryNo || `BRG-${newId}`,
-      inventoryName,
-      inventoryBrandId || 1,
-      inventoryCategoryId || 1,
-      inventoryProductId || 1,
-      uoMId || 1,
-      parseInt(minStock),
-      parseInt(maxStock),
-      kodeHarga,
-      description,
-      parseFloat(price),
-      parseFloat(disc),
-      isActive,
-      parseFloat(hpp),
-      parseFloat(priceBuy),
-      parseFloat(grosir1),
-      parseFloat(grosir2),
-      parseFloat(grosir3),
-      parseInt(stokAwal),
-      parseInt(stokAwal),
-    ];
-
-    await pool.query(insertQuery, values);
-    return NextResponse.json({ success: true, message: 'Barang berhasil ditambahkan', id: newId });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: true, message: 'Barang berhasil ditambahkan', data: created });
+  } catch (error: any) {
+    console.error('Error in POST /api/inventory:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
