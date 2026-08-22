@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   RefreshCw,
   Package,
@@ -11,8 +11,6 @@ import {
   Zap,
   History,
   Search,
-  CheckSquare,
-  Square,
   ArrowRightLeft,
   Store,
   Layers,
@@ -50,17 +48,80 @@ interface SyncStockManagerProps {
   isDark: boolean;
 }
 
+// ⚡ MEMOIZED TABLE ROW COMPONENT to prevent unnecessary re-renders of off-screen or unchanged rows
+const SyncStockRow = React.memo(function SyncStockRow({
+  row,
+  isDark,
+  onToggle,
+}: {
+  row: SyncStockItem;
+  isDark: boolean;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <tr
+      onClick={() => onToggle(row.id)}
+      className={`cursor-pointer transition-colors ${
+        row.isChecked
+          ? isDark ? 'bg-indigo-950/40 hover:bg-indigo-900/50' : 'bg-indigo-50/80 hover:bg-indigo-100/80'
+          : isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'
+      }`}
+    >
+      <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={row.isChecked}
+          onChange={() => onToggle(row.id)}
+          className="w-4 h-4 accent-indigo-500 cursor-pointer rounded"
+        />
+      </td>
+      <td className="py-3.5 px-4 font-mono font-black text-indigo-400">{row.inventoryNo}</td>
+      <td className="py-3.5 px-4 font-black">{row.inventoryName}</td>
+      <td className="py-3.5 px-3 text-center font-bold">{row.uomName}</td>
+      <td className="py-3.5 px-4 text-center font-mono font-bold">{row.stokGudang}</td>
+      <td className="py-3.5 px-4 text-center font-mono font-black text-rose-400">
+        - {row.qtyTransaksi}
+      </td>
+      <td className="py-3.5 px-4 text-center font-mono font-black text-emerald-400">
+        {row.stokSetelahSync}
+      </td>
+      <td className="py-3.5 px-4 text-center">
+        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+          row.isChecked
+            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+            : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+        }`}>
+          {row.isChecked ? 'SIAP SYNC' : 'LEWATI'}
+        </span>
+      </td>
+    </tr>
+  );
+});
+
 export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
   const [items, setItems] = useState<SyncStockItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchInput, setSearchInput] = useState<string>('');
+  const [debouncedQuery, setDebouncedQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
 
   // History Modal
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [historyLogs, setHistoryLogs] = useState<SyncLogHeader[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
+
+  // Debounce search input by 300ms
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchInput);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchInput]);
 
   const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = Date.now().toString();
@@ -70,16 +131,17 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
     }, 3500);
   }, []);
 
-  // Fetch Pending Sync Items
+  // Fetch Pending Sync Items when debounced query changes
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(debouncedQuery)}&all=true`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
-          setItems(json.data);
+          setItems(json.data.map((item: SyncStockItem, idx: number) => ({ ...item, isChecked: idx < pageSize })));
+          setCurrentPage(1);
         }
       } catch (err) {
         console.error('Error fetching sync items:', err);
@@ -89,15 +151,15 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
     }
     loadData();
     return () => { isMounted = false; };
-  }, [searchQuery]);
+  }, [debouncedQuery, pageSize]);
 
   const reloadSyncItems = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(debouncedQuery)}&all=true`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        setItems(json.data);
+        setItems(json.data.map((item: SyncStockItem, idx: number) => ({ ...item, isChecked: idx < pageSize })));
       }
     } catch (err) {
       console.error('Error fetching sync items:', err);
@@ -123,16 +185,35 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
   };
 
   // Toggle Checkbox for Individual Item
-  const toggleItemCheck = (id: string) => {
+  const toggleItemCheck = useCallback((id: string) => {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, isChecked: !item.isChecked } : item))
     );
-  };
+  }, []);
 
-  // Select All / Deselect All
-  const toggleSelectAll = (checked: boolean) => {
+  // Select All / Deselect All Across Entire Dataset
+  const toggleSelectAll = useCallback((checked: boolean) => {
     setItems((prev) => prev.map((item) => ({ ...item, isChecked: checked })));
-  };
+  }, []);
+
+  // 📄 PAGINATED SLICE (Only render active page in DOM)
+  const paginatedItems = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, currentPage, pageSize]);
+
+  // Select / Deselect ONLY Currently Rendered Page Items
+  const isPageSelected = useMemo(
+    () => paginatedItems.length > 0 && paginatedItems.every((i) => i.isChecked),
+    [paginatedItems]
+  );
+
+  const togglePageSelect = useCallback((checked: boolean) => {
+    const currentIds = new Set(paginatedItems.map((i) => i.id));
+    setItems((prev) =>
+      prev.map((item) => (currentIds.has(item.id) ? { ...item, isChecked: checked } : item))
+    );
+  }, [paginatedItems]);
 
   // Execute Batch Sync
   const handleExecuteSync = async () => {
@@ -164,9 +245,18 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
     }
   };
 
-  const selectedCount = items.filter((i) => i.isChecked).length;
-  const totalPendingQty = items.reduce((acc, i) => acc + (i.isChecked ? i.qtyTransaksi : 0), 0);
-  const isAllSelected = items.length > 0 && items.every((i) => i.isChecked);
+  // ⚡ MEMOIZED CALCULATIONS
+  const selectedCount = useMemo(() => items.filter((i) => i.isChecked).length, [items]);
+  const totalPendingQty = useMemo(
+    () => items.reduce((acc, i) => acc + (i.isChecked ? i.qtyTransaksi : 0), 0),
+    [items]
+  );
+  const isAllSelected = useMemo(
+    () => items.length > 0 && items.every((i) => i.isChecked),
+    [items]
+  );
+
+  const totalPages = Math.ceil(items.length / pageSize) || 1;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
@@ -309,8 +399,8 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             <input
               type="text"
               placeholder="Cari Kode Barang / Nama Barang / SKU..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
                 isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900'
               }`}
@@ -319,16 +409,6 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => toggleSelectAll(!isAllSelected)}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer ${
-              isDark ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-900 hover:bg-slate-200'
-            }`}
-          >
-            {isAllSelected ? <CheckSquare className="w-4 h-4 text-indigo-400" /> : <Square className="w-4 h-4 text-slate-400" />}
-            <span>{isAllSelected ? 'Batalkan Pilihan Semua' : 'Pilih Semua Item'}</span>
-          </button>
-
           <button
             onClick={reloadSyncItems}
             className={`p-2 rounded-xl border hover:bg-slate-800 text-slate-400 cursor-pointer ${
@@ -343,88 +423,115 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
 
       {/* 📄 MAIN TABLE GRID OF SYNC ITEMS */}
       <div className="flex-1 overflow-auto p-4">
-        <div className={`rounded-2xl border overflow-hidden shadow-lg ${
+        <div className={`rounded-2xl border overflow-hidden shadow-lg flex flex-col h-full ${
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className={`font-black uppercase tracking-wider sticky top-0 z-10 ${
-              isDark ? 'bg-slate-800/90 text-indigo-300' : 'bg-slate-200 text-slate-950'
-            }`}>
-              <tr>
-                <th className="py-3.5 px-3 text-center w-12">
-                  <input
-                    type="checkbox"
-                    checked={isAllSelected}
-                    onChange={(e) => toggleSelectAll(e.target.checked)}
-                    className="w-4 h-4 accent-indigo-500 cursor-pointer rounded"
-                  />
-                </th>
-                <th className="py-3.5 px-4">Kode Barang</th>
-                <th className="py-3.5 px-4">Nama Barang Dapur</th>
-                <th className="py-3.5 px-3 text-center">Satuan</th>
-                <th className="py-3.5 px-4 text-center">Stok Gudang ERP</th>
-                <th className="py-3.5 px-4 text-center">Qty Penjualan POS</th>
-                <th className="py-3.5 px-4 text-center">Stok Hasil Sync</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-              {isLoading ? (
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className={`font-black uppercase tracking-wider sticky top-0 z-10 ${
+                isDark ? 'bg-slate-800/90 text-indigo-300' : 'bg-slate-200 text-slate-950'
+              }`}>
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400" />
-                    Memuat daftar barang yang perlu disinkronkan...
-                  </td>
+                  <th className="py-3.5 px-3 text-center w-12">
+                    <input
+                      type="checkbox"
+                      checked={isPageSelected}
+                      onChange={(e) => togglePageSelect(e.target.checked)}
+                      className="w-4 h-4 accent-indigo-500 cursor-pointer rounded"
+                      title="Pilih Semua Barang di Halaman Ini"
+                    />
+                  </th>
+                  <th className="py-3.5 px-4">Kode Barang</th>
+                  <th className="py-3.5 px-4">Nama Barang Dapur</th>
+                  <th className="py-3.5 px-3 text-center">Satuan</th>
+                  <th className="py-3.5 px-4 text-center">Stok Gudang ERP</th>
+                  <th className="py-3.5 px-4 text-center">Qty Penjualan POS</th>
+                  <th className="py-3.5 px-4 text-center">Stok Hasil Sync</th>
+                  <th className="py-3.5 px-4 text-center">Status</th>
                 </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
-                    Seluruh barang gudang ERP dan transaksi kasir POS sudah dalam posisi 100% sinkron.
-                  </td>
-                </tr>
-              ) : (
-                items.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => toggleItemCheck(row.id)}
-                    className={`cursor-pointer transition-colors ${
-                      row.isChecked
-                        ? isDark ? 'bg-indigo-950/40 hover:bg-indigo-900/50' : 'bg-indigo-50/80 hover:bg-indigo-100/80'
-                        : isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={row.isChecked}
-                        onChange={() => toggleItemCheck(row.id)}
-                        className="w-4 h-4 accent-indigo-500 cursor-pointer rounded"
-                      />
-                    </td>
-                    <td className="py-3.5 px-4 font-mono font-black text-indigo-400">{row.inventoryNo}</td>
-                    <td className="py-3.5 px-4 font-black">{row.inventoryName}</td>
-                    <td className="py-3.5 px-3 text-center font-bold">{row.uomName}</td>
-                    <td className="py-3.5 px-4 text-center font-mono font-bold">{row.stokGudang}</td>
-                    <td className="py-3.5 px-4 text-center font-mono font-black text-rose-400">
-                      - {row.qtyTransaksi}
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-mono font-black text-emerald-400">
-                      {row.stokSetelahSync}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
-                        row.isChecked
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
-                      }`}>
-                        {row.isChecked ? 'SIAP SYNC' : 'LEWATI'}
-                      </span>
+              </thead>
+              <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                      <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400" />
+                      Memuat daftar barang yang perlu disinkronkan...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : items.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                      Seluruh barang gudang ERP dan transaksi kasir POS sudah dalam posisi 100% sinkron.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedItems.map((row) => (
+                    <SyncStockRow
+                      key={row.id}
+                      row={row}
+                      isDark={isDark}
+                      onToggle={toggleItemCheck}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 📄 PAGINATION FOOTER */}
+          {!isLoading && items.length > 0 && (
+            <div className={`px-4 py-2.5 border-t flex items-center justify-between text-xs font-black shrink-0 ${
+              isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+            }`}>
+              <div className="flex items-center gap-3">
+                <span>
+                  Menampilkan {paginatedItems.length} dari total {items.length} barang
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span>Rows:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(parseInt(e.target.value, 10));
+                      setCurrentPage(1);
+                    }}
+                    className={`border rounded-lg px-2 py-1 text-xs cursor-pointer focus:outline-none font-black ${
+                      isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                    <option value={500}>500</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className={`px-3 py-1 rounded-lg border font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all ${
+                    isDark ? 'border-slate-700 hover:bg-slate-800 text-slate-200' : 'border-slate-300 hover:bg-slate-100 text-slate-900'
+                  }`}
+                >
+                  Sebelumnya
+                </button>
+                <span className={`font-black ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                  Halaman {currentPage} / {totalPages}
+                </span>
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className={`px-3 py-1 rounded-lg border font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all ${
+                    isDark ? 'border-slate-700 hover:bg-slate-800 text-slate-200' : 'border-slate-300 hover:bg-slate-100 text-slate-900'
+                  }`}
+                >
+                  Berikutnya
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

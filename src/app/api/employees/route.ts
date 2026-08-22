@@ -1,27 +1,36 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
 
-    const employees = await prisma.employee.findMany({
-      where: q
-        ? {
-            OR: [
-              { employeeNo: { contains: q, mode: 'insensitive' } },
-              { employeeName: { contains: q, mode: 'insensitive' } },
-              { positionName: { contains: q, mode: 'insensitive' } },
-              { description: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : undefined,
-      include: {
-        position: true,
-      },
-      orderBy: { id: 'asc' },
-    });
+    const where = q
+      ? {
+          OR: [
+            { employeeNo: { contains: q, mode: 'insensitive' as const } },
+            { employeeName: { contains: q, mode: 'insensitive' as const } },
+            { positionName: { contains: q, mode: 'insensitive' as const } },
+            { description: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, employees] = await Promise.all([
+      prisma.employee.count({ where }),
+      prisma.employee.findMany({
+        where,
+        include: {
+          position: true,
+        },
+        orderBy: { id: 'asc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = employees.map((e) => ({
       id: e.id,
@@ -34,7 +43,7 @@ export async function GET(req: Request) {
       created_at: e.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/employees:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

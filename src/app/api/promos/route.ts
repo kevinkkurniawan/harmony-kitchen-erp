@@ -1,12 +1,29 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const groups = await prisma.promoGroup.findMany({
-      include: { promos: true },
-      orderBy: { id: 'asc' },
-    });
+    const { searchParams } = new URL(req.url);
+    const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
+
+    const where = q
+      ? {
+          groupName: { contains: q, mode: 'insensitive' as const },
+        }
+      : undefined;
+
+    const [total, groups] = await Promise.all([
+      prisma.promoGroup.count({ where }),
+      prisma.promoGroup.findMany({
+        where,
+        include: { promos: true },
+        orderBy: { id: 'asc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = groups.map((g) => ({
       id: g.id,
@@ -14,7 +31,7 @@ export async function GET() {
       promos_count: g.promos.length,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/promos:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -1,27 +1,36 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
 
-    const receives = await prisma.materialReceiveHeader.findMany({
-      where: {
-        isPriced: true,
-        ...(q
-          ? {
-              OR: [
-                { mrNo: { contains: q, mode: 'insensitive' } },
-                { supplierName: { contains: q, mode: 'insensitive' } },
-                { poNo: { contains: q, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      include: { details: true },
-      orderBy: { id: 'desc' },
-    });
+    const where = {
+      isPriced: true,
+      ...(q
+        ? {
+            OR: [
+              { mrNo: { contains: q, mode: 'insensitive' as const } },
+              { supplierName: { contains: q, mode: 'insensitive' as const } },
+              { poNo: { contains: q, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, receives] = await Promise.all([
+      prisma.materialReceiveHeader.count({ where }),
+      prisma.materialReceiveHeader.findMany({
+        where,
+        include: { details: true },
+        orderBy: { id: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = receives.map((mr) => ({
       id: mr.id,
@@ -41,7 +50,7 @@ export async function GET(req: Request) {
       })),
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/purchasing/priced:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

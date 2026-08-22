@@ -1,10 +1,13 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const noTx = searchParams.get('noTx');
+    const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
 
     if (noTx) {
       const header = await prisma.opnameHeader.findUnique({
@@ -32,10 +35,25 @@ export async function GET(req: Request) {
       });
     }
 
-    const opnames = await prisma.opnameHeader.findMany({
-      include: { details: true },
-      orderBy: { id: 'desc' },
-    });
+    const where = q
+      ? {
+          OR: [
+            { opnameNo: { contains: q, mode: 'insensitive' as const } },
+            { whName: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, opnames] = await Promise.all([
+      prisma.opnameHeader.count({ where }),
+      prisma.opnameHeader.findMany({
+        where,
+        include: { details: true },
+        orderBy: { id: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = opnames.map((o) => ({
       id: o.id,
@@ -46,7 +64,7 @@ export async function GET(req: Request) {
       created_at: o.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/inventory/opname:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

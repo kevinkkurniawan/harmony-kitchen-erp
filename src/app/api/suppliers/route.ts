@@ -1,15 +1,21 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q') || '';
     const onlyActive = searchParams.get('onlyActive') === 'true';
+    const onlyTaxable = searchParams.get('onlyTaxable') === 'true';
+    const paginationParams = getPaginationParams(request, 50, 1000);
 
     const whereCondition: any = {};
     if (onlyActive) {
       whereCondition.isActive = true;
+    }
+    if (onlyTaxable) {
+      whereCondition.isTaxable = true;
     }
     if (q) {
       whereCondition.OR = [
@@ -20,10 +26,15 @@ export async function GET(request: Request) {
       ];
     }
 
-    const suppliers = await prisma.supplier.findMany({
-      where: whereCondition,
-      orderBy: { id: 'asc' },
-    });
+    const [total, suppliers] = await Promise.all([
+      prisma.supplier.count({ where: whereCondition }),
+      prisma.supplier.findMany({
+        where: whereCondition,
+        orderBy: { id: 'asc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = suppliers.map((s) => ({
       id: s.id,
@@ -39,7 +50,7 @@ export async function GET(request: Request) {
       created_at: s.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/suppliers:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

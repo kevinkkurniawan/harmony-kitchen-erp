@@ -144,7 +144,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     let isMounted = true;
     async function loadSuppliers() {
       try {
-        const res = await fetch('/api/suppliers?onlyActive=true');
+        const res = await fetch('/api/suppliers?onlyActive=true&all=true');
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setSuppliersList(json.data);

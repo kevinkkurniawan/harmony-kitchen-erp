@@ -1,24 +1,33 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
 
-    const requests = await prisma.purchaseRequestHeader.findMany({
-      where: q
-        ? {
-            OR: [
-              { prNo: { contains: q, mode: 'insensitive' } },
-              { description: { contains: q, mode: 'insensitive' } },
-              { status: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : undefined,
-      include: { details: true },
-      orderBy: { id: 'desc' },
-    });
+    const where = q
+      ? {
+          OR: [
+            { prNo: { contains: q, mode: 'insensitive' as const } },
+            { description: { contains: q, mode: 'insensitive' as const } },
+            { status: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, requests] = await Promise.all([
+      prisma.purchaseRequestHeader.count({ where }),
+      prisma.purchaseRequestHeader.findMany({
+        where,
+        include: { details: true },
+        orderBy: { id: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = requests.map((pr) => ({
       id: pr.id,
@@ -39,7 +48,7 @@ export async function GET(req: Request) {
       })),
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/purchasing/requests:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

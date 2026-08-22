@@ -1,11 +1,33 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const memos = await prisma.memo.findMany({
-      orderBy: { id: 'desc' },
-    });
+    const { searchParams } = new URL(req.url);
+    const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
+
+    const where = q
+      ? {
+          OR: [
+            { memoNo: { contains: q, mode: 'insensitive' as const } },
+            { title: { contains: q, mode: 'insensitive' as const } },
+            { content: { contains: q, mode: 'insensitive' as const } },
+            { author: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, memos] = await Promise.all([
+      prisma.memo.count({ where }),
+      prisma.memo.findMany({
+        where,
+        orderBy: { id: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = memos.map((m) => ({
       id: m.id,
@@ -17,7 +39,7 @@ export async function GET() {
       created_at: m.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/memos:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

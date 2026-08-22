@@ -1,23 +1,32 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
 
-    const banks = await prisma.bankAccount.findMany({
-      where: q
-        ? {
-            OR: [
-              { bankCode: { contains: q, mode: 'insensitive' } },
-              { bankName: { contains: q, mode: 'insensitive' } },
-              { accountNo: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : undefined,
-      orderBy: { id: 'asc' },
-    });
+    const where = q
+      ? {
+          OR: [
+            { bankCode: { contains: q, mode: 'insensitive' as const } },
+            { bankName: { contains: q, mode: 'insensitive' as const } },
+            { accountNo: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, banks] = await Promise.all([
+      prisma.bankAccount.count({ where }),
+      prisma.bankAccount.findMany({
+        where,
+        orderBy: { id: 'asc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = banks.map((b) => ({
       id: b.id,
@@ -29,7 +38,7 @@ export async function GET(req: Request) {
       created_at: b.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/banks:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

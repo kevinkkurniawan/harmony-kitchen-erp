@@ -1,24 +1,33 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
+    const paginationParams = getPaginationParams(req, 50);
 
-    const payments = await prisma.purchasePaymentHeader.findMany({
-      where: q
-        ? {
-            OR: [
-              { paymentNo: { contains: q, mode: 'insensitive' } },
-              { supplierName: { contains: q, mode: 'insensitive' } },
-              { bankName: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : undefined,
-      include: { details: true },
-      orderBy: { id: 'desc' },
-    });
+    const where = q
+      ? {
+          OR: [
+            { paymentNo: { contains: q, mode: 'insensitive' as const } },
+            { supplierName: { contains: q, mode: 'insensitive' as const } },
+            { bankName: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
+
+    const [total, payments] = await Promise.all([
+      prisma.purchasePaymentHeader.count({ where }),
+      prisma.purchasePaymentHeader.findMany({
+        where,
+        include: { details: true },
+        orderBy: { id: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = payments.map((p) => ({
       id: p.id,
@@ -36,7 +45,7 @@ export async function GET(req: Request) {
       })),
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/purchasing/payments:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -62,7 +71,7 @@ export async function POST(req: Request) {
         grandTotal: Number(grand_total || 0),
         details: {
           create: items.map((it: any) => ({
-            invoiceNo: it.invoice_no || it.invoiceNo,
+            invoiceNo: it.invoice_no || it.inventoryNo || it.invoiceNo,
             amountPaid: Number(it.amount_paid || it.amountPaid || 0),
           })),
         },

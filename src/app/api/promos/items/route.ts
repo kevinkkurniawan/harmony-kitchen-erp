@@ -1,11 +1,13 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q') || '';
     const onlyActive = searchParams.get('onlyActive') === 'true';
+    const paginationParams = getPaginationParams(request, 50);
 
     const whereCondition: any = {};
     if (onlyActive) whereCondition.isActive = true;
@@ -16,11 +18,16 @@ export async function GET(request: Request) {
       ];
     }
 
-    const promos = await prisma.promo.findMany({
-      where: whereCondition,
-      include: { group: true },
-      orderBy: { id: 'asc' },
-    });
+    const [total, promos] = await Promise.all([
+      prisma.promo.count({ where: whereCondition }),
+      prisma.promo.findMany({
+        where: whereCondition,
+        include: { group: true },
+        orderBy: { id: 'asc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = promos.map((p) => ({
       id: p.id,
@@ -34,7 +41,7 @@ export async function GET(request: Request) {
       created_at: p.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/promos/items:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

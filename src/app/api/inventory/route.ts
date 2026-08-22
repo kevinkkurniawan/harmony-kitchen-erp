@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
 export async function GET(request: Request) {
   try {
@@ -9,7 +10,8 @@ export async function GET(request: Request) {
     const brand = searchParams.get('brand') || '';
     const onlyActive = searchParams.get('onlyActive') === 'true';
     const minusStock = searchParams.get('minusStock') === 'true';
-    const limit = Number(searchParams.get('limit')) || 100;
+
+    const paginationParams = getPaginationParams(request, 100, 2000);
 
     const whereCondition: any = {};
     if (onlyActive) whereCondition.isActive = true;
@@ -24,16 +26,20 @@ export async function GET(request: Request) {
       ];
     }
 
-    const items = await prisma.inventory.findMany({
-      where: whereCondition,
-      include: {
-        category: true,
-        brand: true,
-        uom: true,
-      },
-      orderBy: { id: 'asc' },
-      take: limit,
-    });
+    const [total, items] = await Promise.all([
+      prisma.inventory.count({ where: whereCondition }),
+      prisma.inventory.findMany({
+        where: whereCondition,
+        include: {
+          category: true,
+          brand: true,
+          uom: true,
+        },
+        orderBy: { id: 'asc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+    ]);
 
     const mapped = items.map((inv) => ({
       id: inv.id,
@@ -50,7 +56,7 @@ export async function GET(request: Request) {
       created_at: inv.createdAt,
     }));
 
-    return NextResponse.json({ success: true, data: mapped });
+    return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/inventory:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
