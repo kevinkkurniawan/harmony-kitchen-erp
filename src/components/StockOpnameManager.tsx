@@ -327,7 +327,10 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          noTransaction,
+          no_tx: noTransaction || generateNewTxNo(),
+          noTransaction: noTransaction || generateNewTxNo(),
+          opnameNo: noTransaction || generateNewTxNo(),
+          wh_name: warehouse,
           warehouse,
           items: opnameItems,
           createdBy: 'SA',

@@ -115,15 +115,6 @@ export default function ERPDashboard() {
               </h1>
             </div>
           </div>
-
-          <div className={`h-5 w-px ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`} />
-
-          {/* Database Status Badge */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <Database className="w-3.5 h-3.5" />
-            <span>PostgreSQL Ready</span>
-          </div>
         </div>
 
         {/* Right Tools */}

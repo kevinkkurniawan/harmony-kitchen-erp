@@ -94,7 +94,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { no_tx, date, wh_name, items } = body;
+    const no_tx = body.no_tx || body.noTransaction || body.opnameNo;
+    const date = body.date || body.opnameDate;
+    const wh_name = body.wh_name || body.whName || body.warehouse;
+    const items = body.items;
 
     if (!no_tx || !items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ success: false, error: 'No. Opname dan detail barang wajib diisi' }, { status: 400 });

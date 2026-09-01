@@ -170,6 +170,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
 
   // Fetch History Logs
   const fetchHistoryLogs = async () => {
+    setIsHistoryOpen(true);
     setIsHistoryLoading(true);
     try {
       const res = await fetch('/api/sales/sync?mode=history');
