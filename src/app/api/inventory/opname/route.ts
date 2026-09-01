@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -17,20 +17,35 @@ export async function GET(req: Request) {
 
       if (!header) return NextResponse.json({ success: false, error: 'Opname tidak ditemukan' }, { status: 404 });
 
+      const items = header.details.map((d) => ({
+        id: String(d.id),
+        inventoryId: d.id,
+        barcode: d.barcode,
+        inventoryNo: d.inventoryNo,
+        inventory_no: d.inventoryNo,
+        inventoryName: d.inventoryName,
+        inventory_name: d.inventoryName,
+        systemQty: d.systemQty,
+        system_qty: d.systemQty,
+        physicalQty: d.physicalQty,
+        physical_qty: d.physicalQty,
+        diffQty: d.diffQty,
+        diff_qty: d.diffQty,
+        qty: d.physicalQty,
+        price: 0,
+        description: '',
+      }));
+
       return NextResponse.json({
         success: true,
-        data: {
+        data: items,
+        header: {
+          noTransaction: header.opnameNo,
           no_tx: header.opnameNo,
+          opnameNo: header.opnameNo,
           date: header.opnameDate,
-          wh_name: header.whName,
-          items: header.details.map((d) => ({
-            barcode: d.barcode,
-            inventory_no: d.inventoryNo,
-            inventory_name: d.inventoryName,
-            system_qty: d.systemQty,
-            physical_qty: d.physicalQty,
-            diff_qty: d.diffQty,
-          })),
+          whName: header.whName,
+          items,
         },
       });
     }
@@ -56,10 +71,15 @@ export async function GET(req: Request) {
     ]);
 
     const mapped = opnames.map((o) => ({
-      id: o.id,
+      id: String(o.id),
+      noTransaction: o.opnameNo,
       opname_no: o.opnameNo,
+      opnameNo: o.opnameNo,
+      opnameDate: o.opnameDate,
       opname_date: o.opnameDate,
+      whName: o.whName,
       wh_name: o.whName,
+      totalItems: o.details.length,
       total_items: o.details.length,
       created_at: o.createdAt,
     }));

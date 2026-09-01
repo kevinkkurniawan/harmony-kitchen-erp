@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -26,9 +26,23 @@ export async function GET(req: Request) {
     ]);
 
     const mapped = groups.map((g) => ({
-      id: g.id,
+      id: String(g.id),
+      groupName: g.groupName,
       group_name: g.groupName,
+      promosCount: g.promos.length,
       promos_count: g.promos.length,
+      promos: g.promos.map((p) => ({
+        id: String(p.id),
+        promoNo: p.promoNo,
+        promo_no: p.promoNo,
+        promoName: p.promoName,
+        promo_name: p.promoName,
+        discountPct: p.discountPct,
+        discount_pct: p.discountPct,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        isActive: p.isActive,
+      })),
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);

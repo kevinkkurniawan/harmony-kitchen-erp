@@ -317,12 +317,12 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           <span className="text-xs text-slate-400 font-semibold">Total: {usersList.length} User Terdaftar</span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
+        <div className="flex-1 min-h-0 overflow-auto relative">
+          <table className="w-full text-left border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-20">
               <tr
-                className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                  isDark ? 'bg-slate-800/60 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                className={`text-[11px] font-black uppercase tracking-wider border-b-2 ${
+                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}
               >
                 <th className="py-3.5 px-4 text-center">#ID</th>

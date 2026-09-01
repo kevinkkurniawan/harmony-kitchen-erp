@@ -534,7 +534,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
       {/* 👑 MASTER BARANG HEADER TOOLBAR */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         {/* Search Bar Input */}
         <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
@@ -764,16 +764,16 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       )}
 
       {/* 📊 MAIN BODY CONTAINER: HIGH CONTRAST DATA TABLE */}
-      <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isDark ? 'bg-slate-800' : 'bg-slate-50'}`}>
-        {/* DEVEXPRESS GRIDVIEW TABLE */}
-        <div className="flex-1 min-h-0 overflow-auto p-3.5">
-          <div className={`rounded-xl border-2 overflow-hidden shadow-md ${
-            isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
+      <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
+        {/* DATA TABLE WORKBENCH */}
+        <div className="flex-1 min-h-0 p-3.5 flex flex-col">
+          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-xl relative ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}>
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className={`border-b-2 uppercase text-[11px] font-black tracking-wider ${
-                  isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-slate-200 border-slate-300 text-slate-900'
+            <table className="w-full text-left text-xs border-separate border-spacing-0">
+              <thead className="sticky top-0 z-20">
+                <tr className={`uppercase text-[11px] font-black tracking-wider border-b-2 ${
+                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}>
                   <th onClick={() => handleSort('inventoryNo')} className="py-3 px-3 cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center gap-1">

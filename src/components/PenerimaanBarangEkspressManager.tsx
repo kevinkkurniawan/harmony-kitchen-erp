@@ -459,15 +459,15 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             </button>
           </div>
 
-          {/* Main Table Grid of Receipts */}
-          <div className={`flex-1 overflow-auto rounded-2xl border shadow-lg ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          {/* Main Table Grid of Receipts WORKBENCH */}
+          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}>
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className={`font-black uppercase tracking-wider sticky top-0 z-10 ${
-                isDark ? 'bg-slate-800/90 text-amber-400' : 'bg-slate-200 text-slate-950'
-              }`}>
-                <tr>
+            <table className="w-full text-left border-separate border-spacing-0 text-xs">
+              <thead className="sticky top-0 z-20">
+                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
+                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
+                }`}>
                   <th className="py-3.5 px-4 text-center">No MR</th>
                   <th className="py-3.5 px-4">Tanggal MR</th>
                   <th className="py-3.5 px-4">Supplier Pemasok</th>
@@ -493,25 +493,33 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     </td>
                   </tr>
                 ) : (
-                  receiptsList.map((row) => (
-                    <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
-                      <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{row.mrNo}</td>
-                      <td className="py-3.5 px-4 font-mono">{row.mrDate}</td>
-                      <td className="py-3.5 px-4 font-black">{row.supplierName}</td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-300">{row.doNo || '-'}</td>
-                      <td className="py-3.5 px-4 font-bold">{row.driverName ? `${row.driverName} (${row.vehicleNo || '-'})` : '-'}</td>
-                      <td className="py-3.5 px-4 text-center font-black text-emerald-400">{row.totalQty} Items</td>
-                      <td className="py-3.5 px-4 text-center">
-                        {row.isVoid ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                            VOID
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            SELESAI
-                          </span>
-                        )}
-                      </td>
+                  receiptsList.map((row: any) => {
+                    const mrNo = row.mrNo || row.mr_no || '-';
+                    const mrDate = row.mrDate || row.mr_date || '-';
+                    const supplier = row.supplierName || row.supplier_name || 'Supplier General';
+                    const poNo = row.poNo || row.po_no || '-';
+                    const driver = row.driverName ? `${row.driverName} (${row.vehicleNo || '-'})` : '-';
+                    const qty = row.totalQty ?? row.total_qty ?? (row.items ? row.items.length : 0);
+
+                    return (
+                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                        <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-300">{mrDate}</td>
+                        <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-300">{poNo}</td>
+                        <td className="py-3.5 px-4 font-bold text-slate-400">{driver}</td>
+                        <td className="py-3.5 px-4 text-center font-black text-emerald-400">{qty} Items</td>
+                        <td className="py-3.5 px-4 text-center">
+                          {row.isVoid ? (
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                              VOID
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              SELESAI
+                            </span>
+                          )}
+                        </td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
@@ -535,8 +543,9 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+                  );
+                })
+              )}
               </tbody>
             </table>
           </div>

@@ -279,7 +279,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   const uniqueCitiesCount = new Set(suppliers.map((s) => s.city).filter(Boolean)).size;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
       {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
@@ -305,8 +305,8 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
       </div>
 
       {/* 📊 SUMMARY CARDS HEADER */}
-      <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+      <div className={`px-5 py-3 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
           isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-blue-50/60 border-blue-200/80'
@@ -363,7 +363,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
       {/* 👑 MASTER SUPPLIER TOOLBAR */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         {/* Search Bar Input */}
         <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
@@ -464,16 +464,16 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
         </div>
       </div>
 
-      {/* 📄 MAIN CONTENT DATA TABLE AREA */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className={`rounded-2xl border overflow-hidden shadow-lg ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+      {/* 📄 SUPPLIER DATA TABLE WORKBENCH */}
+      <div className="flex-1 min-h-0 p-4 flex flex-col">
+        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className={`font-black uppercase tracking-wider ${
-              isDark ? 'bg-slate-800/90 text-amber-400' : 'bg-slate-200 text-slate-950'
-            }`}>
-              <tr>
+          <table className="w-full text-left border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-20">
+              <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
+                isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
+              }`}>
                 <th className="py-3 px-3.5 text-center w-12">ID</th>
                 <th className="py-3 px-4 w-28">Kode Supplier</th>
                 <th

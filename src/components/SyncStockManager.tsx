@@ -63,7 +63,7 @@ const SyncStockRow = React.memo(function SyncStockRow({
       onClick={() => onToggle(row.id)}
       className={`cursor-pointer transition-colors ${
         row.isChecked
-          ? isDark ? 'bg-indigo-950/40 hover:bg-indigo-900/50' : 'bg-indigo-50/80 hover:bg-indigo-100/80'
+          ? isDark ? 'bg-amber-950/20 hover:bg-amber-900/30' : 'bg-amber-50/80 hover:bg-amber-100/80'
           : isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'
       }`}
     >
@@ -72,23 +72,23 @@ const SyncStockRow = React.memo(function SyncStockRow({
           type="checkbox"
           checked={row.isChecked}
           onChange={() => onToggle(row.id)}
-          className="w-4 h-4 accent-indigo-500 cursor-pointer rounded"
+          className="w-4 h-4 accent-amber-500 cursor-pointer rounded"
         />
       </td>
-      <td className="py-3.5 px-4 font-mono font-black text-indigo-400">{row.inventoryNo}</td>
-      <td className="py-3.5 px-4 font-black">{row.inventoryName}</td>
+      <td className="py-3.5 px-4 font-mono font-bold text-amber-500">{row.inventoryNo}</td>
+      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{row.inventoryName}</td>
       <td className="py-3.5 px-3 text-center font-bold">{row.uomName}</td>
       <td className="py-3.5 px-4 text-center font-mono font-bold">{row.stokGudang}</td>
-      <td className="py-3.5 px-4 text-center font-mono font-black text-rose-400">
+      <td className="py-3.5 px-4 text-center font-mono font-black text-rose-500">
         - {row.qtyTransaksi}
       </td>
-      <td className="py-3.5 px-4 text-center font-mono font-black text-emerald-400">
+      <td className="py-3.5 px-4 text-center font-mono font-black text-emerald-500">
         {row.stokSetelahSync}
       </td>
       <td className="py-3.5 px-4 text-center">
         <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
           row.isChecked
-            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+            ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30'
             : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
         }`}>
           {row.isChecked ? 'SIAP SYNC' : 'LEWATI'}
@@ -140,7 +140,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(debouncedQuery)}&all=true`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
-          setItems(json.data.map((item: SyncStockItem, idx: number) => ({ ...item, isChecked: idx < pageSize })));
+          setItems(json.data.map((item: SyncStockItem) => ({ ...item, isChecked: false })));
           setCurrentPage(1);
         }
       } catch (err) {
@@ -151,7 +151,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
     }
     loadData();
     return () => { isMounted = false; };
-  }, [debouncedQuery, pageSize]);
+  }, [debouncedQuery]);
 
   const reloadSyncItems = async () => {
     setIsLoading(true);
@@ -159,7 +159,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
       const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(debouncedQuery)}&all=true`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        setItems(json.data.map((item: SyncStockItem, idx: number) => ({ ...item, isChecked: idx < pageSize })));
+        setItems(json.data.map((item: SyncStockItem) => ({ ...item, isChecked: false })));
       }
     } catch (err) {
       console.error('Error fetching sync items:', err);
@@ -259,7 +259,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
   const totalPages = Math.ceil(items.length / pageSize) || 1;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
       {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
@@ -272,24 +272,24 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
                 ? isDark ? 'bg-rose-950/90 border-rose-800 text-rose-300' : 'bg-rose-800 text-white border-rose-900'
                 : t.type === 'warning'
                 ? isDark ? 'bg-amber-950/90 border-amber-800 text-amber-300' : 'bg-amber-800 text-white border-amber-900'
-                : isDark ? 'bg-indigo-950/90 border-indigo-800 text-indigo-300' : 'bg-indigo-800 text-white border-indigo-900'
+                : isDark ? 'bg-amber-950/90 border-amber-800 text-amber-300' : 'bg-amber-800 text-white border-amber-900'
             }`}
           >
             {t.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-300 shrink-0" />}
             {t.type === 'error' && <XCircle className="w-4 h-4 text-rose-300 shrink-0" />}
             {t.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />}
-            {t.type === 'info' && <Zap className="w-4 h-4 text-indigo-300 shrink-0" />}
+            {t.type === 'info' && <Zap className="w-4 h-4 text-amber-300 shrink-0" />}
             <span>{t.text}</span>
           </div>
         ))}
       </div>
 
       {/* 📊 SUMMARY METRICS HEADER */}
-      <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+      <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+          <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
             <ArrowRightLeft className="w-6 h-6" />
           </div>
           <div>
@@ -305,25 +305,26 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         {/* Action Controls */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              fetchHistoryLogs();
-              setIsHistoryOpen(true);
-            }}
-            className={`px-3.5 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer ${
-              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
+            onClick={fetchHistoryLogs}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-300'
             }`}
           >
-            <History className="w-4 h-4 text-purple-400" />
+            <History className="w-4 h-4 text-amber-500" />
             <span>Riwayat Sync Log</span>
           </button>
 
           <button
             onClick={handleExecuteSync}
             disabled={isSubmitting || selectedCount === 0}
-            className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-black text-xs flex items-center gap-2 transition-all shadow-lg cursor-pointer disabled:opacity-50"
+            className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer ${
+              selectedCount === 0
+                ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-50'
+                : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20'
+            }`}
           >
-            <CheckCircle className="w-4 h-4 stroke-[3]" />
-            <span>{isSubmitting ? 'Proses Syncing...' : `Proses Sync Stok (${selectedCount})`}</span>
+            <CheckCircle className="w-4 h-4" />
+            <span>{isSubmitting ? 'Proses Sync...' : `Proses Sync Stok (${selectedCount})`}</span>
           </button>
         </div>
       </div>
@@ -390,8 +391,8 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
       </div>
 
       {/* 🔍 SEARCH & CHECKBOX SELECTION TOOLBAR */}
-      <div className={`p-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+      <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         <div className="flex items-center gap-3 flex-1 max-w-md">
           <div className="relative flex-1">
@@ -401,7 +402,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
               placeholder="Cari Kode Barang / Nama Barang / SKU..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+              className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                 isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900'
               }`}
             />
@@ -422,16 +423,15 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
       </div>
 
       {/* 📄 MAIN TABLE GRID OF SYNC ITEMS */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className={`rounded-2xl border overflow-hidden shadow-lg flex flex-col h-full ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+      <div className="flex-1 min-h-0 p-4 flex flex-col">
+        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className={`font-black uppercase tracking-wider sticky top-0 z-10 ${
-                isDark ? 'bg-slate-800/90 text-indigo-300' : 'bg-slate-200 text-slate-950'
+          <table className="w-full text-left border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-20">
+              <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
+                isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
               }`}>
-                <tr>
                   <th className="py-3.5 px-3 text-center w-12">
                     <input
                       type="checkbox"
@@ -533,7 +533,6 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             </div>
           )}
         </div>
-      </div>
 
       {/* 📄 HISTORY LOGS MODAL */}
       {isHistoryOpen && (

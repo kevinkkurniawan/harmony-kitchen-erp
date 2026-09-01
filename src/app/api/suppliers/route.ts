@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -37,15 +37,22 @@ export async function GET(request: Request) {
     ]);
 
     const mapped = suppliers.map((s) => ({
-      id: s.id,
+      id: String(s.id),
+      supplierNo: s.supplierCode,
+      supplierCode: s.supplierCode,
       supplier_code: s.supplierCode,
+      supplierName: s.supplierName,
       supplier_name: s.supplierName,
+      supplierType: s.supplierType,
       supplier_type: s.supplierType,
       address: s.address || '',
       city: s.city || '',
       phone: s.phone || '',
+      phone1: s.phone || '',
       email: s.email || '',
+      contactPerson: s.contactPerson || '',
       contact_person: s.contactPerson || '',
+      isActive: s.isActive,
       is_active: s.isActive,
       created_at: s.createdAt,
     }));

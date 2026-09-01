@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -32,21 +32,36 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    const mapped = receives.map((mr) => ({
-      id: mr.id,
-      mr_no: mr.mrNo,
-      mr_date: mr.mrDate,
-      po_no: mr.poNo || '-',
-      supplier_name: mr.supplierName,
-      created_at: mr.createdAt,
-      items: mr.details.map((d) => ({
-        id: d.id,
-        barcode: d.barcode,
-        inventory_no: d.inventoryNo,
-        inventory_name: d.inventoryName,
-        qty: d.qty,
-      })),
-    }));
+    const mapped = receives.map((mr) => {
+      const totalQty = mr.details.reduce((sum, d) => sum + Number(d.qty), 0);
+      const formattedDate = mr.mrDate ? new Date(mr.mrDate).toLocaleDateString('id-ID') : '-';
+
+      return {
+        id: mr.id,
+        mrNo: mr.mrNo,
+        mr_no: mr.mrNo,
+        mrDate: formattedDate,
+        mr_date: formattedDate,
+        poNo: mr.poNo || '-',
+        po_no: mr.poNo || '-',
+        supplierName: mr.supplierName,
+        supplier_name: mr.supplierName,
+        whName: 'Gudang Utama',
+        description: '-',
+        totalQty: totalQty,
+        total_qty: totalQty,
+        items: mr.details.map((d) => ({
+          id: d.id,
+          barcode: d.barcode,
+          inventoryNo: d.inventoryNo,
+          inventory_no: d.inventoryNo,
+          inventoryName: d.inventoryName,
+          inventory_name: d.inventoryName,
+          qty: d.qty,
+        })),
+        createdAt: mr.createdAt,
+      };
+    });
 
     return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {

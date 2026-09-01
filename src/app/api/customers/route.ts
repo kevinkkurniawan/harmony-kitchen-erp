@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -30,16 +30,23 @@ export async function GET(req: Request) {
     ]);
 
     const mapped = customers.map((c) => ({
-      id: c.id,
+      id: String(c.id),
+      customerNo: c.customerCode,
+      customerCode: c.customerCode,
       customer_code: c.customerCode,
+      customerName: c.customerName,
       customer_name: c.customerName,
+      customerType: c.customerType,
       customer_type: c.customerType,
       address: c.address || '',
       city: c.city || '',
       phone: c.phone || '',
       email: c.email || '',
+      contactPerson: c.contactPerson || '',
       contact_person: c.contactPerson || '',
+      creditLimit: c.creditLimit,
       credit_limit: c.creditLimit,
+      isActive: c.isActive,
       is_active: c.isActive,
       created_at: c.createdAt,
     }));

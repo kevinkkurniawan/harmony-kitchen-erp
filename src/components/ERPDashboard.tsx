@@ -420,7 +420,7 @@ export default function ERPDashboard() {
         </aside>
 
         {/* TAB CONTENTS */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto min-h-0">
           {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" />}
           {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" />}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}

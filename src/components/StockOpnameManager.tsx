@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   PackageCheck,
   Plus,
   RefreshCw,
-  Printer,
   Save,
   CheckCircle,
   XCircle,
@@ -14,10 +13,15 @@ import {
   Store,
   Barcode as BarcodeIcon,
   Trash2,
-  Calendar,
   Layers,
   Sparkles,
-  ArrowRight,
+  Minus,
+  AlertTriangle,
+  Check,
+  ArrowDownRight,
+  ArrowUpRight,
+  DollarSign,
+  Package,
 } from 'lucide-react';
 
 export interface OpnameEntry {
@@ -27,6 +31,7 @@ export interface OpnameEntry {
   barcode: string;
   inventoryName: string;
   qty: number;
+  systemQty?: number;
   price: number;
   description: string;
 }
@@ -52,6 +57,8 @@ export interface InventoryLookupItem {
   brandName?: string;
   categoryName?: string;
   stokUpdate?: number;
+  stokAkhir?: number;
+  stock?: number;
 }
 
 interface StockOpnameManagerProps {
@@ -74,6 +81,10 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const [barcodeInput, setBarcodeInput] = useState<string>('');
   const [qtyInput, setQtyInput] = useState<number | ''>(1);
   const [descInput, setDescInput] = useState<string>('');
+
+  // Table Filter & Search States
+  const [tableSearch, setTableSearch] = useState<string>('');
+  const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'variance' | 'matched'>('all');
 
   // Status States
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -98,8 +109,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch Inventory Items
-      const invRes = await fetch('/api/inventory/lookups');
+      // 1. Fetch Inventory Items for Opname Input
+      const invRes = await fetch('/api/inventory?limit=2000');
       const invJson = await invRes.json();
       const itemsArray = invJson.data?.items || invJson.data || [];
       if (invJson.success && Array.isArray(itemsArray)) {
@@ -111,26 +122,30 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       const histJson = await histRes.json();
       if (histJson.success && Array.isArray(histJson.data) && histJson.data.length > 0) {
         setHistoryList(histJson.data);
-        
-        // Auto-select latest opname transaction so page is not empty on initial open
-        const latestTx = histJson.data[0].noTransaction;
-        setSelectedHistoryTx(latestTx);
-        setNoTransaction(latestTx);
 
-        const detailRes = await fetch(`/api/inventory/opname?noTx=${encodeURIComponent(latestTx)}`);
-        const detailJson = await detailRes.json();
-        if (detailJson.success && Array.isArray(detailJson.data)) {
-          setOpnameItems(
-            detailJson.data.map((d: any) => ({
-              inventoryId: d.inventoryId,
-              inventoryNo: d.inventoryNo,
-              barcode: d.barcode,
-              inventoryName: d.inventoryName,
-              qty: d.qty,
-              price: d.price,
-              description: d.description,
-            }))
-          );
+        // Auto-select latest opname transaction so page is not empty on initial open
+        const latestTx = histJson.data[0].noTransaction || histJson.data[0].opname_no;
+        if (latestTx) {
+          setSelectedHistoryTx(latestTx);
+          setNoTransaction(latestTx);
+
+          const detailRes = await fetch(`/api/inventory/opname?noTx=${encodeURIComponent(latestTx)}`);
+          const detailJson = await detailRes.json();
+          const detailItems = detailJson.data?.items || detailJson.data || [];
+          if (detailJson.success && Array.isArray(detailItems)) {
+            setOpnameItems(
+              detailItems.map((d: any) => ({
+                inventoryId: d.inventoryId || d.id,
+                inventoryNo: d.inventoryNo || d.inventory_no,
+                barcode: d.barcode,
+                inventoryName: d.inventoryName || d.inventory_name,
+                qty: d.qty !== undefined ? d.qty : (d.physical_qty || d.physicalQty || 0),
+                systemQty: d.systemQty !== undefined ? d.systemQty : (d.system_qty || 0),
+                price: d.price || 0,
+                description: d.description || '',
+              }))
+            );
+          }
         }
       }
     } catch (err) {
@@ -154,7 +169,30 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput('');
     setQtyInput(1);
     setDescInput('');
-    showToast('Form Stok Opname Baru Siap Diiisi', 'info');
+    showToast('Form Stok Opname Baru Siap Diisi', 'info');
+  };
+
+  // Handle Populate All Products for Bulk Opname
+  const handlePopulateAll = () => {
+    if (inventoryList.length === 0) {
+      showToast('Daftar barang inventori belum dimuat', 'info');
+      return;
+    }
+    const allItems = inventoryList.map((item) => {
+      const sysQty = item.stokAkhir !== undefined ? item.stokAkhir : (item.stock || 0);
+      return {
+        inventoryId: item.id,
+        inventoryNo: item.inventoryNo,
+        barcode: item.barcode || item.inventoryNo,
+        inventoryName: item.inventoryName,
+        qty: sysQty,
+        systemQty: sysQty,
+        price: item.price || 0,
+        description: 'Auto-Populate Opname Massal',
+      };
+    });
+    setOpnameItems(allItems);
+    showToast(`Semua ${allItems.length} barang berhasil dimuat ke tabel opname!`, 'success');
   };
 
   // Handle Barcode Auto-Fill
@@ -193,7 +231,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       return;
     }
 
-    // Check if item already in current opname list
+    const sysQty = found.stokAkhir !== undefined ? found.stokAkhir : (found.stock || 0);
+
     const existingIdx = opnameItems.findIndex((i) => i.inventoryId === found.id);
     if (existingIdx >= 0) {
       const updated = [...opnameItems];
@@ -210,6 +249,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           barcode: found.barcode || found.inventoryNo,
           inventoryName: found.inventoryName,
           qty,
+          systemQty: sysQty,
           price: found.price || 0,
           description: descInput || 'Stok Fisik Opname',
         },
@@ -222,6 +262,14 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput('');
     setQtyInput(1);
     setDescInput('');
+  };
+
+  // Inline Qty Update Handler
+  const handleInlineQtyChange = (invId: number, newQty: number) => {
+    const validQty = Math.max(0, newQty);
+    setOpnameItems((prev) =>
+      prev.map((item) => (item.inventoryId === invId ? { ...item, qty: validQty } : item))
+    );
   };
 
   // Remove item from list
@@ -241,17 +289,19 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     try {
       const res = await fetch(`/api/inventory/opname?noTx=${encodeURIComponent(txNo)}`);
       const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
+      const detailItems = json.data?.items || json.data || [];
+      if (json.success && Array.isArray(detailItems)) {
         setNoTransaction(txNo);
         setOpnameItems(
-          json.data.map((d: any) => ({
-            inventoryId: d.inventoryId,
-            inventoryNo: d.inventoryNo,
+          detailItems.map((d: any) => ({
+            inventoryId: d.inventoryId || d.id,
+            inventoryNo: d.inventoryNo || d.inventory_no,
             barcode: d.barcode,
-            inventoryName: d.inventoryName,
-            qty: d.qty,
-            price: d.price,
-            description: d.description,
+            inventoryName: d.inventoryName || d.inventory_name,
+            qty: d.qty !== undefined ? d.qty : (d.physical_qty || d.physicalQty || 0),
+            systemQty: d.systemQty !== undefined ? d.systemQty : (d.system_qty || 0),
+            price: d.price || 0,
+            description: d.description || '',
           }))
         );
         showToast(`Memuat Transaksi Opname ${txNo}`, 'info');
@@ -287,9 +337,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
       const json = await res.json();
       if (json.success) {
-        showToast(json.data.message || 'Transaksi Stok Opname berhasil disimpan!', 'success');
+        showToast(json.message || 'Transaksi Stok Opname berhasil disimpan!', 'success');
         loadInitialData();
-        // Clear & prepare new opname
         handleNewOpname();
       } else {
         showToast(json.error || 'Gagal menyimpan stok opname', 'error');
@@ -302,341 +351,527 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
   };
 
-  const selectedInventoryObject = inventoryList.find((i) => i.id === selectedInvId);
+  // Statistics Calculations
+  const stats = useMemo(() => {
+    const totalItems = opnameItems.length;
+    const totalPhysicalQty = opnameItems.reduce((acc, curr) => acc + curr.qty, 0);
+
+    let matchedCount = 0;
+    let varianceCount = 0;
+    let totalValue = 0;
+
+    opnameItems.forEach((item) => {
+      const sys = item.systemQty !== undefined ? item.systemQty : item.qty;
+      const diff = item.qty - sys;
+      if (diff === 0) {
+        matchedCount++;
+      } else {
+        varianceCount++;
+      }
+      totalValue += item.qty * (item.price || 0);
+    });
+
+    return { totalItems, totalPhysicalQty, matchedCount, varianceCount, totalValue };
+  }, [opnameItems]);
+
+  // Filtered Table Items
+  const filteredTableItems = useMemo(() => {
+    return opnameItems.filter((item) => {
+      // Search Query Filter
+      const matchQuery =
+        !tableSearch ||
+        item.inventoryName.toLowerCase().includes(tableSearch.toLowerCase()) ||
+        item.inventoryNo.toLowerCase().includes(tableSearch.toLowerCase()) ||
+        item.barcode.toLowerCase().includes(tableSearch.toLowerCase());
+
+      if (!matchQuery) return false;
+
+      // Variance Tab Filter
+      const sys = item.systemQty !== undefined ? item.systemQty : item.qty;
+      const diff = item.qty - sys;
+
+      if (activeFilterTab === 'variance') return diff !== 0;
+      if (activeFilterTab === 'matched') return diff === 0;
+      return true;
+    });
+  }, [opnameItems, tableSearch, activeFilterTab]);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+    <div className={`flex flex-col h-full w-full overflow-hidden select-none ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center gap-2.5 transition-all animate-bounce ${
+          className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 transition-all animate-in fade-in slide-in-from-top-4 ${
             toastMessage.type === 'success'
-              ? 'bg-emerald-500 text-white border-emerald-400'
+              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/30'
               : toastMessage.type === 'error'
-              ? 'bg-red-500 text-white border-red-400'
-              : 'bg-amber-500 text-slate-950 border-amber-400'
+              ? 'bg-rose-600 text-white border-rose-500 shadow-rose-600/30'
+              : 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
           }`}
         >
-          {toastMessage.type === 'success' && <CheckCircle className="w-4 h-4" />}
-          {toastMessage.type === 'error' && <XCircle className="w-4 h-4" />}
-          {toastMessage.type === 'info' && <Sparkles className="w-4 h-4" />}
+          {toastMessage.type === 'success' && <CheckCircle className="w-5 h-5 text-white shrink-0" />}
+          {toastMessage.type === 'error' && <XCircle className="w-5 h-5 text-white shrink-0" />}
+          {toastMessage.type === 'info' && <Sparkles className="w-5 h-5 text-amber-300 shrink-0" />}
           <span>{toastMessage.text}</span>
         </div>
       )}
 
-      {/* 📦 PAGE HEADER */}
+      {/* 👑 TOP COMPACT WORKBENCH TOOLBAR */}
       <div
-        className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-          isDark
-            ? 'bg-gradient-to-r from-slate-900 via-amber-950/20 to-slate-900 border-slate-800'
-            : 'bg-gradient-to-r from-amber-50/70 via-white to-amber-50/40 border-amber-200'
+        className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm shrink-0 ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}
       >
-        <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-2xl bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/20">
-            <PackageCheck className="w-7 h-7" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                Input Stok Opname
+        {/* Title & Transaction Selector */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20">
+              <PackageCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-none">
+                Stok Opname
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-500 border border-amber-500/30">
-                1:1 Module Manager (Mod_Opname)
+              <span className="text-[10px] font-bold text-amber-500 font-mono">
+                {noTransaction || 'OPN/NEW'}
               </span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Pencatatan & Penyesuaian Fisik Stok Opname Persediaan Barang
-            </p>
+          </div>
+
+          <div className="h-6 w-px bg-slate-300 dark:bg-slate-800 hidden sm:block" />
+
+          {/* Riwayat Dropdown */}
+          <div className="flex items-center gap-2">
+            <History className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <select
+              value={selectedHistoryTx}
+              onChange={(e) => handleSelectHistory(e.target.value)}
+              className={`p-1.5 rounded-lg border text-xs font-bold focus:outline-none cursor-pointer max-w-[220px] ${
+                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
+              }`}
+            >
+              <option value="">-- Lihat Transaksi Opname --</option>
+              {historyList.map((h) => (
+                <option key={h.id} value={h.noTransaction}>
+                  {h.noTransaction} ({new Date(h.opnameDate).toLocaleDateString('id-ID')})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Gudang Dropdown */}
+          <div className="flex items-center gap-2">
+            <Store className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <select
+              value={warehouse}
+              onChange={(e) => setWarehouse(e.target.value)}
+              className={`p-1.5 rounded-lg border text-xs font-bold focus:outline-none cursor-pointer ${
+                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
+              }`}
+            >
+              <option value="Gudang Utama Harmoni">Gudang Utama Harmoni</option>
+              <option value="Gudang Display Showroom">Gudang Display Showroom</option>
+              <option value="Bar Kopi Rungkut">Bar Kopi Rungkut</option>
+              <option value="Gudang Pastry">Gudang Pastry</option>
+              <option value="Gudang Elektronik">Gudang Elektronik</option>
+            </select>
           </div>
         </div>
 
-        {/* Header Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
           <button
             onClick={handleNewOpname}
-            className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
+            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Opname Baru</span>
           </button>
 
           <button
+            onClick={handlePopulateAll}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 active:scale-95 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
+            title="Muat seluruh barang master inventori ke tabel opname"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Load Master Barang ({inventoryList.length})</span>
+          </button>
+
+          <button
             onClick={loadInitialData}
-            className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 active:scale-95 cursor-pointer transition-all ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
+            className={`p-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 active:scale-95 cursor-pointer transition-all ${
+              isDark ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300'
             }`}
+            title="Refresh Data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+          </button>
+
+          <button
+            onClick={handleSubmitOpname}
+            disabled={isSubmitting || opnameItems.length === 0}
+            className={`px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer ${
+              opnameItems.length === 0
+                ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-50'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+            }`}
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{isSubmitting ? 'Menyimpan...' : 'Simpan Opname'}</span>
           </button>
         </div>
       </div>
 
-      {/* 🛠️ TRANSACTION HEADER CONTROLS (Gudang, No Tx, History Opname) */}
-      <div
-        className={`p-5 rounded-2xl border shadow-md space-y-4 ${
-          isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
-        }`}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* 1. Riwayat Transaksi Opname (SLE_OpnameHistory 1:1) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <History className="w-3.5 h-3.5 text-amber-500" />
-              <span>Riwayat Transaksi Opname :</span>
-            </label>
-            <select
-              value={selectedHistoryTx}
-              onChange={(e) => handleSelectHistory(e.target.value)}
-              className={`w-full p-2.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
-              }`}
-            >
-              <option value="">-- Lihat Transaksi Opname yang Pernah Dibuat --</option>
-              {historyList.map((h) => (
-                <option key={h.id} value={h.noTransaction}>
-                  {h.noTransaction} ({new Date(h.opnameDate).toLocaleDateString('id-ID')}) - {h.totalItems} Items
-                </option>
-              ))}
-            </select>
+      {/* 📊 SUMMARY METRICS CARDS (1:1 with SyncStock) */}
+      <div className={`px-5 py-3.5 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm shrink-0 ${
+        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+      }`}>
+        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
+            <Package className="w-5 h-5" />
           </div>
-
-          {/* 2. No. Transaksi */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-amber-500" />
-              <span>No. Transaksi Opname :</span>
-            </label>
-            <input
-              type="text"
-              readOnly
-              value={noTransaction}
-              className={`w-full p-2.5 rounded-xl border text-xs font-mono font-black focus:outline-none ${
-                isDark
-                  ? 'bg-slate-950 text-amber-400 border-slate-800'
-                  : 'bg-amber-50/60 text-amber-900 border-amber-200'
-              }`}
-            />
+          <div>
+            <div className="text-[11px] font-bold text-slate-400">Total Item Opname</div>
+            <div className={`text-lg font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
+              {stats.totalItems} Barang
+            </div>
           </div>
+        </div>
 
-          {/* 3. Gudang Selector */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Store className="w-3.5 h-3.5 text-amber-500" />
-              <span>Gudang :</span>
-            </label>
-            <select
-              value={warehouse}
-              onChange={(e) => setWarehouse(e.target.value)}
-              className={`w-full p-2.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
-              }`}
-            >
-              <option value="Gudang Utama Harmoni">Gudang Utama Harmoni</option>
-              <option value="Gudang Bahan Baku">Gudang Bahan Baku</option>
-              <option value="Gudang Peralatan Dapur">Gudang Peralatan Dapur</option>
-            </select>
+        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
+            <CheckCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold text-slate-400">Barang Klop (Sesuai)</div>
+            <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
+              {stats.matchedCount} Item
+            </div>
+          </div>
+        </div>
+
+        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold text-slate-400">Barang Ada Selisih</div>
+            <div className={`text-lg font-black ${isDark ? 'text-rose-300' : 'text-rose-950'}`}>
+              {stats.varianceCount} Item
+            </div>
+          </div>
+        </div>
+
+        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
+            <DollarSign className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[11px] font-bold text-slate-400">Total Nilai Fisik</div>
+            <div className={`text-sm font-black font-mono ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
+              Rp {stats.totalValue.toLocaleString('id-ID')}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 📥 INPUT FORM ITEM STOK OPNAME */}
+      {/* 📥 INLINE FAST SCAN ENTRY ROW (Height: 48px) */}
       <form
         onSubmit={handleAddItem}
-        className={`p-5 rounded-2xl border shadow-md space-y-4 ${
-          isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+        className={`px-5 py-2.5 border-b flex flex-wrap items-center gap-3 shrink-0 ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-amber-50/50 border-amber-200/60'
         }`}
       >
-        <div className="flex items-center justify-between pb-2 border-b border-slate-800/40">
-          <h3 className="text-xs font-black uppercase tracking-wider text-amber-500 flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5" />
-            Form Input Item Opname
-          </h3>
-          {selectedInventoryObject && (
-            <div className="text-[11px] font-bold text-slate-400 flex items-center gap-3">
-              <span>Brand: <strong className="text-amber-400">{selectedInventoryObject.brandName || '-'}</strong></span>
-              <span>Kategori: <strong className="text-amber-400">{selectedInventoryObject.categoryName || '-'}</strong></span>
-              <span>Satuan: <strong className="text-amber-400">{selectedInventoryObject.uomName || 'Pcs'}</strong></span>
-            </div>
-          )}
+        <div className="flex items-center gap-1.5 text-xs font-black uppercase text-amber-500 shrink-0">
+          <BarcodeIcon className="w-4 h-4" />
+          <span>Quick Scan / Tambah:</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Barcode Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <BarcodeIcon className="w-3.5 h-3.5 text-amber-500" />
-              <span>Barcode / Kode :</span>
-            </label>
-            <input
-              type="text"
-              value={barcodeInput}
-              onChange={(e) => handleBarcodeChange(e.target.value)}
-              placeholder="Scan barcode..."
-              className={`w-full p-2.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
-              }`}
-            />
-          </div>
-
-          {/* Nama Barang Selector */}
-          <div className="space-y-1.5 md:col-span-1">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <Search className="w-3.5 h-3.5 text-amber-500" />
-              <span>Nama Barang :</span>
-            </label>
-            <select
-              value={selectedInvId}
-              onChange={(e) => handleInventorySelect(Number(e.target.value))}
-              className={`w-full p-2.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
-              }`}
-            >
-              <option value="">-- Pilih Barang --</option>
-              {inventoryList.map((inv) => (
-                <option key={inv.id} value={inv.id}>
-                  {inv.inventoryName} ({inv.inventoryNo})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Qty Fisik */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              Qty Stok Fisik :
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={qtyInput}
-              onChange={(e) => setQtyInput(e.target.value === '' ? '' : parseInt(e.target.value) || 0)}
-              className={`w-full p-2.5 rounded-xl border text-xs font-black text-center focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                isDark ? 'bg-slate-800 text-amber-400 border-slate-700' : 'bg-slate-50 text-amber-900 border-slate-300'
-              }`}
-            />
-          </div>
-
-          {/* Keterangan & Button */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400">
-              Keterangan / Catatan :
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={descInput}
-                onChange={(e) => setDescInput(e.target.value)}
-                placeholder="Deskripsi opname..."
-                className={`flex-1 p-2.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
-                }`}
-              />
-              <button
-                type="submit"
-                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs cursor-pointer shadow transition-all shrink-0"
-              >
-                + Tambah
-              </button>
-            </div>
-          </div>
+        {/* Scan Barcode / SKU */}
+        <div className="w-44">
+          <input
+            type="text"
+            value={barcodeInput}
+            onChange={(e) => handleBarcodeChange(e.target.value)}
+            placeholder="Scan Barcode / SKU..."
+            className={`w-full px-3 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+            }`}
+          />
         </div>
+
+        {/* Select Barang */}
+        <div className="flex-1 min-w-[220px]">
+          <select
+            value={selectedInvId}
+            onChange={(e) => handleInventorySelect(Number(e.target.value))}
+            className={`w-full px-3 py-1.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
+              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+            }`}
+          >
+            <option value="">-- Pilih Barang Catalog --</option>
+            {inventoryList.map((inv) => (
+              <option key={inv.id} value={inv.id}>
+                {inv.inventoryName} ({inv.inventoryNo})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Qty Counted */}
+        <div className="w-24 flex items-center gap-1">
+          <span className="text-xs font-bold text-slate-400">Qty:</span>
+          <input
+            type="number"
+            min="0"
+            value={qtyInput}
+            onChange={(e) => setQtyInput(e.target.value === '' ? '' : parseInt(e.target.value) || 0)}
+            className={`w-full py-1 text-center font-black text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+              isDark ? 'bg-slate-950 text-amber-400 border-slate-700' : 'bg-white text-amber-900 border-slate-300'
+            }`}
+          />
+        </div>
+
+        {/* Catatan */}
+        <div className="w-44">
+          <input
+            type="text"
+            value={descInput}
+            onChange={(e) => setDescInput(e.target.value)}
+            placeholder="Catatan Opname..."
+            className={`w-full px-3 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+            }`}
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs cursor-pointer shadow transition-all shrink-0 flex items-center gap-1"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Tambah</span>
+        </button>
       </form>
 
-      {/* 📊 TABLE GRID ITEM OPNAME (GV_Detail 1:1) */}
-      <div
-        className={`rounded-2xl border shadow-lg overflow-hidden transition-all ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
-        }`}
-      >
-        <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-black text-xs uppercase tracking-wider text-amber-500">
-              .:: Detail Item Opname ::.
-            </span>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
-              Total: {opnameItems.length} Jenis Barang | {opnameItems.reduce((a, b) => a + b.qty, 0)} Total Qty
-            </span>
+      {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT (1:1 with SyncStock) */}
+      <div className="flex-1 min-h-0 p-4 flex flex-col">
+        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          {/* Table Toolbar (Tabs & Search) */}
+          <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 sticky top-0 z-30 ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          }`}>
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setActiveFilterTab('all')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeFilterTab === 'all'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Semua ({opnameItems.length})
+            </button>
+
+            <button
+              onClick={() => setActiveFilterTab('variance')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                activeFilterTab === 'variance'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : isDark ? 'bg-slate-800 text-rose-400 hover:bg-slate-700' : 'bg-white text-rose-600 hover:bg-slate-200'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              <span>Selisih ({stats.varianceCount})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveFilterTab('matched')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                activeFilterTab === 'matched'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : isDark ? 'bg-slate-800 text-emerald-400 hover:bg-slate-700' : 'bg-white text-emerald-600 hover:bg-slate-200'
+              }`}
+            >
+              <Check className="w-3 h-3" />
+              <span>Klop ({stats.matchedCount})</span>
+            </button>
           </div>
 
-          {opnameItems.length > 0 && (
-            <button
-              onClick={handleSubmitOpname}
-              disabled={isSubmitting}
-              className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg cursor-pointer transition-all"
-            >
-              <Save className="w-4 h-4" />
-              <span>{isSubmitting ? 'Menyimpan...' : 'Simpan Transaksi Opname'}</span>
-            </button>
-          )}
+          {/* Table Live Search */}
+          <div className="relative min-w-[220px]">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Filter tabel opname..."
+              value={tableSearch}
+              onChange={(e) => setTableSearch(e.target.value)}
+              className={`w-full pl-8 pr-3 py-1 rounded-lg border text-xs font-semibold focus:outline-none ${
+                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+              }`}
+            />
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
+        {/* FULL-HEIGHT AUTO-EXPANDING TABLE */}
+        <table className="w-full text-left border-separate border-spacing-0">
+            <thead className="sticky top-0 z-20">
               <tr
-                className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                  isDark ? 'bg-slate-800/60 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                className={`text-[11px] font-black uppercase tracking-wider border-b-2 ${
+                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}
               >
-                <th className="py-3 px-4 w-12 text-center">#No</th>
-                <th className="py-3 px-4">No. Transaksi</th>
-                <th className="py-3 px-4">Barcode / Kode</th>
-                <th className="py-3 px-4">Nama Barang</th>
-                <th className="py-3 px-4 text-center">Qty Fisik</th>
-                <th className="py-3 px-4 text-right">Harga Satuan</th>
-                <th className="py-3 px-4">Keterangan</th>
-                <th className="py-3 px-4 text-center">Aksi</th>
+                <th className="py-2.5 px-4 w-12 text-center">#No</th>
+                <th className="py-2.5 px-4">SKU / Barcode</th>
+                <th className="py-2.5 px-4">Nama Barang</th>
+                <th className="py-2.5 px-4 text-center">Stok Sistem</th>
+                <th className="py-2.5 px-4 text-center min-w-[150px]">Qty Fisik Counted</th>
+                <th className="py-2.5 px-4 text-center">Status Selisih</th>
+                <th className="py-2.5 px-4">Keterangan</th>
+                <th className="py-2.5 px-4 text-center w-16">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/40 text-xs">
-              {opnameItems.length === 0 ? (
+            <tbody className="divide-y divide-slate-800/30 text-xs">
+              {filteredTableItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400 font-medium">
-                    Belum ada item opname yang dimasukkan. Gunakan form di atas untuk menambah item.
+                  <td colSpan={8} className="py-20 text-center text-slate-400 font-medium">
+                    {opnameItems.length === 0
+                      ? 'Belum ada item opname. Gunakan form Quick Scan di atas atau klik "Populasi Semua".'
+                      : 'Tidak ada item yang sesuai dengan filter.'}
                   </td>
                 </tr>
               ) : (
-                opnameItems.map((item, idx) => (
-                  <tr
-                    key={item.inventoryId}
-                    className={`transition-colors ${
-                      isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
-                    }`}
-                  >
-                    <td className="py-3 px-4 text-center font-bold text-slate-400">{idx + 1}</td>
-                    <td className="py-3 px-4 font-mono font-bold text-amber-500">{noTransaction}</td>
-                    <td className="py-3 px-4 font-mono font-semibold">{item.barcode}</td>
-                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                      {item.inventoryName}
-                      <span className="block text-[10px] text-slate-400 font-normal">{item.inventoryNo}</span>
-                    </td>
-                    <td className="py-3 px-4 text-center font-black text-amber-500 text-sm">
-                      {item.qty}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold">
-                      Rp {(item.price || 0).toLocaleString('id-ID')}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400 italic">{item.description}</td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleRemoveItem(item.inventoryId)}
-                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
-                        title="Hapus Item"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                filteredTableItems.map((item, idx) => {
+                  const sysQty = item.systemQty !== undefined ? item.systemQty : item.qty;
+                  const diff = item.qty - sysQty;
+
+                  return (
+                    <tr
+                      key={item.inventoryId}
+                      className={`transition-colors ${
+                        isDark ? 'hover:bg-slate-800/60 text-slate-200' : 'hover:bg-amber-50/50 text-slate-800'
+                      }`}
+                    >
+                      <td className="py-2.5 px-4 text-center font-bold text-slate-400">{idx + 1}</td>
+                      <td className="py-2.5 px-4 font-mono">
+                        <span className="font-bold text-amber-500 block">{item.inventoryNo}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">{item.barcode}</span>
+                      </td>
+                      <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">
+                        {item.inventoryName}
+                      </td>
+
+                      {/* System Stock */}
+                      <td className="py-2.5 px-4 text-center font-mono font-bold text-slate-400 text-sm">
+                        {sysQty}
+                      </td>
+
+                      {/* Physical Stock - INLINE STEPPER EDIT */}
+                      <td className="py-2.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleInlineQtyChange(item.inventoryId, item.qty - 1)}
+                            className={`p-1 rounded-lg border transition-all active:scale-90 cursor-pointer ${
+                              isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                            }`}
+                            title="Kurangi 1"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.qty}
+                            onChange={(e) => handleInlineQtyChange(item.inventoryId, parseInt(e.target.value) || 0)}
+                            className={`w-16 py-1 text-center font-black text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                              isDark ? 'bg-slate-950 text-amber-400 border-slate-700' : 'bg-amber-50 text-amber-900 border-amber-300'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleInlineQtyChange(item.inventoryId, item.qty + 1)}
+                            className={`p-1 rounded-lg border transition-all active:scale-90 cursor-pointer ${
+                              isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                            }`}
+                            title="Tambah 1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* REALTIME VARIANCE BADGE */}
+                      <td className="py-2.5 px-4 text-center">
+                        {diff === 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                            <Check className="w-3 h-3" /> Klop (0)
+                          </span>
+                        ) : diff > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            <ArrowUpRight className="w-3 h-3" /> +{diff} (Surplus)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                            <ArrowDownRight className="w-3 h-3" /> {diff} (Defisit)
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-2.5 px-4 text-slate-400 italic">{item.description}</td>
+
+                      <td className="py-2.5 px-4 text-center">
+                        <button
+                          onClick={() => handleRemoveItem(item.inventoryId)}
+                          className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                          title="Hapus Item"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
+
+        {/* COMPACT WORKBENCH FOOTER STATS BAR */}
+        <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-3 shrink-0 ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'
+        }`}>
+          <div className="flex items-center gap-4 text-xs font-bold">
+            <span className="text-slate-400">
+              Total Barang: <strong className="text-slate-900 dark:text-white">{stats.totalItems} SKU</strong>
+            </span>
+            <span className="text-slate-400">
+              Total Qty Fisik: <strong className="text-amber-500">{stats.totalPhysicalQty} Unit</strong>
+            </span>
+            <span className="text-emerald-500">
+              Klop: <strong>{stats.matchedCount}</strong>
+            </span>
+            <span className="text-rose-500">
+              Selisih: <strong>{stats.varianceCount}</strong>
+            </span>
+          </div>
+
+          <div className="text-xs font-bold text-slate-400">
+            Total Nilai Fisik: <strong className="text-emerald-400 font-mono text-sm">Rp {stats.totalValue.toLocaleString('id-ID')}</strong>
+          </div>
         </div>
       </div>
     </div>
+  </div>
   );
 }

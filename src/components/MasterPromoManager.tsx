@@ -21,26 +21,42 @@ import {
 } from 'lucide-react';
 
 export interface PromoRuleItem {
-  id: string;
+  id: number | string;
+  promoNo?: string;
+  promo_no?: string;
   promoName: string;
-  promoBundle: number;
-  promoGrosir: number;
-  promoPercentage: number;
-  qtyMin: number;
-  qtyMax: number;
-  isPartial: boolean;
-  isGroup: boolean;
-  description: string;
-  promoGrosirType: string;
+  promo_name?: string;
+  groupName?: string;
+  group_name?: string;
+  promoBundle?: number;
+  promoGrosir?: number;
+  promoPercentage?: number;
+  discountPct?: number;
+  discount_pct?: number;
+  qtyMin?: number;
+  qtyMax?: number;
+  isPartial?: boolean;
+  isGroup?: boolean;
+  description?: string;
+  promoGrosirType?: string;
+  startDate?: string;
+  start_date?: string;
+  endDate?: string;
+  end_date?: string;
   isActive: boolean;
+  is_active?: boolean;
 }
 
 export interface PromoGroupItem {
-  id: string;
-  promoCode: string;
-  promoName: string;
-  description: string;
-  isActive: boolean;
+  id: number | string;
+  promoCode?: string;
+  promoName?: string;
+  groupName?: string;
+  group_name?: string;
+  description?: string;
+  promosCount?: number;
+  promos_count?: number;
+  isActive?: boolean;
 }
 
 interface ToastMessage {
@@ -366,10 +382,11 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
       const headers = ['ID', 'Kode Promo', 'Nama Kelompok Promo', 'Description', 'Status Aktif'];
       const csvRows = [headers.join(',')];
       promoGroups.forEach((g) => {
+        const name = g.groupName || g.promoName || 'Kelompok Promo';
         csvRows.push([
           g.id,
-          `"${g.promoCode}"`,
-          `"${g.promoName.replace(/"/g, '""')}"`,
+          `"${g.promoCode || ''}"`,
+          `"${name.replace(/"/g, '""')}"`,
           `"${(g.description || '').replace(/"/g, '""')}"`,
           g.isActive ? 'AKTIF' : 'NON-AKTIF',
         ].join(','));
@@ -466,9 +483,9 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             <Percent className="w-5 h-5" />
           </div>
           <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Promo Grosir Tier</div>
+            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Promo Diskon %</div>
             <div className={`text-lg font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              {promoRules.filter((r) => r.promoGrosir > 0).length}
+              {promoRules.filter((r) => (r.discountPct ?? r.discount_pct ?? 0) > 0).length}
             </div>
           </div>
         </div>
@@ -605,19 +622,20 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         </div>
       </div>
 
-      {/* 📄 MAIN CONTENT DATA TABLE AREA */}
-      <div className="flex-1 overflow-auto p-4">
+      {/* 📄 PROMO DATA TABLE WORKBENCH */}
+      <div className="flex-1 min-h-0 p-4 flex flex-col">
         {promoTab === 'rules' ? (
           /* TABLE ATURAN PROMO (sp_MDPromo_GetData) */
-          <div className={`rounded-2xl border overflow-hidden shadow-lg ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}>
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className={`font-black uppercase tracking-wider ${
-                isDark ? 'bg-slate-800/90 text-amber-400' : 'bg-slate-200 text-slate-950'
-              }`}>
-                <tr>
+            <table className="w-full text-left border-separate border-spacing-0 text-xs">
+              <thead className="sticky top-0 z-20">
+                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
+                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
+                }`}>
                   <th className="py-3 px-3.5 text-center w-12">ID</th>
+                  <th className="py-3 px-4">Kode Promo</th>
                   <th
                     onClick={() => {
                       if (sortFieldRule === 'promoName') setSortOrderRule(sortOrderRule === 'asc' ? 'desc' : 'asc');
@@ -630,13 +648,8 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                       {sortFieldRule === 'promoName' && (sortOrderRule === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
                     </div>
                   </th>
-                  <th className="py-3 px-3 text-center">Qty Min/Max</th>
+                  <th className="py-3 px-4">Kelompok Group</th>
                   <th className="py-3 px-3 text-right">Diskon %</th>
-                  <th className="py-3 px-3 text-right">Diskon Grosir</th>
-                  <th className="py-3 px-3 text-center">Tipe Grosir</th>
-                  <th className="py-3 px-3 text-center">Bundle Parcel</th>
-                  <th className="py-3 px-3 text-center">Partial Flag</th>
-                  <th className="py-3 px-4">Keterangan</th>
                   <th className="py-3 px-3 text-center">Status</th>
                   <th className="py-3 px-3 text-center">Aksi</th>
                 </tr>
@@ -644,122 +657,109 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={11} className="py-12 text-center font-bold text-slate-400">
+                    <td colSpan={7} className="py-12 text-center font-bold text-slate-400">
                       <RefreshCw className="w-5 h-5 text-amber-400 animate-spin mx-auto mb-2" />
-                      Memuat aturan promo dari database PostgreSQL...
+                      Memuat aturan promo dari database...
                     </td>
                   </tr>
-                ) : sortedRules.length === 0 ? (
+                ) : promoRules.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
+                    <td colSpan={7} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
                       Tidak ada aturan promo ditemukan.
                     </td>
                   </tr>
                 ) : (
-                  sortedRules.map((rule) => (
-                    <tr
-                      key={rule.id}
-                      onClick={() => setSelectedRule(rule)}
-                      onDoubleClick={() => {
-                        setSelectedRule(rule);
-                        setModalMode('edit');
-                        setRuleFormData({ ...rule });
-                        setIsRuleModalOpen(true);
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setSelectedRule(rule);
-                        setContextMenu({ x: e.clientX, y: e.clientY, item: rule, type: 'rule' });
-                      }}
-                      className={`transition-colors cursor-pointer ${
-                        selectedRule?.id === rule.id
-                          ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                          : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
-                      }`}
-                    >
-                      <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{rule.id}</td>
-                      <td className="py-3 px-4 font-black">{rule.promoName}</td>
-                      <td className="py-3 px-3 text-center font-mono">{rule.qtyMin} - {rule.qtyMax}</td>
-                      <td className="py-3 px-3 text-right font-black text-amber-400">
-                        {rule.promoPercentage > 0 ? `${rule.promoPercentage}%` : '-'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-bold text-emerald-400">
-                        {rule.promoGrosir > 0 ? `Rp ${rule.promoGrosir.toLocaleString('id-ID')}` : '-'}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                          rule.promoGrosirType === 'PERCENT' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-purple-500/20 text-purple-300'
-                        }`}>
-                          {rule.promoGrosirType || 'PERCENT'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono">
-                        {rule.promoBundle > 0 ? `${rule.promoBundle} Items` : '-'}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        {rule.isPartial ? (
-                          <span className="text-emerald-400 font-bold">Ya</span>
-                        ) : (
-                          <span className="text-slate-500">Tidak</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-slate-400 truncate max-w-xs">{rule.description || '-'}</td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                          rule.isActive
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
-                        }`}>
-                          {rule.isActive ? 'AKTIF' : 'NON-AKTIF'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedRule(rule);
-                              setModalMode('edit');
-                              setRuleFormData({ ...rule });
-                              setIsRuleModalOpen(true);
-                            }}
-                            className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                            title="Edit Promo"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteRule(rule);
-                            }}
-                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                            title="Hapus Promo"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  promoRules.map((rule) => {
+                    const code = rule.promoNo || rule.promo_no || `PRM-${rule.id}`;
+                    const name = rule.promoName || rule.promo_name || 'Promo Item';
+                    const group = rule.groupName || rule.group_name || 'Promo Utama';
+                    const pct = rule.discountPct ?? rule.discount_pct ?? 0;
+                    const active = rule.isActive ?? rule.is_active ?? true;
+
+                    return (
+                      <tr
+                        key={rule.id}
+                        onClick={() => setSelectedRule(rule)}
+                        onDoubleClick={() => {
+                          setSelectedRule(rule);
+                          setModalMode('edit');
+                          setRuleFormData({ ...rule });
+                          setIsRuleModalOpen(true);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setSelectedRule(rule);
+                          setContextMenu({ x: e.clientX, y: e.clientY, item: rule, type: 'rule' });
+                        }}
+                        className={`transition-colors cursor-pointer ${
+                          selectedRule?.id === rule.id
+                            ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
+                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
+                        }`}
+                      >
+                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{rule.id}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-amber-500">{code}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
+                        <td className="py-3 px-4 font-bold text-slate-300">{group}</td>
+                        <td className="py-3 px-3 text-right font-mono font-black text-emerald-400">
+                          {pct > 0 ? `${pct}%` : '-'}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                            active
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                          }`}>
+                            {active ? 'AKTIF' : 'NON-AKTIF'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedRule(rule);
+                                setModalMode('edit');
+                                setRuleFormData({ ...rule });
+                                setIsRuleModalOpen(true);
+                              }}
+                              className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
+                              title="Edit Promo"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRule(rule);
+                              }}
+                              className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                              title="Hapus Promo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         ) : (
           /* TABLE KELOMPOK PROMO GROUP (sp_MDPromoGroup_GetData) */
-          <div className={`rounded-2xl border overflow-hidden shadow-lg ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}>
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className={`font-black uppercase tracking-wider ${
-                isDark ? 'bg-slate-800/90 text-amber-400' : 'bg-slate-200 text-slate-950'
-              }`}>
-                <tr>
+            <table className="w-full text-left border-separate border-spacing-0 text-xs">
+              <thead className="sticky top-0 z-20">
+                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
+                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
+                }`}>
                   <th className="py-3 px-3.5 text-center w-12">ID</th>
-                  <th className="py-3 px-4">Kode Promo</th>
                   <th className="py-3 px-4">Nama Kelompok Promo</th>
-                  <th className="py-3 px-4">Keterangan / Deskripsi</th>
+                  <th className="py-3 px-3 text-center">Jumlah Promo Aktif</th>
                   <th className="py-3 px-3 text-center">Status</th>
                   <th className="py-3 px-3 text-center">Aksi</th>
                 </tr>
@@ -767,52 +767,51 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center font-bold text-slate-400">
+                    <td colSpan={5} className="py-12 text-center font-bold text-slate-400">
                       <RefreshCw className="w-5 h-5 text-amber-400 animate-spin mx-auto mb-2" />
                       Memuat kelompok promo dari database...
                     </td>
                   </tr>
                 ) : promoGroups.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
+                    <td colSpan={5} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
                       Tidak ada kelompok promo ditemukan.
                     </td>
                   </tr>
                 ) : (
-                  promoGroups.map((group) => (
-                    <tr
-                      key={group.id}
-                      onClick={() => setSelectedGroup(group)}
-                      onDoubleClick={() => {
-                        setSelectedGroup(group);
-                        setModalMode('edit');
-                        setGroupFormData({ ...group });
-                        setIsGroupModalOpen(true);
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        setSelectedGroup(group);
-                        setContextMenu({ x: e.clientX, y: e.clientY, item: group, type: 'group' });
-                      }}
-                      className={`transition-colors cursor-pointer ${
-                        selectedGroup?.id === group.id
-                          ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                          : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
-                      }`}
-                    >
-                      <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{group.id}</td>
-                      <td className="py-3 px-4 font-mono font-black text-amber-400">{group.promoCode}</td>
-                      <td className="py-3 px-4 font-black">{group.promoName}</td>
-                      <td className="py-3 px-4 text-slate-400 truncate max-w-md">{group.description || '-'}</td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                          group.isActive
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
-                        }`}>
-                          {group.isActive ? 'AKTIF' : 'NON-AKTIF'}
-                        </span>
-                      </td>
+                  promoGroups.map((group) => {
+                    const name = group.groupName || group.group_name || 'Kelompok Promo';
+                    const count = group.promosCount ?? group.promos_count ?? 0;
+
+                    return (
+                      <tr
+                        key={group.id}
+                        onClick={() => setSelectedGroup(group)}
+                        onDoubleClick={() => {
+                          setSelectedGroup(group);
+                          setModalMode('edit');
+                          setGroupFormData({ ...group });
+                          setIsGroupModalOpen(true);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setSelectedGroup(group);
+                          setContextMenu({ x: e.clientX, y: e.clientY, item: group, type: 'group' });
+                        }}
+                        className={`transition-colors cursor-pointer ${
+                          selectedGroup?.id === group.id
+                            ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
+                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
+                        }`}
+                      >
+                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{group.id}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-amber-400">{count} Promo</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                            AKTIF
+                          </span>
+                        </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
@@ -841,8 +840,9 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         </div>
                       </td>
                     </tr>
-                  ))
-                )}
+                  );
+                })
+              )}
               </tbody>
             </table>
           </div>

@@ -140,28 +140,100 @@ async function main() {
   const catKopi = await prisma.category.upsert({ where: { categoryCode: 'CAT-001' }, update: {}, create: { categoryCode: 'CAT-001', categoryName: 'Peralatan Kopi' } });
   const catEnamel = await prisma.category.upsert({ where: { categoryCode: 'CAT-002' }, update: {}, create: { categoryCode: 'CAT-002', categoryName: 'Enamel & Cangkir' } });
   const catWajan = await prisma.category.upsert({ where: { categoryCode: 'CAT-003' }, update: {}, create: { categoryCode: 'CAT-003', categoryName: 'Wajan & Panci' } });
+  const catElektronik = await prisma.category.upsert({ where: { categoryCode: 'CAT-004' }, update: {}, create: { categoryCode: 'CAT-004', categoryName: 'Elektronik Dapur' } });
+  const catUtensil = await prisma.category.upsert({ where: { categoryCode: 'CAT-005' }, update: {}, create: { categoryCode: 'CAT-005', categoryName: 'Utensil & Kayu' } });
+  const catPisau = await prisma.category.upsert({ where: { categoryCode: 'CAT-006' }, update: {}, create: { categoryCode: 'CAT-006', categoryName: 'Pisau & Cutlery' } });
+  const catToples = await prisma.category.upsert({ where: { categoryCode: 'CAT-007' }, update: {}, create: { categoryCode: 'CAT-007', categoryName: 'Toples & Botol Kaca' } });
+  const catStainless = await prisma.category.upsert({ where: { categoryCode: 'CAT-008' }, update: {}, create: { categoryCode: 'CAT-008', categoryName: 'Perabot Stainless' } });
+
+  const categoriesList = [catKopi, catEnamel, catWajan, catElektronik, catUtensil, catPisau, catToples, catStainless];
 
   const brandEris = await prisma.brand.upsert({ where: { brandCode: 'BRD-001' }, update: {}, create: { brandCode: 'BRD-001', brandName: 'ERIS' } });
   const brandArj = await prisma.brand.upsert({ where: { brandCode: 'BRD-002' }, update: {}, create: { brandCode: 'BRD-002', brandName: 'ARJ' } });
   const brandTefal = await prisma.brand.upsert({ where: { brandCode: 'BRD-003' }, update: {}, create: { brandCode: 'BRD-003', brandName: 'Tefal' } });
+  const brandPhilips = await prisma.brand.upsert({ where: { brandCode: 'BRD-004' }, update: {}, create: { brandCode: 'BRD-004', brandName: 'Philips' } });
+  const brandMaspion = await prisma.brand.upsert({ where: { brandCode: 'BRD-005' }, update: {}, create: { brandCode: 'BRD-005', brandName: 'Maspion' } });
+  const brandOxone = await prisma.brand.upsert({ where: { brandCode: 'BRD-006' }, update: {}, create: { brandCode: 'BRD-006', brandName: 'Oxone' } });
+  const brandChefMaster = await prisma.brand.upsert({ where: { brandCode: 'BRD-007' }, update: {}, create: { brandCode: 'BRD-007', brandName: 'ChefMaster' } });
+  const brandSubron = await prisma.brand.upsert({ where: { brandCode: 'BRD-008' }, update: {}, create: { brandCode: 'BRD-008', brandName: 'Subron' } });
+
+  const brandsList = [brandEris, brandArj, brandTefal, brandPhilips, brandMaspion, brandOxone, brandChefMaster, brandSubron];
 
   const uomClient = (prisma as any).uoM || (prisma as any).uOM || (prisma as any).uom;
   const uomPcs = await uomClient.upsert({ where: { uomCode: 'UOM-001' }, update: {}, create: { uomCode: 'UOM-001', uomName: 'Pcs' } });
   const uomSet = await uomClient.upsert({ where: { uomCode: 'UOM-002' }, update: {}, create: { uomCode: 'UOM-002', uomName: 'Set' } });
+  const uomBox = await uomClient.upsert({ where: { uomCode: 'UOM-003' }, update: {}, create: { uomCode: 'UOM-003', uomName: 'Box' } });
+  const uomDozen = await uomClient.upsert({ where: { uomCode: 'UOM-004' }, update: {}, create: { uomCode: 'UOM-004', uomName: 'Lusin' } });
 
-  const inventories = [
-    { barcode: '8801234000011', inventoryNo: 'INV-00001', inventoryName: 'ERIS Coffee Grinder Manual Kayu Premium', categoryId: catKopi.id, brandId: brandEris.id, uomId: uomPcs.id, hpp: 60000, price: 85000, stock: 24 },
-    { barcode: '8801234000028', inventoryNo: 'INV-00002', inventoryName: 'OTC Coffee Grinder Manual Classic Stainless', categoryId: catKopi.id, brandId: brandEris.id, uomId: uomPcs.id, hpp: 55000, price: 80000, stock: 30 },
-    { barcode: '8801234000059', inventoryNo: 'INV-00003', inventoryName: 'ARJ Mug Enamel Ayam Jago Tutup 9cm', categoryId: catEnamel.id, brandId: brandArj.id, uomId: uomPcs.id, hpp: 15000, price: 25000, stock: 50 },
-    { barcode: '8801234000110', inventoryNo: 'INV-00004', inventoryName: 'Wok Pan Anti Lengket Tefal Coating 32cm', categoryId: catWajan.id, brandId: brandTefal.id, uomId: uomPcs.id, hpp: 180000, price: 245000, stock: 12 },
+  const uomsList = [uomPcs, uomSet, uomBox, uomDozen];
+
+  // Base Products template
+  const productTemplates = [
+    { name: 'Coffee Grinder Manual Kayu Premium', price: 85000, hpp: 60000, cat: catKopi, brand: brandEris, uom: uomPcs },
+    { name: 'Coffee Grinder Manual Classic Stainless', price: 80000, hpp: 55000, cat: catKopi, brand: brandEris, uom: uomPcs },
+    { name: 'Mug Enamel Ayam Jago Tutup 9cm', price: 25000, hpp: 15000, cat: catEnamel, brand: brandArj, uom: uomPcs },
+    { name: 'Wok Pan Anti Lengket Tefal Coating 32cm', price: 245000, hpp: 180000, cat: catWajan, brand: brandTefal, uom: uomPcs },
+    { name: 'Mixer Tangan Elektrik Philips 5 Kecepatan 300W', price: 385000, hpp: 290000, cat: catElektronik, brand: brandPhilips, uom: uomPcs },
+    { name: 'Teapot Stainless Steel Harmony 1.5L', price: 115000, hpp: 78000, cat: catStainless, brand: brandSubron, uom: uomPcs },
+    { name: 'Talenan Kayu Jati Solid Anti Jamur 30x20cm', price: 65000, hpp: 42000, cat: catUtensil, brand: brandChefMaster, uom: uomPcs },
+    { name: 'Pisau Dapur Chef Knife Stainless 8 Inch', price: 95000, hpp: 62000, cat: catPisau, brand: brandOxone, uom: uomPcs },
+    { name: 'Set Pisau Dapur Blok Kayu 5 in 1', price: 275000, hpp: 195000, cat: catPisau, brand: brandOxone, uom: uomSet },
+    { name: 'Toples Bumbu Glass Airtight Jar 500ml', price: 32000, hpp: 19000, cat: catToples, brand: brandSubron, uom: uomPcs },
+    { name: 'Panci Stew Pot Stainless Steel Heavy Duty 24cm', price: 320000, hpp: 235000, cat: catStainless, brand: brandMaspion, uom: uomPcs },
+    { name: 'Wajan Frypan Teflon Non-Stick 20cm', price: 75000, hpp: 48000, cat: catWajan, brand: brandMaspion, uom: uomPcs },
+    { name: 'Cangkir Enamel Jago Polos Vintage 10cm', price: 18000, hpp: 10000, cat: catEnamel, brand: brandArj, uom: uomPcs },
+    { name: 'French Press Coffee Maker 600ml Borosilicate', price: 125000, hpp: 85000, cat: catKopi, brand: brandEris, uom: uomPcs },
+    { name: 'Blender Dapur Kaca Philips 2L 450W', price: 540000, hpp: 420000, cat: catElektronik, brand: brandPhilips, uom: uomPcs },
+    { name: 'Spatula Silikon Tahan Panas 31cm Set 3 Pcs', price: 48000, hpp: 29000, cat: catUtensil, brand: brandChefMaster, uom: uomSet },
   ];
 
-  for (const inv of inventories) {
-    await prisma.inventory.upsert({
-      where: { barcode: inv.barcode },
-      update: inv,
-      create: inv,
+  // Generate 150 items
+  const generatedInventories = [];
+  for (let i = 1; i <= 150; i++) {
+    const tmpl = productTemplates[(i - 1) % productTemplates.length];
+    const cat = categoriesList[(i - 1) % categoriesList.length];
+    const brand = brandsList[(i - 1) % brandsList.length];
+    const uom = uomsList[(i - 1) % uomsList.length];
+
+    const skuNum = String(i).padStart(5, '0');
+    const barcodeNum = `8801234${skuNum}`;
+    const variantSuffix = Math.floor(i / 16) > 0 ? ` (Varian ${Math.floor(i / 16) + 1})` : '';
+
+    generatedInventories.push({
+      barcode: barcodeNum,
+      inventoryNo: `INV-${skuNum}`,
+      inventoryName: `${brand.brandName} ${tmpl.name}${variantSuffix}`,
+      categoryId: cat.id,
+      brandId: brand.id,
+      uomId: uom.id,
+      hpp: tmpl.hpp + ((i % 10) * 2000),
+      price: tmpl.price + ((i % 10) * 3500),
+      stock: 10 + ((i * 7) % 180),
     });
+  }
+
+  for (const inv of generatedInventories) {
+    const existingByBarcode = await prisma.inventory.findUnique({ where: { barcode: inv.barcode } });
+    if (existingByBarcode) {
+      await prisma.inventory.update({
+        where: { id: existingByBarcode.id },
+        data: {
+          inventoryName: inv.inventoryName,
+          hpp: inv.hpp,
+          price: inv.price,
+          stock: inv.stock,
+        },
+      });
+    } else {
+      const existingByNo = await prisma.inventory.findUnique({ where: { inventoryNo: inv.inventoryNo } });
+      const inventoryNoToUse = existingByNo ? `INV-${Date.now()}-${Math.floor(Math.random()*1000)}` : inv.inventoryNo;
+      await prisma.inventory.create({
+        data: {
+          ...inv,
+          inventoryNo: inventoryNoToUse,
+        },
+      });
+    }
   }
 
   // 7. Seed Promos
@@ -192,6 +264,119 @@ async function main() {
       status: 'OPEN',
     },
   });
+
+  // 9. Seed Rich Opname Transactions (20 Transactions with full items)
+  const allInventories = await prisma.inventory.findMany();
+  if (allInventories.length > 0) {
+    const opnameWarehouses = [
+      'Gudang Utama Harmoni',
+      'Gudang Display Showroom',
+      'Bar Kopi Rungkut',
+      'Gudang Pastry',
+      'Gudang Elektronik',
+    ];
+
+    for (let i = 1; i <= 20; i++) {
+      const padNum = String(i).padStart(3, '0');
+      const opnameNo = `OPN-202609-${padNum}`;
+      const whName = opnameWarehouses[(i - 1) % opnameWarehouses.length];
+
+      const existingOp = await prisma.opnameHeader.findUnique({ where: { opnameNo } });
+      if (!existingOp) {
+        await prisma.opnameHeader.create({
+          data: {
+            opnameNo,
+            opnameDate: new Date(Date.now() - (20 - i) * 12 * 60 * 60 * 1000),
+            whName,
+            details: {
+              create: allInventories.map((inv, idx) => {
+                // Vary variances realistically (some match 0, some +surplus, some -deficit)
+                const variancePattern = ((idx + i) % 5 === 0) ? -3 : ((idx + i) % 4 === 0) ? 2 : ((idx + i) % 3 === 0) ? -1 : 0;
+                const sysQty = inv.stock || 20;
+                const physQty = Math.max(0, sysQty + variancePattern);
+                return {
+                  barcode: inv.barcode,
+                  inventoryNo: inv.inventoryNo,
+                  inventoryName: inv.inventoryName,
+                  systemQty: sysQty,
+                  physicalQty: physQty,
+                  diffQty: physQty - sysQty,
+                };
+              }),
+            },
+          },
+        });
+      }
+    }
+  }
+
+  // 10. Seed Rich Sales POS Transactions (30 Transactions with realistic details & dates)
+  if (allInventories.length > 0) {
+    const customerNames = [
+      'Pelanggan Umum POS',
+      'Budi Santoso (Resto Bintang)',
+      'Siti Rahma (VIP Gold)',
+      'Toko Kopi Jaya Abadi',
+      'Catering Berkah Utama',
+      'Warung Makan Pak Slamet',
+    ];
+    const cashierNames = ['Rina Kartika (Kasir 1)', 'Siti Aminah (Kasir 2)', 'Bambang (Admin POS)'];
+
+    for (let i = 1; i <= 30; i++) {
+      const padNum = String(i).padStart(4, '0');
+      const salesPOSNo = `POS-202609-${padNum}`;
+      const customerName = customerNames[(i - 1) % customerNames.length];
+      const cashierName = cashierNames[(i - 1) % cashierNames.length];
+
+      // Spread dates across last 60 days
+      const txDate = new Date(Date.now() - (30 - i) * 24 * 60 * 60 * 1000);
+
+      // Select 2 to 5 random items
+      const selectedItems = [];
+      let totalAmount = 0;
+      const itemCount = (i % 4) + 2;
+
+      for (let j = 0; j < itemCount; j++) {
+        const inv = allInventories[(i * 3 + j) % allInventories.length];
+        const qty = (j % 3) + 1;
+        const price = inv.price || 50000;
+        const subtotal = qty * price;
+        totalAmount += subtotal;
+
+        selectedItems.push({
+          barcode: inv.barcode,
+          inventoryNo: inv.inventoryNo,
+          inventoryName: inv.inventoryName,
+          qty,
+          price,
+          subtotal,
+        });
+      }
+
+      const discountAmount = i % 3 === 0 ? Math.round(totalAmount * 0.05) : 0;
+      const grandTotal = totalAmount - discountAmount;
+
+      const existingSales = await prisma.salesPOSHeader.findUnique({ where: { salesPOSNo } });
+      if (!existingSales) {
+        await prisma.salesPOSHeader.create({
+          data: {
+            salesPOSNo,
+            salesPOSDate: txDate,
+            customerName,
+            totalAmount,
+            discountAmount,
+            grandTotal,
+            cashierName,
+            status: 'COMPLETED',
+            createdAt: txDate,
+            details: {
+              create: selectedItems,
+            },
+          },
+        });
+      }
+    }
+  }
 
   console.log('Seeding finished successfully!');
 }

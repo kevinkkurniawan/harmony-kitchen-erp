@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -42,16 +42,36 @@ export async function GET(request: Request) {
     ]);
 
     const mapped = items.map((inv) => ({
-      id: inv.id,
+      id: String(inv.id),
       barcode: inv.barcode,
+      inventoryNo: inv.inventoryNo,
       inventory_no: inv.inventoryNo,
+      inventoryName: inv.inventoryName,
       inventory_name: inv.inventoryName,
-      category_name: inv.category?.categoryName || 'General',
+      inventoryBrandId: inv.brandId || undefined,
+      brandName: inv.brand?.brandName || 'General',
       brand_name: inv.brand?.brandName || 'General',
+      inventoryCategoryId: inv.categoryId || undefined,
+      categoryName: inv.category?.categoryName || 'General',
+      category_name: inv.category?.categoryName || 'General',
+      uoMId: inv.uomId || undefined,
+      uomName: inv.uom?.uomName || 'Pcs',
       uom_name: inv.uom?.uomName || 'Pcs',
+      minStock: 5,
+      maxStock: 100,
+      kodeHarga: 'STD',
+      description: '',
       hpp: inv.hpp,
       price: inv.price,
+      priceBuy: inv.hpp,
+      disc: 0,
+      grosir1: Math.round(inv.price * 0.95),
+      grosir2: Math.round(inv.price * 0.90),
+      grosir3: Math.round(inv.price * 0.85),
+      stokAwal: inv.stock,
+      stokAkhir: inv.stock,
       stock: inv.stock,
+      isActive: inv.isActive,
       is_active: inv.isActive,
       created_at: inv.createdAt,
     }));

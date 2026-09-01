@@ -358,10 +358,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {activeTab === 'daily' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr
                   className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                    isDark ? 'bg-slate-800/60 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                    isDark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                   }`}
                 >
                   <th className="py-3.5 px-4 text-center">Tanggal</th>
@@ -425,10 +425,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {activeTab === 'monthly' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr
                   className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                    isDark ? 'bg-slate-800/60 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                    isDark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                   }`}
                 >
                   <th className="py-3.5 px-4 text-center">Periode Bulan</th>
@@ -485,10 +485,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {activeTab === 'items' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr
                   className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                    isDark ? 'bg-slate-800/60 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                    isDark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                   }`}
                 >
                   <th className="py-3.5 px-4">Barcode / Kode</th>

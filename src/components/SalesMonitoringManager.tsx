@@ -115,7 +115,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         const url = `/api/sales/monitoring?q=${encodeURIComponent(searchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
         const res = await fetch(url);
         const json = await res.json();
-        if (isMounted && json.success) {
+        if (isMounted && (json.success || Array.isArray(json.data))) {
           setTransactions(json.data || []);
           if (json.summary) setSummary(json.summary);
         }
@@ -135,7 +135,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
       const url = `/api/sales/monitoring?q=${encodeURIComponent(searchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
       const res = await fetch(url);
       const json = await res.json();
-      if (json.success) {
+      if (json.success || Array.isArray(json.data)) {
         setTransactions(json.data || []);
         if (json.summary) setSummary(json.summary);
       }
@@ -272,7 +272,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
           <div>
             <div className="text-[11px] font-bold text-slate-400">Total Omset Penjualan</div>
             <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              Rp {summary.grossSales.toLocaleString('id-ID')}
+              Rp {(summary?.grossSales ?? 0).toLocaleString('id-ID')}
             </div>
           </div>
         </div>
@@ -286,7 +286,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
           <div>
             <div className="text-[11px] font-bold text-slate-400">Total Struk Transaksi</div>
             <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
-              {summary.totalCount} Nota Lunas
+              {summary?.totalCount ?? 0} Nota Lunas
             </div>
           </div>
         </div>
@@ -300,7 +300,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
           <div>
             <div className="text-[11px] font-bold text-slate-400">Rata-Rata Struk (Basket)</div>
             <div className={`text-lg font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>
-              Rp {summary.avgBasket.toLocaleString('id-ID')}
+              Rp {(summary?.avgBasket ?? 0).toLocaleString('id-ID')}
             </div>
           </div>
         </div>
@@ -478,16 +478,16 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
       </div>
 
-      {/* 📄 MAIN TRANSACTION TABLE GRID */}
-      <div className="flex-1 overflow-auto p-4">
-        <div className={`rounded-2xl border overflow-hidden shadow-lg ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+      {/* 📄 MAIN TRANSACTION TABLE WORKBENCH */}
+      <div className="flex-1 min-h-0 p-4 flex flex-col">
+        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          <table className="w-full text-left border-collapse text-xs">
-            <thead className={`font-black uppercase tracking-wider sticky top-0 z-10 ${
-              isDark ? 'bg-slate-800/90 text-indigo-300' : 'bg-slate-200 text-slate-950'
-            }`}>
-              <tr>
+          <table className="w-full text-left border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-20">
+              <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
+                isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
+              }`}>
                 <th className="py-3.5 px-4 text-center">No. Struk</th>
                 <th className="py-3.5 px-4">Tanggal & Jam</th>
                 <th className="py-3.5 px-4">Kasir / Officer</th>
@@ -515,70 +515,62 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   </td>
                 </tr>
               ) : (
-                transactions.map((row) => (
-                  <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
-                    <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{row.invoiceNo}</td>
-                    <td className="py-3.5 px-4 font-mono">{row.invoiceDate}</td>
-                    <td className="py-3.5 px-4 font-black flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{row.cashierName}</span>
-                    </td>
-                    <td className="py-3.5 px-4 font-bold">{row.customerName}</td>
-                    <td className="py-3.5 px-4">
-                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
-                        row.paymentType === 'CASH'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : row.paymentType === 'QRIS'
-                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                          : row.paymentType === 'TRANSFER'
-                          ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                          : row.paymentType === 'DEBIT'
-                          ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      }`}>
-                        {row.paymentType} ({row.bankName || '-'})
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono">Rp {(row.subtotal || 0).toLocaleString('id-ID')}</td>
-                    <td className="py-3.5 px-4 text-right font-mono text-rose-400">
-                      {row.discValue > 0 ? `- Rp ${row.discValue.toLocaleString('id-ID')}` : '-'}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
-                      Rp {(row.grandTotal || 0).toLocaleString('id-ID')}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      {row.isVoid ? (
-                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                          VOID
+                transactions.map((row: any) => {
+                  const invoice = row.invoiceNo || row.salesPOSNo || row.sales_pos_no || '-';
+                  const txDate = row.invoiceDate || row.transactionDate || row.salesPOSDate || row.sales_pos_date || '-';
+                  const cashier = row.cashierName || row.cashier_name || 'Kasir Utama';
+                  const customer = row.customerName || row.customer_name || 'Pelanggan Umum';
+                  const payType = row.paymentType || row.paymentMethod || 'CASH';
+                  const subtotal = row.subtotal ?? row.totalAmount ?? row.total_amount ?? 0;
+                  const disc = row.discValue ?? row.discount ?? row.discountAmount ?? row.discount_amount ?? 0;
+                  const grandTotal = row.grandTotal ?? row.grand_total ?? 0;
+
+                  return (
+                    <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                      <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
+                      <td className="py-3.5 px-4 font-mono text-slate-300">{txDate}</td>
+                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{cashier}</span>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-300">{customer}</td>
+                      <td className="py-3.5 px-4">
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+                          payType === 'CASH'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : payType === 'QRIS'
+                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}>
+                          {payType}
                         </span>
-                      ) : (
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono text-slate-300">Rp {Number(subtotal).toLocaleString('id-ID')}</td>
+                      <td className="py-3.5 px-4 text-right font-mono text-rose-400">
+                        {disc > 0 ? `- Rp ${Number(disc).toLocaleString('id-ID')}` : '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
+                        Rp {Number(grandTotal).toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
                         <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                           LUNAS
                         </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => handleViewReceipt(row.id)}
-                          className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
-                          title="Lihat & Cetak Struk"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {!row.isVoid && (
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => handleVoidTransaction(row.id, row.invoiceNo)}
-                            className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                            title="Void Transaksi"
+                            onClick={() => handleViewReceipt(row.id)}
+                            className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
+                            title="Lihat & Cetak Struk"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
