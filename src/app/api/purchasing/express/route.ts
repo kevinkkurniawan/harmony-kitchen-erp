@@ -73,25 +73,29 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { mr_no, mr_date, po_no, supplier_name, items } = body;
+    const mrNo = body.mrNo || body.mr_no;
+    const mrDate = body.mrDate || body.mr_date;
+    const poNo = body.doNo || body.poNo || body.po_no;
+    const supplierName = body.supplierName || body.supplier_name;
+    const items = body.items;
 
-    if (!mr_no || !supplier_name || !items || !Array.isArray(items) || items.length === 0) {
+    if (!mrNo || !supplierName || !items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ success: false, error: 'No. MR, Supplier, dan detail item barang wajib diisi' }, { status: 400 });
     }
 
     const created = await prisma.materialReceiveHeader.create({
       data: {
-        mrNo: mr_no,
-        mrDate: mr_date ? new Date(mr_date) : new Date(),
-        poNo: po_no || null,
-        supplierName: supplier_name,
+        mrNo: mrNo,
+        mrDate: mrDate ? new Date(mrDate) : new Date(),
+        poNo: poNo || null,
+        supplierName: supplierName,
         isPriced: false,
         details: {
           create: items.map((it: any) => ({
-            barcode: it.barcode,
-            inventoryNo: it.inventory_no || it.inventoryNo,
-            inventoryName: it.inventory_name || it.inventoryName,
-            qty: Number(it.qty),
+            barcode: it.barcode || '',
+            inventoryNo: it.inventoryNo || it.inventory_no || '',
+            inventoryName: it.inventoryName || it.inventory_name || '',
+            qty: Number(it.qty || 0),
             unitPrice: 0,
             subtotal: 0,
           })),
@@ -100,15 +104,37 @@ export async function POST(req: Request) {
       include: { details: true },
     });
 
-    // Increment stock for received items
+    // Increment stock for received items in PostgreSQL
     for (const it of items) {
-      await prisma.inventory.updateMany({
-        where: { barcode: it.barcode },
-        data: { stock: { increment: Number(it.qty) } },
-      }).catch(() => {});
+      const invId = it.inventoryId ? Number(it.inventoryId) : undefined;
+      const qty = Number(it.qty || 0);
+      if (invId) {
+        await prisma.inventory.update({
+          where: { id: invId },
+          data: { stock: { increment: qty } },
+        }).catch(async () => {
+          if (it.barcode) {
+            await prisma.inventory.updateMany({
+              where: { barcode: it.barcode },
+              data: { stock: { increment: qty } },
+            }).catch(() => {});
+          }
+        });
+      } else if (it.barcode) {
+        await prisma.inventory.updateMany({
+          where: { barcode: it.barcode },
+          data: { stock: { increment: qty } },
+        }).catch(() => {});
+      }
     }
 
-    return NextResponse.json({ success: true, message: 'Penerimaan Barang Ekspress berhasil disimpan', data: created });
+    return NextResponse.json({
+      success: true,
+      message: 'Penerimaan Barang Ekspress berhasil disimpan & stok inventori telah bertambah',
+      id: created.id,
+      mrNo: created.mrNo,
+      data: created,
+    });
   } catch (error: any) {
     console.error('Error in POST /api/purchasing/express:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

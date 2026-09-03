@@ -59,21 +59,27 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { promo_no, promo_name, group_id, discount_pct, start_date, end_date, is_active } = body;
+    const promoNo = body.promoNo || body.promo_no || `PRM-${Date.now().toString().slice(-6)}`;
+    const promoName = body.promoName || body.promo_name;
+    const groupId = body.groupId ?? body.group_id;
+    const discountPct = body.discountPct ?? body.discount_pct ?? body.promoPercentage ?? 0;
+    const startDate = body.startDate || body.start_date;
+    const endDate = body.endDate || body.end_date;
+    const isActive = body.isActive ?? body.is_active ?? true;
 
-    if (!promo_no || !promo_name) {
-      return NextResponse.json({ success: false, error: 'Kode Promo dan Nama Promo wajib diisi' }, { status: 400 });
+    if (!promoName) {
+      return NextResponse.json({ success: false, error: 'Nama Promo wajib diisi' }, { status: 400 });
     }
 
     const created = await prisma.promo.create({
       data: {
-        promoNo: promo_no,
-        promoName: promo_name,
-        groupId: group_id ? Number(group_id) : null,
-        discountPct: discount_pct ? Number(discount_pct) : 0,
-        startDate: start_date ? new Date(start_date) : new Date(),
-        endDate: end_date ? new Date(end_date) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        isActive: is_active !== undefined ? Boolean(is_active) : true,
+        promoNo: promoNo,
+        promoName: promoName,
+        groupId: groupId ? Number(groupId) : null,
+        discountPct: Number(discountPct || 0),
+        startDate: startDate ? new Date(startDate) : new Date(),
+        endDate: endDate ? new Date(endDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        isActive: Boolean(isActive),
       },
     });
 

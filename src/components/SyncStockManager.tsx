@@ -14,6 +14,7 @@ import {
   ArrowRightLeft,
   Store,
   Layers,
+  Download,
 } from 'lucide-react';
 
 export interface SyncStockItem {
@@ -140,7 +141,10 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(debouncedQuery)}&all=true`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
-          setItems(json.data.map((item: SyncStockItem) => ({ ...item, isChecked: false })));
+          setItems(json.data.map((item: SyncStockItem) => ({
+            ...item,
+            isChecked: item.qtyTransaksi > 0,
+          })));
           setCurrentPage(1);
         }
       } catch (err) {
@@ -159,7 +163,10 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
       const res = await fetch(`/api/sales/sync?q=${encodeURIComponent(debouncedQuery)}&all=true`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        setItems(json.data.map((item: SyncStockItem) => ({ ...item, isChecked: false })));
+        setItems(json.data.map((item: SyncStockItem) => ({
+          ...item,
+          isChecked: item.qtyTransaksi > 0,
+        })));
       }
     } catch (err) {
       console.error('Error fetching sync items:', err);
@@ -246,6 +253,39 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
     }
   };
 
+  // Export Sync Items to CSV
+  const handleExportCSV = () => {
+    if (items.length === 0) {
+      return addToast('Tidak ada data item sync untuk diexport', 'warning');
+    }
+
+    const headers = ['No', 'Kode Barang', 'Barcode', 'Nama Barang Dapur', 'Satuan', 'Stok Gudang ERP', 'Qty Penjualan POS', 'Stok Setelah Sync', 'Status Sync'];
+    const rows = items.map((item, idx) => {
+      const statusStr = item.isChecked ? 'SIAP SYNC' : 'LEWATI';
+      return [
+        idx + 1,
+        `"${item.inventoryNo}"`,
+        `"${item.barcode}"`,
+        `"${item.inventoryName.replace(/"/g, '""')}"`,
+        `"${item.uomName}"`,
+        item.stokGudang,
+        item.qtyTransaksi,
+        item.stokSetelahSync,
+        `"${statusStr}"`,
+      ].join(',');
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Sync_Stock_POS_Gudang_${new Date().toISOString().substring(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addToast('Data Sync Stock berhasil diexport ke CSV', 'success');
+  };
+
   // ⚡ MEMOIZED CALCULATIONS
   const selectedCount = useMemo(() => items.filter((i) => i.isChecked).length, [items]);
   const totalPendingQty = useMemo(
@@ -305,6 +345,17 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportCSV}
+            className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-300'
+            }`}
+            title="Export data sync stock ke CSV"
+          >
+            <Download className="w-4 h-4 text-indigo-400" />
+            <span>Export CSV</span>
+          </button>
+
           <button
             onClick={fetchHistoryLogs}
             className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${

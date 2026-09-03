@@ -55,14 +55,14 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { group_name } = body;
+    const groupName = body.groupName || body.group_name || body.promoName;
 
-    if (!group_name) {
+    if (!groupName) {
       return NextResponse.json({ success: false, error: 'Nama Group Promo wajib diisi' }, { status: 400 });
     }
 
     const created = await prisma.promoGroup.create({
-      data: { groupName: group_name },
+      data: { groupName: groupName },
     });
 
     return NextResponse.json({ success: true, message: 'Group Promo berhasil ditambahkan', data: created });

@@ -5,11 +5,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const body = await request.json();
-    const { group_name } = body;
+    const groupName = body.groupName || body.group_name || body.promoName;
 
     const updated = await prisma.promoGroup.update({
       where: { id: Number(id) },
-      data: { groupName: group_name },
+      data: { groupName: groupName || undefined },
     });
 
     return NextResponse.json({ success: true, message: 'Group Promo berhasil diperbarui', data: updated });

@@ -22,20 +22,28 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const body = await request.json();
-    const { supplier_code, supplier_name, supplier_type, address, city, phone, email, contact_person, is_active } = body;
+    const supplierCode = body.supplierCode || body.supplierNo || body.supplier_code;
+    const supplierName = body.supplierName || body.supplier_name;
+    const supplierType = body.supplierType || body.supplier_type;
+    const address = body.address;
+    const city = body.city;
+    const phone = body.phone1 || body.phone || body.phone2;
+    const email = body.email;
+    const contactPerson = body.contactPerson || body.contact_person;
+    const isActive = body.isActive ?? body.is_active;
 
     const updated = await prisma.supplier.update({
       where: { id: Number(id) },
       data: {
-        supplierCode: supplier_code,
-        supplierName: supplier_name,
-        supplierType: supplier_type,
-        address,
-        city,
-        phone,
-        email,
-        contactPerson: contact_person,
-        isActive: is_active !== undefined ? Boolean(is_active) : undefined,
+        supplierCode: supplierCode || undefined,
+        supplierName: supplierName || undefined,
+        supplierType: supplierType || undefined,
+        address: address !== undefined ? address : undefined,
+        city: city !== undefined ? city : undefined,
+        phone: phone !== undefined ? phone : undefined,
+        email: email !== undefined ? email : undefined,
+        contactPerson: contactPerson !== undefined ? contactPerson : undefined,
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined,
       },
     });
 

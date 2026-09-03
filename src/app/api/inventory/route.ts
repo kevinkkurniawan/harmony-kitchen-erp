@@ -86,24 +86,33 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { barcode, inventory_no, inventory_name, category_id, brand_id, uom_id, hpp, price, stock, is_active } = body;
+    const barcode = body.barcode;
+    const inventoryNo = body.inventoryNo || body.inventory_no;
+    const inventoryName = body.inventoryName || body.inventory_name;
+    const categoryId = body.inventoryCategoryId ?? body.categoryId ?? body.category_id;
+    const brandId = body.inventoryBrandId ?? body.brandId ?? body.brand_id;
+    const uomId = body.uoMId ?? body.uomId ?? body.uom_id;
+    const hpp = body.hpp;
+    const price = body.price;
+    const stock = body.stokAkhir ?? body.stokAwal ?? body.stock ?? 0;
+    const isActive = body.isActive ?? body.is_active ?? true;
 
-    if (!barcode || !inventory_no || !inventory_name) {
+    if (!barcode || !inventoryNo || !inventoryName) {
       return NextResponse.json({ success: false, error: 'Barcode, Kode Barang, dan Nama Barang wajib diisi' }, { status: 400 });
     }
 
     const created = await prisma.inventory.create({
       data: {
         barcode,
-        inventoryNo: inventory_no,
-        inventoryName: inventory_name,
-        categoryId: category_id ? Number(category_id) : null,
-        brandId: brand_id ? Number(brand_id) : null,
-        uomId: uom_id ? Number(uom_id) : null,
+        inventoryNo: inventoryNo,
+        inventoryName: inventoryName,
+        categoryId: categoryId ? Number(categoryId) : null,
+        brandId: brandId ? Number(brandId) : null,
+        uomId: uomId ? Number(uomId) : null,
         hpp: Number(hpp || 0),
         price: Number(price || 0),
         stock: Number(stock || 0),
-        isActive: is_active !== undefined ? Boolean(is_active) : true,
+        isActive: Boolean(isActive),
       },
     });
 

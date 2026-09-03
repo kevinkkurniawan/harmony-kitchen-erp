@@ -67,23 +67,31 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { supplier_code, supplier_name, supplier_type, address, city, phone, email, contact_person, is_active } = body;
+    const supplierCode = body.supplierCode || body.supplierNo || body.supplier_code || `SUP-${Date.now().toString().slice(-4)}`;
+    const supplierName = body.supplierName || body.supplier_name;
+    const supplierType = body.supplierType || body.supplier_type || 'Lokal Utama';
+    const address = body.address;
+    const city = body.city;
+    const phone = body.phone1 || body.phone || body.phone2;
+    const email = body.email;
+    const contactPerson = body.contactPerson || body.contact_person;
+    const isActive = body.isActive ?? body.is_active ?? true;
 
-    if (!supplier_code || !supplier_name) {
-      return NextResponse.json({ success: false, error: 'Kode Supplier dan Nama Supplier wajib diisi' }, { status: 400 });
+    if (!supplierName) {
+      return NextResponse.json({ success: false, error: 'Nama Supplier wajib diisi' }, { status: 400 });
     }
 
     const created = await prisma.supplier.create({
       data: {
-        supplierCode: supplier_code,
-        supplierName: supplier_name,
-        supplierType: supplier_type || 'Lokal Utama',
-        address,
-        city,
-        phone,
-        email,
-        contactPerson: contact_person,
-        isActive: is_active !== undefined ? Boolean(is_active) : true,
+        supplierCode: supplierCode,
+        supplierName: supplierName,
+        supplierType: supplierType,
+        address: address || '',
+        city: city || '',
+        phone: phone || '',
+        email: email || '',
+        contactPerson: contactPerson || '',
+        isActive: Boolean(isActive),
       },
     });
 

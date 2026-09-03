@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const sales = await prisma.salesPOSHeader.findMany({
       where: {
         salesPOSDate: {
-          gte: startDate ? new Date(startDate) : new Date(Date.now() - 120 * 24 * 60 * 60 * 1000),
+          gte: startDate ? new Date(startDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
           lte: endDate ? new Date(endDate) : new Date(),
         },
       },
@@ -47,8 +47,8 @@ export async function GET(request: Request) {
         dailyMap[dStr].grossSales += gross;
         dailyMap[dStr].totalDiscount += disc;
         dailyMap[dStr].netSales += net;
-        dailyMap[dStr].cashSales += net * 0.6;
-        dailyMap[dStr].qrisSales += net * 0.4;
+        dailyMap[dStr].cashSales += Math.round(net * 0.6);
+        dailyMap[dStr].qrisSales += Math.round(net * 0.4);
         dailyMap[dStr].transferSales += 0;
         dailyMap[dStr].cardSales += 0;
       });
@@ -70,6 +70,8 @@ export async function GET(request: Request) {
             netSales: 0,
             cashSales: 0,
             qrisSales: 0,
+            transferSales: 0,
+            cardSales: 0,
           };
         }
         const net = s.grandTotal || 0;
@@ -82,36 +84,59 @@ export async function GET(request: Request) {
         monthlyMap[mStr].grossSales += gross;
         monthlyMap[mStr].totalDiscount += disc;
         monthlyMap[mStr].netSales += net;
-        monthlyMap[mStr].cashSales += net * 0.6;
-        monthlyMap[mStr].qrisSales += net * 0.4;
+        monthlyMap[mStr].cashSales += Math.round(net * 0.6);
+        monthlyMap[mStr].qrisSales += Math.round(net * 0.4);
       });
 
       return NextResponse.json({ success: true, data: Object.values(monthlyMap) });
     }
 
     if (type === 'items') {
+      const inventoryList = await prisma.inventory.findMany({
+        select: { barcode: true, inventoryNo: true, hpp: true },
+      });
+      const hppMap: Record<string, number> = {};
+      inventoryList.forEach((inv) => {
+        if (inv.barcode) hppMap[inv.barcode] = Number(inv.hpp || 0);
+        if (inv.inventoryNo) hppMap[inv.inventoryNo] = Number(inv.hpp || 0);
+      });
+
       const itemMap: Record<string, any> = {};
       sales.forEach((s) => {
         s.details.forEach((d) => {
           const key = d.barcode || d.inventoryNo || 'ITEM-UNKNOWN';
+          const hppUnit = hppMap[d.barcode || ''] || hppMap[d.inventoryNo || ''] || Math.round((d.price || 0) * 0.65);
+
           if (!itemMap[key]) {
             itemMap[key] = {
               barcode: key,
               inventoryNo: d.inventoryNo,
               inventoryName: d.inventoryName,
               totalQty: 0,
+              totalQtySold: 0,
               avgPrice: d.price || 0,
+              avgUnitPrice: d.price || 0,
               totalSales: 0,
+              totalRevenue: 0,
+              totalCost: 0,
               estimatedProfit: 0,
+              profit: 0,
             };
           }
           const qty = Number(d.qty);
           const subtotal = Number(d.subtotal || qty * (d.price || 0));
+          const cost = qty * hppUnit;
+          const profit = subtotal - cost;
 
           itemMap[key].totalQty += qty;
+          itemMap[key].totalQtySold += qty;
           itemMap[key].totalSales += subtotal;
-          itemMap[key].estimatedProfit += subtotal * 0.35;
+          itemMap[key].totalRevenue += subtotal;
+          itemMap[key].totalCost += cost;
+          itemMap[key].estimatedProfit += profit;
+          itemMap[key].profit += profit;
           itemMap[key].avgPrice = itemMap[key].totalQty > 0 ? Math.round(itemMap[key].totalSales / itemMap[key].totalQty) : d.price;
+          itemMap[key].avgUnitPrice = itemMap[key].avgPrice;
         });
       });
 
@@ -119,29 +144,56 @@ export async function GET(request: Request) {
     }
 
     if (type === 'summary') {
-      const totalSalesAmount = sales.reduce((acc, s) => acc + (s.grandTotal || 0), 0);
-      const totalTransactions = sales.length;
-      const totalItemsSold = sales.reduce((acc, s) => acc + s.details.reduce((sum, d) => sum + Number(d.qty), 0), 0);
-      const totalHpp = totalSalesAmount * 0.65;
-      const profit = totalSalesAmount - totalHpp;
+      const inventoryList = await prisma.inventory.findMany({
+        select: { barcode: true, inventoryNo: true, hpp: true },
+      });
+      const hppMap: Record<string, number> = {};
+      inventoryList.forEach((inv) => {
+        if (inv.barcode) hppMap[inv.barcode] = Number(inv.hpp || 0);
+        if (inv.inventoryNo) hppMap[inv.inventoryNo] = Number(inv.hpp || 0);
+      });
+
+      let totalCost = 0;
+      let totalSalesAmount = 0;
+      let totalDiscount = 0;
+      let totalItemsSold = 0;
+
+      sales.forEach((s) => {
+        totalSalesAmount += s.grandTotal || 0;
+        totalDiscount += s.discountAmount || 0;
+        s.details.forEach((d) => {
+          const qty = Number(d.qty);
+          const hppUnit = hppMap[d.barcode || ''] || hppMap[d.inventoryNo || ''] || Math.round((d.price || 0) * 0.65);
+          totalCost += qty * hppUnit;
+          totalItemsSold += qty;
+        });
+      });
+
+      const grossSales = totalSalesAmount + totalDiscount;
+      const profit = totalSalesAmount - totalCost;
+      const profitMarginPct = totalSalesAmount > 0 ? Math.round((profit / totalSalesAmount) * 100) : 0;
 
       return NextResponse.json({
         success: true,
         data: {
           netSales: totalSalesAmount,
-          grossSales: totalSalesAmount * 1.05,
+          grossSales: grossSales,
           totalOmset: totalSalesAmount,
           totalSalesAmount,
-          totalOrders: totalTransactions,
-          totalTransactions,
+          totalOrders: sales.length,
+          totalTransactions: sales.length,
           totalItemsSold,
+          totalDiscount,
+          totalCost,
           profit,
-          totalHpp,
+          totalHpp: totalCost,
           totalGrossProfit: profit,
-          profitMarginPct: 35,
-          cashSales: totalSalesAmount * 0.6,
-          qrisSales: totalSalesAmount * 0.4,
-          avgTransaction: totalTransactions > 0 ? totalSalesAmount / totalTransactions : 0,
+          profitMarginPct,
+          cashSales: Math.round(totalSalesAmount * 0.6),
+          qrisSales: Math.round(totalSalesAmount * 0.4),
+          transferSales: 0,
+          cardSales: 0,
+          avgTransaction: sales.length > 0 ? Math.round(totalSalesAmount / sales.length) : 0,
         },
       });
     }

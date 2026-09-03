@@ -22,6 +22,8 @@ import {
   ArrowUpRight,
   DollarSign,
   Package,
+  Printer,
+  Download,
 } from 'lucide-react';
 
 export interface OpnameEntry {
@@ -115,6 +117,22 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       const itemsArray = invJson.data?.items || invJson.data || [];
       if (invJson.success && Array.isArray(itemsArray)) {
         setInventoryList(itemsArray);
+
+        // Auto-populate all master inventory items on initial load for full opname worksheet
+        const allItems = itemsArray.map((item: InventoryLookupItem) => {
+          const sysQty = item.stokAkhir !== undefined ? item.stokAkhir : (item.stock || 0);
+          return {
+            inventoryId: item.id,
+            inventoryNo: item.inventoryNo,
+            barcode: item.barcode || item.inventoryNo,
+            inventoryName: item.inventoryName,
+            qty: sysQty,
+            systemQty: sysQty,
+            price: item.price || 0,
+            description: 'Stok Opname Catalog',
+          };
+        });
+        setOpnameItems(allItems);
       }
 
       // 2. Fetch Opname History
@@ -122,39 +140,18 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       const histJson = await histRes.json();
       if (histJson.success && Array.isArray(histJson.data) && histJson.data.length > 0) {
         setHistoryList(histJson.data);
-
-        // Auto-select latest opname transaction so page is not empty on initial open
-        const latestTx = histJson.data[0].noTransaction || histJson.data[0].opname_no;
-        if (latestTx) {
-          setSelectedHistoryTx(latestTx);
-          setNoTransaction(latestTx);
-
-          const detailRes = await fetch(`/api/inventory/opname?noTx=${encodeURIComponent(latestTx)}`);
-          const detailJson = await detailRes.json();
-          const detailItems = detailJson.data?.items || detailJson.data || [];
-          if (detailJson.success && Array.isArray(detailItems)) {
-            setOpnameItems(
-              detailItems.map((d: any) => ({
-                inventoryId: d.inventoryId || d.id,
-                inventoryNo: d.inventoryNo || d.inventory_no,
-                barcode: d.barcode,
-                inventoryName: d.inventoryName || d.inventory_name,
-                qty: d.qty !== undefined ? d.qty : (d.physical_qty || d.physicalQty || 0),
-                systemQty: d.systemQty !== undefined ? d.systemQty : (d.system_qty || 0),
-                price: d.price || 0,
-                description: d.description || '',
-              }))
-            );
-          }
-        }
       }
+
+      // Generate fresh Tx No for New Opname session
+      setNoTransaction(generateNewTxNo());
+      setSelectedHistoryTx('');
     } catch (err) {
       console.error('Failed to load opname data:', err);
       showToast('Gagal memuat data master opname', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [generateNewTxNo]);
 
   useEffect(() => {
     loadInitialData();
@@ -217,12 +214,25 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const handleAddItem = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    if (!selectedInvId) {
-      showToast('Pilih barang terlebih dahulu!', 'error');
+    let targetInvId = selectedInvId;
+
+    // Fallback: If no item selected via dropdown, lookup by scanned barcode or SKU
+    if (!targetInvId && barcodeInput.trim()) {
+      const q = barcodeInput.trim().toLowerCase();
+      const foundByScan = inventoryList.find(
+        (i) => (i.barcode && i.barcode.toLowerCase() === q) || (i.inventoryNo && i.inventoryNo.toLowerCase() === q)
+      );
+      if (foundByScan) {
+        targetInvId = foundByScan.id;
+      }
+    }
+
+    if (!targetInvId) {
+      showToast('Pilih barang atau scan barcode yang valid terlebih dahulu!', 'error');
       return;
     }
 
-    const found = inventoryList.find((i) => i.id === selectedInvId);
+    const found = inventoryList.find((i) => i.id === targetInvId);
     if (!found) return;
 
     const qty = typeof qtyInput === 'number' ? qtyInput : 0;
@@ -264,6 +274,51 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setDescInput('');
   };
 
+  // Export Opname List to CSV
+  const handleExportCSV = () => {
+    if (opnameItems.length === 0) {
+      showToast('Tidak ada item opname untuk diexport', 'error');
+      return;
+    }
+
+    const headers = ['No', 'No. Barang / SKU', 'Barcode', 'Nama Barang', 'Stok Sistem', 'Qty Fisik', 'Selisih', 'Status', 'Catatan'];
+    const rows = opnameItems.map((item, idx) => {
+      const sysQty = item.systemQty !== undefined ? item.systemQty : item.qty;
+      const diff = item.qty - sysQty;
+      const statusStr = diff === 0 ? 'Klop' : diff > 0 ? `Surplus (+${diff})` : `Defisit (${diff})`;
+      return [
+        idx + 1,
+        `"${item.inventoryNo}"`,
+        `"${item.barcode}"`,
+        `"${item.inventoryName.replace(/"/g, '""')}"`,
+        sysQty,
+        item.qty,
+        diff,
+        `"${statusStr}"`,
+        `"${(item.description || '').replace(/"/g, '""')}"`,
+      ].join(',');
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Stock_Opname_${(noTransaction || 'Draft').replace(/\//g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Laporan Opname berhasil diexport ke CSV', 'success');
+  };
+
+  // Print Opname Report
+  const handlePrintReport = () => {
+    if (opnameItems.length === 0) {
+      showToast('Tidak ada item opname untuk dicetak', 'error');
+      return;
+    }
+    window.print();
+  };
+
   // Inline Qty Update Handler
   const handleInlineQtyChange = (invId: number, newQty: number) => {
     const validQty = Math.max(0, newQty);
@@ -292,6 +347,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       const detailItems = json.data?.items || json.data || [];
       if (json.success && Array.isArray(detailItems)) {
         setNoTransaction(txNo);
+        if (json.header?.whName || json.header?.wh_name) {
+          setWarehouse(json.header.whName || json.header.wh_name);
+        }
         setOpnameItems(
           detailItems.map((d: any) => ({
             inventoryId: d.inventoryId || d.id,
@@ -456,7 +514,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
               <option value="">-- Lihat Transaksi Opname --</option>
               {historyList.map((h) => (
                 <option key={h.id} value={h.noTransaction}>
-                  {h.noTransaction} ({new Date(h.opnameDate).toLocaleDateString('id-ID')})
+                  {h.noTransaction} ({new Date(h.opnameDate).toLocaleDateString('id-ID')}) - {h.warehouse || (h as any).whName || (h as any).wh_name || 'Gudang'}
                 </option>
               ))}
             </select>
@@ -498,6 +556,38 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Load Master Barang ({inventoryList.length})</span>
+          </button>
+
+          <button
+            onClick={handleExportCSV}
+            disabled={opnameItems.length === 0}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
+              opnameItems.length === 0
+                ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
+                : isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+            }`}
+            title="Export data opname ke CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={handlePrintReport}
+            disabled={opnameItems.length === 0}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
+              opnameItems.length === 0
+                ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
+                : isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+            }`}
+            title="Cetak Laporan Stok Opname"
+          >
+            <Printer className="w-3.5 h-3.5 text-amber-400" />
+            <span>Cetak</span>
           </button>
 
           <button

@@ -5,18 +5,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const body = await request.json();
-    const { promo_no, promo_name, group_id, discount_pct, start_date, end_date, is_active } = body;
+    const promoNo = body.promoNo || body.promo_no;
+    const promoName = body.promoName || body.promo_name;
+    const groupId = body.groupId ?? body.group_id;
+    const discountPct = body.discountPct ?? body.discount_pct ?? body.promoPercentage;
+    const startDate = body.startDate || body.start_date;
+    const endDate = body.endDate || body.end_date;
+    const isActive = body.isActive ?? body.is_active;
 
     const updated = await prisma.promo.update({
       where: { id: Number(id) },
       data: {
-        promoNo: promo_no,
-        promoName: promo_name,
-        groupId: group_id ? Number(group_id) : undefined,
-        discountPct: discount_pct !== undefined ? Number(discount_pct) : undefined,
-        startDate: start_date ? new Date(start_date) : undefined,
-        endDate: end_date ? new Date(end_date) : undefined,
-        isActive: is_active !== undefined ? Boolean(is_active) : undefined,
+        promoNo: promoNo || undefined,
+        promoName: promoName || undefined,
+        groupId: groupId !== undefined ? Number(groupId) : undefined,
+        discountPct: discountPct !== undefined ? Number(discountPct) : undefined,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined,
       },
     });
 
