@@ -1,0 +1,18 @@
+﻿CREATE TABLE IF NOT EXISTS m_brand (id INT PRIMARY KEY, brand_no VARCHAR(100), brand_name VARCHAR(255), description TEXT);
+TRUNCATE TABLE m_brand;
+INSERT INTO m_brand (id, brand_no, brand_name, description) VALUES (1, 'BRD-01', 'Maspion', 'Maspion Plastic & Metalware');
+INSERT INTO m_brand (id, brand_no, brand_name, description) VALUES (2, 'BRD-02', 'Eris', 'Eris Coffee & Kitchen');
+CREATE TABLE IF NOT EXISTS m_category (id INT PRIMARY KEY, category_no VARCHAR(100), category_name VARCHAR(255), description TEXT);
+TRUNCATE TABLE m_category;
+INSERT INTO m_category (id, category_no, category_name, description) VALUES (1, 'CAT-01', 'Kitchenware', 'Peralatan Dapur');
+INSERT INTO m_category (id, category_no, category_name, description) VALUES (2, 'CAT-02', 'Houseware', 'Peralatan Rumah Tangga');
+CREATE TABLE IF NOT EXISTS m_product_type (id INT PRIMARY KEY, product_no VARCHAR(100), product_name VARCHAR(255), description TEXT);
+TRUNCATE TABLE m_product_type;
+INSERT INTO m_product_type (id, product_no, product_name, description) VALUES (1, 'PRD-01', 'Mirror', 'Kaca Cermin');
+INSERT INTO m_product_type (id, product_no, product_name, description) VALUES (2, 'PRD-02', 'Container', 'Wadah Penyimpanan');
+CREATE TABLE IF NOT EXISTS m_uom (id INT PRIMARY KEY, uom_code VARCHAR(100), uom_name VARCHAR(255), description TEXT);
+TRUNCATE TABLE m_uom;
+INSERT INTO m_uom (id, uom_code, uom_name, description) VALUES (1, 'PCS', 'Pieces', 'Satuan Pcs');
+INSERT INTO m_uom (id, uom_code, uom_name, description) VALUES (2, 'BOX', 'Box / Dus', 'Satuan Box');
+INSERT INTO m_uom (id, uom_code, uom_name, description) VALUES (3, 'SET', 'Set', 'Satuan Set');
+CREATE TABLE IF NOT EXISTS m_hpp_history (id SERIAL PRIMARY KEY, inventory_id INT, mr_no VARCHAR(100), mr_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, supplier_name VARCHAR(255), hpp NUMERIC(18,2));
