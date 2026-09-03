@@ -128,10 +128,25 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
-      {/* 📊 PAGE HEADER */}
+    <div id="printable-sales-report" className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      {/* 🖨️ OFFICIAL PRINT HEADER (VISIBLE ONLY ON PRINT) */}
+      <div className="print-header">
+        <div className="flex justify-between items-center pb-2">
+          <div>
+            <h1 className="text-xl font-black uppercase text-black">HARMONY KITCHEN ERP</h1>
+            <h2 className="text-sm font-bold text-slate-700">REKAPITULASI LAPORAN PENJUALAN TOKO & DAPUR</h2>
+          </div>
+          <div className="text-right text-xs">
+            <div><strong>Tanggal Cetak:</strong> {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID')}</div>
+            <div><strong>Jenis Laporan:</strong> {activeTab.toUpperCase()} REPORT</div>
+            <div><strong>Metode Bayar:</strong> {paymentMethodFilter}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 📊 PAGE HEADER (HIDDEN ON PRINT) */}
       <div
-        className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+        className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all no-print ${
           isDark
             ? 'bg-gradient-to-r from-slate-900 via-purple-950/20 to-slate-900 border-slate-800'
             : 'bg-gradient-to-r from-purple-50/70 via-white to-purple-50/40 border-purple-200'
@@ -146,9 +161,6 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
               <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                 Laporan Penjualan ERP
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                1:1 Module Manager (Admin.Frm_Report)
-              </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
               Rekapitulasi Penjualan Harian, Bulanan, Per Barang, dan Profit Analysis
@@ -157,7 +169,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 no-print">
           <button
             onClick={() => window.print()}
             className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white font-black text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
@@ -179,6 +191,62 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           </button>
         </div>
       </div>
+
+      {/* 🖨️ PRINT MEDIA STYLESHEET */}
+      <style>{`
+        @media print {
+          body {
+            background-color: white !important;
+            color: black !important;
+          }
+          .no-print, nav, header, sidebar, button {
+            display: none !important;
+          }
+          #printable-sales-report {
+            visibility: visible !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 20px !important;
+            background: white !important;
+            color: black !important;
+          }
+          #printable-sales-report * {
+            visibility: visible !important;
+            color: black !important;
+            border-color: #cbd5e1 !important;
+          }
+          .print-header {
+            display: block !important;
+            margin-bottom: 20px !important;
+            border-bottom: 2px solid #000 !important;
+            padding-bottom: 12px !important;
+          }
+          .print-signatures {
+            display: flex !important;
+            justify-content: space-between !important;
+            margin-top: 40px !important;
+            padding-top: 20px !important;
+          }
+          table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+          }
+          th, td {
+            border: 1px solid #94a3b8 !important;
+            padding: 6px 10px !important;
+            font-size: 11px !important;
+          }
+          th {
+            background-color: #f1f5f9 !important;
+            font-weight: bold !important;
+          }
+        }
+        .print-header, .print-signatures {
+          display: none;
+        }
+      `}</style>
 
       {/* 📈 KPI STATS CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -610,6 +678,25 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             </div>
           </div>
         )}
+      </div>
+
+      {/* 🖨️ OFFICIAL SIGNATURE BOX (VISIBLE ONLY ON PRINT) */}
+      <div className="print-signatures grid grid-cols-3 gap-6 text-center text-xs pt-8">
+        <div>
+          <div className="font-bold mb-12">Dibuat Oleh (Admin):</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Staf Administrasi ERP</div>
+        </div>
+        <div>
+          <div className="font-bold mb-12">Diperiksa Oleh:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Supervisor Operasional</div>
+        </div>
+        <div>
+          <div className="font-bold mb-12">Disetujui Oleh:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Manajer / Pemilik Dapur</div>
+        </div>
       </div>
     </div>
   );

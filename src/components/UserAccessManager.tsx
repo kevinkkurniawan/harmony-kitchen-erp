@@ -269,9 +269,6 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
               <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                 User ERP & Hak Akses Management
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                1:1 Module Manager (ControlPanel.frmUserSetting)
-              </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
               Manajemen Pengguna ERP dan Matriks Hak Akses Modul (View, Add, Edit, Delete, Print)

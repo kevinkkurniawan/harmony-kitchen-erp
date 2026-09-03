@@ -605,7 +605,36 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             </div>
 
             {/* Thermal Printable Content */}
-            <div className="pt-6 space-y-4 text-xs font-mono">
+            <div className="printable-pos-receipt pt-6 space-y-4 text-xs font-mono">
+              <style>{`
+                @media print {
+                  body {
+                    background: white !important;
+                    color: black !important;
+                  }
+                  body * {
+                    visibility: hidden !important;
+                  }
+                  .printable-pos-receipt, .printable-pos-receipt * {
+                    visibility: visible !important;
+                    color: black !important;
+                  }
+                  .printable-pos-receipt {
+                    position: absolute !important;
+                    left: 50% !important;
+                    top: 0 !important;
+                    transform: translateX(-50%) !important;
+                    width: 80mm !important;
+                    padding: 10px !important;
+                    background: white !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                  }
+                  .no-print, .print\\:hidden, button {
+                    display: none !important;
+                  }
+                }
+              `}</style>
               <div className="text-center space-y-1">
                 <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">HARMONY KITCHEN & RESTO</h2>
                 <p className="text-[10px] text-slate-600">Jl. Raya Dapur No. 88, Surabaya</p>

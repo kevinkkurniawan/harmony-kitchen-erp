@@ -1013,7 +1013,35 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             </div>
 
             {/* Printable Voucher Content */}
-            <div className="pt-6 space-y-6 text-xs">
+            <div className="printable-priced-voucher pt-6 space-y-6 text-xs">
+              <style>{`
+                @media print {
+                  body {
+                    background: white !important;
+                    color: black !important;
+                  }
+                  body * {
+                    visibility: hidden !important;
+                  }
+                  .printable-priced-voucher, .printable-priced-voucher * {
+                    visibility: visible !important;
+                    color: black !important;
+                  }
+                  .printable-priced-voucher {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    padding: 20px !important;
+                    background: white !important;
+                    box-shadow: none !important;
+                    border: none !important;
+                  }
+                  .no-print, .print\\:hidden, button {
+                    display: none !important;
+                  }
+                }
+              `}</style>
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className="text-lg font-black tracking-tight text-slate-900">HARMONY KITCHEN ERP</h2>

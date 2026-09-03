@@ -1,6 +1,21 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+const ALL_MODULE_CODES = [
+  'memo-sync-stok',
+  'stok-opname',
+  'master-barang',
+  'inventory-stok',
+  'master-promo',
+  'master-supplier',
+  'penerimaan-barang',
+  'penerimaan-barang-harga',
+  'sales-sync-stok',
+  'sales-monitoring',
+  'laporan-penjualan',
+  'user-management',
+];
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -21,21 +36,40 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'userId or username parameter is required' }, { status: 400 });
     }
 
-    const permissions = await prisma.userModulePermission.findMany({
+    const dbPermissions = await prisma.userModulePermission.findMany({
       where: { userId: targetUserId },
       orderBy: { id: 'asc' },
     });
 
-    const mapped = permissions.map((p) => ({
-      id: p.id,
-      userId: p.userId,
-      moduleCode: p.moduleCode,
-      canView: p.canView,
-      canAdd: p.canAdd,
-      canEdit: p.canEdit,
-      canDelete: p.canDelete,
-      canPrint: p.canPrint,
-    }));
+    const permMap = new Map<string, any>();
+    dbPermissions.forEach((p) => {
+      permMap.set(p.moduleCode, p);
+    });
+
+    const mapped = ALL_MODULE_CODES.map((mCode) => {
+      const existing = permMap.get(mCode);
+      if (existing) {
+        return {
+          id: existing.id,
+          userId: existing.userId,
+          moduleCode: existing.moduleCode,
+          canView: existing.canView,
+          canAdd: existing.canAdd,
+          canEdit: existing.canEdit,
+          canDelete: existing.canDelete,
+          canPrint: existing.canPrint,
+        };
+      }
+      return {
+        userId: targetUserId!,
+        moduleCode: mCode,
+        canView: true,
+        canAdd: true,
+        canEdit: true,
+        canDelete: true,
+        canPrint: true,
+      };
+    });
 
     return NextResponse.json({ success: true, data: mapped });
   } catch (error: any) {

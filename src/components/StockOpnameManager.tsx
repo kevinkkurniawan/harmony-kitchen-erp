@@ -458,7 +458,78 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   }, [opnameItems, tableSearch, activeFilterTab]);
 
   return (
-    <div className={`flex flex-col h-full w-full overflow-hidden select-none ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
+    <div id="printable-opname-report" className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+      {/* 🖨️ OPNAME PRINT MEDIA STYLESHEET */}
+      <style>{`
+        @media print {
+          body {
+            background: white !important;
+            color: black !important;
+          }
+          .no-print, nav, header, sidebar, button, select, input {
+            display: none !important;
+          }
+          #printable-opname-report {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 20px !important;
+            background: white !important;
+            color: black !important;
+            overflow: visible !important;
+          }
+          #printable-opname-report * {
+            visibility: visible !important;
+            color: black !important;
+            border-color: #cbd5e1 !important;
+          }
+          .print-header {
+            display: block !important;
+            margin-bottom: 20px !important;
+            border-bottom: 2px solid #000 !important;
+            padding-bottom: 12px !important;
+          }
+          .print-signatures {
+            display: flex !important;
+            justify-content: space-between !important;
+            margin-top: 40px !important;
+            padding-top: 20px !important;
+          }
+          table {
+            border-collapse: collapse !important;
+            width: 100% !important;
+          }
+          th, td {
+            border: 1px solid #94a3b8 !important;
+            padding: 6px 10px !important;
+            font-size: 11px !important;
+          }
+          th {
+            background-color: #f1f5f9 !important;
+            font-weight: bold !important;
+          }
+        }
+        .print-header, .print-signatures {
+          display: none;
+        }
+      `}</style>
+
+      {/* 🖨️ OFFICIAL PRINT HEADER (VISIBLE ONLY ON PRINT) */}
+      <div className="print-header">
+        <div className="flex justify-between items-center pb-2">
+          <div>
+            <h1 className="text-xl font-black uppercase text-black">HARMONY KITCHEN ERP</h1>
+            <h2 className="text-sm font-bold text-slate-700">BERITA ACARA & LAPORAN STOK OPNAME FISIK GUDANG</h2>
+          </div>
+          <div className="text-right text-xs">
+            <div><strong>No. Transaksi:</strong> {noTransaction}</div>
+            <div><strong>Gudang:</strong> {warehouse}</div>
+            <div><strong>Tanggal Opname:</strong> {new Date().toLocaleDateString()}</div>
+          </div>
+        </div>
+      </div>
+
       {/* Toast Notification */}
       {toastMessage && (
         <div
@@ -964,7 +1035,26 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           </div>
         </div>
       </div>
+
+      {/* 🖨️ OFFICIAL SIGNATURE BOX (VISIBLE ONLY ON PRINT) */}
+      <div className="print-signatures grid grid-cols-3 gap-6 text-center text-xs pt-8">
+        <div>
+          <div className="font-bold mb-12">Petugas Gudang:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Staf Opname Fisik</div>
+        </div>
+        <div>
+          <div className="font-bold mb-12">Diperiksa Oleh:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Supervisor Gudang</div>
+        </div>
+        <div>
+          <div className="font-bold mb-12">Disetujui Oleh:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Kepala Logistik & Gudang</div>
+        </div>
+      </div>
     </div>
   </div>
-  );
+);
 }
