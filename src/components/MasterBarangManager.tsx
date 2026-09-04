@@ -576,14 +576,16 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
         {/* 🔘 TOOLBAR ACTION BUTTONS */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleOpenCreateModal}
-            className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-            title="Tambah Barang Baru (Alt+N)"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Tambah Barang</span>
-          </button>
+          {mode !== 'stock' && (
+            <button
+              onClick={handleOpenCreateModal}
+              className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+              title="Tambah Barang Baru (Alt+N)"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Tambah Barang</span>
+            </button>
+          )}
 
           <button
             onClick={() => setShowDetailPane(!showDetailPane)}
@@ -899,18 +901,20 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditModal(item);
-                            }}
-                            className={`p-1 rounded transition-colors cursor-pointer ${
-                              isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-amber-300' : 'hover:bg-slate-300 text-slate-700 hover:text-amber-700'
-                            }`}
-                            title="Edit Detail Barang"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
+                          {mode !== 'stock' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditModal(item);
+                              }}
+                              className={`p-1 rounded transition-colors cursor-pointer ${
+                                isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-amber-300' : 'hover:bg-slate-300 text-slate-700 hover:text-amber-700'
+                              }`}
+                              title="Edit Detail Barang"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -923,18 +927,20 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           >
                             <Sliders className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProduct(item);
-                            }}
-                            className={`p-1 rounded transition-colors cursor-pointer ${
-                              isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-rose-300' : 'hover:bg-slate-300 text-slate-700 hover:text-rose-700'
-                            }`}
-                            title="Hapus Barang"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {mode !== 'stock' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteProduct(item);
+                              }}
+                              className={`p-1 rounded transition-colors cursor-pointer ${
+                                isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-rose-300' : 'hover:bg-slate-300 text-slate-700 hover:text-rose-700'
+                              }`}
+                              title="Hapus Barang"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1005,16 +1011,18 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-500 text-slate-950'
           }`}
         >
-          <button
-            onClick={() => {
-              handleOpenEditModal(contextMenu.item);
-              setContextMenu(null);
-            }}
-            className="w-full px-3 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Edit className="w-3.5 h-3.5" />
-            <span>&Detail / Edit Barang</span>
-          </button>
+          {mode !== 'stock' && (
+            <button
+              onClick={() => {
+                handleOpenEditModal(contextMenu.item);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
+            >
+              <Edit className="w-3.5 h-3.5" />
+              <span>&Detail / Edit Barang</span>
+            </button>
+          )}
           <button
             onClick={() => {
               handleOpenOpname(contextMenu.item);
@@ -1035,17 +1043,21 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <Tag className="w-3.5 h-3.5" />
             <span>&Cetak Barcode</span>
           </button>
-          <div className="h-px bg-slate-300 dark:bg-slate-800 my-1" />
-          <button
-            onClick={() => {
-              handleDeleteProduct(contextMenu.item);
-              setContextMenu(null);
-            }}
-            className="w-full px-3 py-2 text-left hover:bg-rose-600 hover:text-white font-black text-rose-800 flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>&Hapus Barang</span>
-          </button>
+          {mode !== 'stock' && (
+            <>
+              <div className="h-px bg-slate-300 dark:bg-slate-800 my-1" />
+              <button
+                onClick={() => {
+                  handleDeleteProduct(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-rose-600 hover:text-white font-black text-rose-800 flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>&Hapus Barang</span>
+              </button>
+            </>
+          )}
         </div>
       )}
 

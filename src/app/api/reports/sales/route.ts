@@ -1,28 +1,48 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { Pool } from 'pg';
+
+const posPool = new Pool({
+  connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
+});
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'all';
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    const startDateParam = searchParams.get('startDate');
+    const endDateParam = searchParams.get('endDate');
 
-    const sales = await prisma.salesPOSHeader.findMany({
-      where: {
-        salesPOSDate: {
-          gte: startDate ? new Date(startDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-          lte: endDate ? new Date(endDate) : new Date(),
-        },
-      },
-      include: { details: true },
-      orderBy: { salesPOSDate: 'desc' },
-    });
+    const startDate = startDateParam ? new Date(startDateParam) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const endDate = endDateParam ? new Date(endDateParam) : new Date();
+    endDate.setHours(23, 59, 59, 999);
+
+    const salesQuery = await posPool.query(`
+      SELECT t.*,
+             (SELECT json_agg(
+                 json_build_object(
+                   'barcode', p.barcode,
+                   'inventoryNo', p.barcode,
+                   'inventoryName', p.name,
+                   'qty', ti.quantity,
+                   'price', ti."selectedPrice",
+                   'subtotal', (ti.quantity * ti."selectedPrice")
+                 )
+               )
+              FROM "TransactionItem" ti 
+              JOIN "Product" p ON ti."productId" = p.id
+              WHERE ti."transactionId" = t.id AND ti."isVoided" = false) as details
+      FROM "Transaction" t
+      WHERE t.date >= $1 AND t.date <= $2
+      ORDER BY t.date DESC
+    `, [startDate, endDate]);
+
+    const sales = salesQuery.rows;
 
     if (type === 'daily') {
       const dailyMap: Record<string, any> = {};
       sales.forEach((s) => {
-        const dStr = s.salesPOSDate ? new Date(s.salesPOSDate).toISOString().slice(0, 10) : '2026-09-01';
+        const dStr = s.date ? new Date(s.date).toISOString().slice(0, 10) : '2026-09-01';
         if (!dailyMap[dStr]) {
           dailyMap[dStr] = {
             date: dStr,
@@ -37,20 +57,20 @@ export async function GET(request: Request) {
             cardSales: 0,
           };
         }
-        const net = s.grandTotal || 0;
-        const disc = s.discountAmount || 0;
+        const net = Number(s.total) || 0;
+        const disc = Number(s.discountAmount) || 0;
         const gross = net + disc;
-        const itemsCount = s.details.reduce((sum, d) => sum + Number(d.qty), 0);
+        const itemsCount = (s.details || []).reduce((sum: number, d: any) => sum + Number(d.qty), 0);
 
         dailyMap[dStr].totalOrders += 1;
         dailyMap[dStr].totalItems += itemsCount;
         dailyMap[dStr].grossSales += gross;
         dailyMap[dStr].totalDiscount += disc;
         dailyMap[dStr].netSales += net;
-        dailyMap[dStr].cashSales += Math.round(net * 0.6);
-        dailyMap[dStr].qrisSales += Math.round(net * 0.4);
-        dailyMap[dStr].transferSales += 0;
-        dailyMap[dStr].cardSales += 0;
+        if (s.paymentMethod === 'Tunai') dailyMap[dStr].cashSales += net;
+        else if (s.paymentMethod === 'QRIS') dailyMap[dStr].qrisSales += net;
+        else if (s.paymentMethod === 'Transfer') dailyMap[dStr].transferSales += net;
+        else dailyMap[dStr].cardSales += net;
       });
 
       return NextResponse.json({ success: true, data: Object.values(dailyMap) });
@@ -59,7 +79,7 @@ export async function GET(request: Request) {
     if (type === 'monthly') {
       const monthlyMap: Record<string, any> = {};
       sales.forEach((s) => {
-        const mStr = s.salesPOSDate ? new Date(s.salesPOSDate).toISOString().slice(0, 7) : '2026-09';
+        const mStr = s.date ? new Date(s.date).toISOString().slice(0, 7) : '2026-09';
         if (!monthlyMap[mStr]) {
           monthlyMap[mStr] = {
             month: mStr,
@@ -74,18 +94,20 @@ export async function GET(request: Request) {
             cardSales: 0,
           };
         }
-        const net = s.grandTotal || 0;
-        const disc = s.discountAmount || 0;
+        const net = Number(s.total) || 0;
+        const disc = Number(s.discountAmount) || 0;
         const gross = net + disc;
-        const itemsCount = s.details.reduce((sum, d) => sum + Number(d.qty), 0);
+        const itemsCount = (s.details || []).reduce((sum: number, d: any) => sum + Number(d.qty), 0);
 
         monthlyMap[mStr].totalOrders += 1;
         monthlyMap[mStr].totalItems += itemsCount;
         monthlyMap[mStr].grossSales += gross;
         monthlyMap[mStr].totalDiscount += disc;
         monthlyMap[mStr].netSales += net;
-        monthlyMap[mStr].cashSales += Math.round(net * 0.6);
-        monthlyMap[mStr].qrisSales += Math.round(net * 0.4);
+        if (s.paymentMethod === 'Tunai') monthlyMap[mStr].cashSales += net;
+        else if (s.paymentMethod === 'QRIS') monthlyMap[mStr].qrisSales += net;
+        else if (s.paymentMethod === 'Transfer') monthlyMap[mStr].transferSales += net;
+        else monthlyMap[mStr].cardSales += net;
       });
 
       return NextResponse.json({ success: true, data: Object.values(monthlyMap) });
@@ -103,19 +125,19 @@ export async function GET(request: Request) {
 
       const itemMap: Record<string, any> = {};
       sales.forEach((s) => {
-        s.details.forEach((d) => {
+        (s.details || []).forEach((d: any) => {
           const key = d.barcode || d.inventoryNo || 'ITEM-UNKNOWN';
-          const hppUnit = hppMap[d.barcode || ''] || hppMap[d.inventoryNo || ''] || Math.round((d.price || 0) * 0.65);
+          const hppUnit = hppMap[key] || Math.round((Number(d.price) || 0) * 0.65);
 
           if (!itemMap[key]) {
             itemMap[key] = {
               barcode: key,
-              inventoryNo: d.inventoryNo,
+              inventoryNo: d.inventoryNo || key,
               inventoryName: d.inventoryName,
               totalQty: 0,
               totalQtySold: 0,
-              avgPrice: d.price || 0,
-              avgUnitPrice: d.price || 0,
+              avgPrice: Number(d.price) || 0,
+              avgUnitPrice: Number(d.price) || 0,
               totalSales: 0,
               totalRevenue: 0,
               totalCost: 0,
@@ -135,7 +157,7 @@ export async function GET(request: Request) {
           itemMap[key].totalCost += cost;
           itemMap[key].estimatedProfit += profit;
           itemMap[key].profit += profit;
-          itemMap[key].avgPrice = itemMap[key].totalQty > 0 ? Math.round(itemMap[key].totalSales / itemMap[key].totalQty) : d.price;
+          itemMap[key].avgPrice = itemMap[key].totalQty > 0 ? Math.round(itemMap[key].totalSales / itemMap[key].totalQty) : Number(d.price);
           itemMap[key].avgUnitPrice = itemMap[key].avgPrice;
         });
       });
@@ -157,13 +179,25 @@ export async function GET(request: Request) {
       let totalSalesAmount = 0;
       let totalDiscount = 0;
       let totalItemsSold = 0;
+      
+      let cashSales = 0;
+      let qrisSales = 0;
+      let transferSales = 0;
+      let debitSales = 0;
 
       sales.forEach((s) => {
-        totalSalesAmount += s.grandTotal || 0;
-        totalDiscount += s.discountAmount || 0;
-        s.details.forEach((d) => {
+        totalSalesAmount += Number(s.total) || 0;
+        totalDiscount += Number(s.discountAmount) || 0;
+        
+        if (s.paymentMethod === 'Tunai') cashSales += Number(s.total);
+        else if (s.paymentMethod === 'QRIS') qrisSales += Number(s.total);
+        else if (s.paymentMethod === 'Transfer') transferSales += Number(s.total);
+        else if (s.paymentMethod === 'Debit') debitSales += Number(s.total);
+        
+        (s.details || []).forEach((d: any) => {
+          const key = d.barcode || d.inventoryNo || '';
           const qty = Number(d.qty);
-          const hppUnit = hppMap[d.barcode || ''] || hppMap[d.inventoryNo || ''] || Math.round((d.price || 0) * 0.65);
+          const hppUnit = hppMap[key] || Math.round((Number(d.price) || 0) * 0.65);
           totalCost += qty * hppUnit;
           totalItemsSold += qty;
         });
@@ -189,10 +223,10 @@ export async function GET(request: Request) {
           totalHpp: totalCost,
           totalGrossProfit: profit,
           profitMarginPct,
-          cashSales: Math.round(totalSalesAmount * 0.6),
-          qrisSales: Math.round(totalSalesAmount * 0.4),
-          transferSales: 0,
-          cardSales: 0,
+          cashSales: cashSales,
+          qrisSales: qrisSales,
+          transferSales: transferSales,
+          cardSales: debitSales,
           avgTransaction: sales.length > 0 ? Math.round(totalSalesAmount / sales.length) : 0,
         },
       });
@@ -203,6 +237,7 @@ export async function GET(request: Request) {
       data: sales,
     });
   } catch (error: any) {
+    console.error('Error in GET /api/reports/sales:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

@@ -27,9 +27,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const supplierType = body.supplierType || body.supplier_type;
     const address = body.address;
     const city = body.city;
-    const phone = body.phone1 || body.phone || body.phone2;
+    const phone = body.phone1 || body.phone;
+    const phone2 = body.phone2;
+    const fax = body.fax;
     const email = body.email;
     const contactPerson = body.contactPerson || body.contact_person;
+    const taxNo = body.taxNo;
+    const isTaxable = body.isTaxable;
+    const description = body.description;
     const isActive = body.isActive ?? body.is_active;
 
     const updated = await prisma.supplier.update({
@@ -41,8 +46,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         address: address !== undefined ? address : undefined,
         city: city !== undefined ? city : undefined,
         phone: phone !== undefined ? phone : undefined,
+        phone2: phone2 !== undefined ? phone2 : undefined,
+        fax: fax !== undefined ? fax : undefined,
         email: email !== undefined ? email : undefined,
         contactPerson: contactPerson !== undefined ? contactPerson : undefined,
+        taxNo: taxNo !== undefined ? taxNo : undefined,
+        isTaxable: isTaxable !== undefined ? Boolean(isTaxable) : undefined,
+        description: description !== undefined ? description : undefined,
         isActive: isActive !== undefined ? Boolean(isActive) : undefined,
       },
     });

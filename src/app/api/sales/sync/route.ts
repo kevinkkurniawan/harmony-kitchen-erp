@@ -66,17 +66,37 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    // Fetch POS sales quantities per inventory item
-    const salesDetails = await prisma.salesPOSDetail.groupBy({
-      by: ['inventoryNo', 'barcode'],
-      _sum: { qty: true },
+    // Fetch POS sales quantities per inventory item across database
+    const { Client } = require('pg');
+    const posClient = new Client({
+      connectionString: process.env.DATABASE_URL?.replace('harmony_erp', 'harmony_pos') || "postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public"
+    });
+    
+    await posClient.connect();
+    
+    const posRes = await posClient.query(`
+      SELECT "productId", SUM(quantity) as "totalQty" 
+      FROM "TransactionItem" 
+      WHERE "isSynced" = false AND "isVoided" = false
+      GROUP BY "productId"
+    `);
+    
+    const posProducts = await posClient.query(`
+      SELECT id, barcode FROM "Product"
+    `);
+    
+    await posClient.end();
+
+    const productBarcodeMap: Record<string, string> = {};
+    posProducts.rows.forEach((p: any) => {
+      productBarcodeMap[p.id] = p.barcode;
     });
 
     const posQtyMap: Record<string, number> = {};
-    salesDetails.forEach((sd) => {
-      const key = sd.inventoryNo || sd.barcode;
-      if (key) {
-        posQtyMap[key] = (posQtyMap[key] || 0) + (sd._sum.qty || 0);
+    posRes.rows.forEach((row: any) => {
+      const barcode = productBarcodeMap[row.productId];
+      if (barcode) {
+        posQtyMap[barcode] = parseInt(row.totalQty, 10);
       }
     });
 
@@ -178,6 +198,28 @@ export async function POST(req: Request) {
         timeout: 60000,
       }
     );
+
+    // 3. Update POS database to mark items as synced
+    const { Client } = require('pg');
+    const posClient = new Client({
+      connectionString: process.env.DATABASE_URL?.replace('harmony_erp', 'harmony_pos') || "postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public"
+    });
+    
+    await posClient.connect();
+    const barcodes = itemsToSync.map((item: any) => `'${item.barcode}'`).join(',');
+    
+    if (barcodes.length > 0) {
+      await posClient.query(`
+        UPDATE "TransactionItem"
+        SET "isSynced" = true, "syncDate" = NOW()
+        FROM "Product"
+        WHERE "TransactionItem"."productId" = "Product".id
+        AND "TransactionItem"."isSynced" = false
+        AND "TransactionItem"."isVoided" = false
+        AND "Product".barcode IN (${barcodes})
+      `);
+    }
+    await posClient.end();
 
     return NextResponse.json({
       success: true,

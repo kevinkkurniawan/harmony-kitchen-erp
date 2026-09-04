@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { Pool } from 'pg';
+
+const posPool = new Pool({
+  connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
+});
 
 export async function GET(request: Request) {
   try {
@@ -65,9 +70,9 @@ export async function GET(request: Request) {
       price: inv.price,
       priceBuy: inv.hpp,
       disc: 0,
-      grosir1: Math.round(inv.price * 0.95),
-      grosir2: Math.round(inv.price * 0.90),
-      grosir3: Math.round(inv.price * 0.85),
+      grosir1: inv.grosir1,
+      grosir2: inv.grosir2,
+      grosir3: inv.grosir3,
       stokAwal: inv.stock,
       stokAkhir: inv.stock,
       stock: inv.stock,
@@ -94,11 +99,26 @@ export async function POST(request: Request) {
     const uomId = body.uoMId ?? body.uomId ?? body.uom_id;
     const hpp = body.hpp;
     const price = body.price;
+    const grosir1 = body.grosir1 ?? 0;
+    const grosir2 = body.grosir2 ?? 0;
+    const grosir3 = body.grosir3 ?? 0;
     const stock = body.stokAkhir ?? body.stokAwal ?? body.stock ?? 0;
     const isActive = body.isActive ?? body.is_active ?? true;
 
     if (!barcode || !inventoryNo || !inventoryName) {
       return NextResponse.json({ success: false, error: 'Barcode, Kode Barang, dan Nama Barang wajib diisi' }, { status: 400 });
+    }
+
+    // Get Category and UOM Name for POS Sync
+    let catName = 'General';
+    let uomNameStr = 'Pcs';
+    if (categoryId) {
+      const cat = await prisma.category.findUnique({ where: { id: Number(categoryId) } });
+      if (cat) catName = cat.categoryName;
+    }
+    if (uomId) {
+      const uom = await (prisma as any).uoM?.findUnique({ where: { id: Number(uomId) } }) || await (prisma as any).uOM?.findUnique({ where: { id: Number(uomId) } }) || await (prisma as any).uom?.findUnique({ where: { id: Number(uomId) } });
+      if (uom) uomNameStr = uom.uomName;
     }
 
     const created = await prisma.inventory.create({
@@ -111,10 +131,27 @@ export async function POST(request: Request) {
         uomId: uomId ? Number(uomId) : null,
         hpp: Number(hpp || 0),
         price: Number(price || 0),
+        grosir1: Number(grosir1 || 0),
+        grosir2: Number(grosir2 || 0),
+        grosir3: Number(grosir3 || 0),
         stock: Number(stock || 0),
         isActive: Boolean(isActive),
       },
     });
+
+    // POS SYNC
+    try {
+      const uuid = require('crypto').randomUUID();
+      await posPool.query(
+        `INSERT INTO "Product" (id, barcode, name, category, uom, "priceRetail", stock, "priceGrosir1", "priceGrosir2", "priceGrosir3", "createdAt", "updatedAt") 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+         ON CONFLICT (barcode) DO NOTHING`,
+        [uuid, barcode, inventoryName, catName, uomNameStr, Number(price || 0), Number(stock || 0), Number(grosir1 || 0), Number(grosir2 || 0), Number(grosir3 || 0)]
+      );
+    } catch (posErr) {
+      console.error('POS Sync Error:', posErr);
+      // We don't fail the request, we just log it. (In robust systems, use queue).
+    }
 
     return NextResponse.json({ success: true, message: 'Barang berhasil ditambahkan', data: created });
   } catch (error: any) {

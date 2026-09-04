@@ -145,93 +145,93 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'No. Opname dan detail barang wajib diisi' }, { status: 400 });
     }
 
-    // Upsert or Create Opname Header
-    const existing = await prisma.opnameHeader.findUnique({
-      where: { opnameNo: no_tx },
-    });
+    // 1. Transaction wrapping
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.opnameHeader.findUnique({
+        where: { opnameNo: no_tx },
+      });
 
-    let header;
-    if (existing) {
-      // Delete existing details and recreate for clean update
-      await prisma.opnameDetail.deleteMany({
-        where: { headerId: existing.id },
-      });
-      header = await prisma.opnameHeader.update({
-        where: { id: existing.id },
-        data: {
-          opnameDate: date ? new Date(date) : new Date(),
-          whName: wh_name || 'Gudang Utama',
-          details: {
-            create: items.map((it: any) => {
-              const sysQty = Number(it.systemQty ?? it.system_qty ?? 0);
-              const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
-              const diffQty = Number(it.diffQty ?? it.diff_qty ?? (physQty - sysQty));
-              return {
-                barcode: it.barcode || '',
-                inventoryNo: it.inventoryNo || it.inventory_no || '',
-                inventoryName: it.inventoryName || it.inventory_name || '',
-                systemQty: sysQty,
-                physicalQty: physQty,
-                diffQty: diffQty,
-              };
-            }),
-          },
-        },
-        include: { details: true },
-      });
-    } else {
-      header = await prisma.opnameHeader.create({
-        data: {
-          opnameNo: no_tx,
-          opnameDate: date ? new Date(date) : new Date(),
-          whName: wh_name || 'Gudang Utama',
-          details: {
-            create: items.map((it: any) => {
-              const sysQty = Number(it.systemQty ?? it.system_qty ?? 0);
-              const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
-              const diffQty = Number(it.diffQty ?? it.diff_qty ?? (physQty - sysQty));
-              return {
-                barcode: it.barcode || '',
-                inventoryNo: it.inventoryNo || it.inventory_no || '',
-                inventoryName: it.inventoryName || it.inventory_name || '',
-                systemQty: sysQty,
-                physicalQty: physQty,
-                diffQty: diffQty,
-              };
-            }),
-          },
-        },
-        include: { details: true },
-      });
-    }
-
-    // Adjust inventory physical stock in Database
-    for (const it of items) {
-      const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
-      if (it.inventoryId) {
-        await prisma.inventory.update({
-          where: { id: Number(it.inventoryId) },
-          data: { stock: physQty },
-        }).catch(async () => {
-          if (it.barcode) {
-            await prisma.inventory.updateMany({
-              where: { barcode: it.barcode },
-              data: { stock: physQty },
-            }).catch(() => {});
-          }
+      let header;
+      if (existing) {
+        // Delete existing details and recreate for clean update
+        await tx.opnameDetail.deleteMany({
+          where: { headerId: existing.id },
         });
-      } else if (it.barcode) {
-        await prisma.inventory.updateMany({
-          where: { barcode: it.barcode },
-          data: { stock: physQty },
-        }).catch(() => {});
+        header = await tx.opnameHeader.update({
+          where: { id: existing.id },
+          data: {
+            opnameDate: date ? new Date(date) : new Date(),
+            whName: wh_name || 'Gudang Utama',
+            details: {
+              create: items.map((it: any) => {
+                const sysQty = Number(it.systemQty ?? it.system_qty ?? 0);
+                const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
+                const diffQty = Number(it.diffQty ?? it.diff_qty ?? (physQty - sysQty));
+                return {
+                  barcode: it.barcode || '',
+                  inventoryNo: it.inventoryNo || it.inventory_no || '',
+                  inventoryName: it.inventoryName || it.inventory_name || '',
+                  systemQty: sysQty,
+                  physicalQty: physQty,
+                  diffQty: diffQty,
+                };
+              }),
+            },
+          },
+          include: { details: true },
+        });
+      } else {
+        header = await tx.opnameHeader.create({
+          data: {
+            opnameNo: no_tx,
+            opnameDate: date ? new Date(date) : new Date(),
+            whName: wh_name || 'Gudang Utama',
+            details: {
+              create: items.map((it: any) => {
+                const sysQty = Number(it.systemQty ?? it.system_qty ?? 0);
+                const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
+                const diffQty = Number(it.diffQty ?? it.diff_qty ?? (physQty - sysQty));
+                return {
+                  barcode: it.barcode || '',
+                  inventoryNo: it.inventoryNo || it.inventory_no || '',
+                  inventoryName: it.inventoryName || it.inventory_name || '',
+                  systemQty: sysQty,
+                  physicalQty: physQty,
+                  diffQty: diffQty,
+                };
+              }),
+            },
+          },
+          include: { details: true },
+        });
       }
-    }
+
+      // Adjust inventory physical stock in Database using safe updateMany within transaction
+      for (const it of items) {
+        const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
+        if (it.inventoryId) {
+          await tx.inventory.updateMany({
+            where: { id: Number(it.inventoryId) },
+            data: { stock: physQty },
+          });
+        } else if (it.barcode) {
+          await tx.inventory.updateMany({
+            where: { barcode: it.barcode },
+            data: { stock: physQty },
+          });
+        }
+      }
+
+      return header;
+    }, {
+      maxWait: 15000,
+      timeout: 60000,
+    });
 
     return NextResponse.json({
       success: true,
       message: 'Stock Opname berhasil disimpan & stok inventori telah diperbarui',
-      data: header,
+      data: result,
     });
   } catch (error: any) {
     console.error('Error in POST /api/inventory/opname:', error);

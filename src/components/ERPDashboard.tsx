@@ -111,7 +111,7 @@ export default function ERPDashboard() {
             </div>
             <div>
               <h1 className="font-extrabold text-sm tracking-tight flex items-center gap-2">
-                Harmony ERP <span className="text-slate-400 font-normal">| Module Manager v2.0</span>
+                Harmony ERP
               </h1>
             </div>
           </div>

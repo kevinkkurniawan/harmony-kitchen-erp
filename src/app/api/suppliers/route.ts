@@ -49,9 +49,14 @@ export async function GET(request: Request) {
       city: s.city || '',
       phone: s.phone || '',
       phone1: s.phone || '',
+      phone2: s.phone2 || '',
+      fax: s.fax || '',
       email: s.email || '',
       contactPerson: s.contactPerson || '',
       contact_person: s.contactPerson || '',
+      taxNo: s.taxNo || '',
+      isTaxable: s.isTaxable,
+      description: s.description || '',
       isActive: s.isActive,
       is_active: s.isActive,
       created_at: s.createdAt,
@@ -72,9 +77,14 @@ export async function POST(request: Request) {
     const supplierType = body.supplierType || body.supplier_type || 'Lokal Utama';
     const address = body.address;
     const city = body.city;
-    const phone = body.phone1 || body.phone || body.phone2;
+    const phone = body.phone1 || body.phone;
+    const phone2 = body.phone2;
+    const fax = body.fax;
     const email = body.email;
     const contactPerson = body.contactPerson || body.contact_person;
+    const taxNo = body.taxNo;
+    const isTaxable = body.isTaxable;
+    const description = body.description;
     const isActive = body.isActive ?? body.is_active ?? true;
 
     if (!supplierName) {
@@ -89,8 +99,13 @@ export async function POST(request: Request) {
         address: address || '',
         city: city || '',
         phone: phone || '',
+        phone2: phone2 || '',
+        fax: fax || '',
         email: email || '',
         contactPerson: contactPerson || '',
+        taxNo: taxNo || '',
+        isTaxable: Boolean(isTaxable),
+        description: description || null,
         isActive: Boolean(isActive),
       },
     });

@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { Pool } from 'pg';
+
+const posPool = new Pool({
+  connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
+});
 
 export async function GET(req: Request) {
   try {
@@ -27,8 +32,11 @@ export async function GET(req: Request) {
 
     const mapped = groups.map((g) => ({
       id: String(g.id),
+      promoCode: g.promoCode,
       groupName: g.groupName,
       group_name: g.groupName,
+      description: g.description,
+      isActive: g.isActive,
       promosCount: g.promos.length,
       promos_count: g.promos.length,
       promos: g.promos.map((p) => ({
@@ -56,14 +64,35 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const groupName = body.groupName || body.group_name || body.promoName;
+    const promoCode = body.promoCode || `PRM-GRP-${Date.now().toString().slice(-4)}`;
+    const description = body.description || null;
+    const isActive = body.isActive ?? true;
 
     if (!groupName) {
       return NextResponse.json({ success: false, error: 'Nama Group Promo wajib diisi' }, { status: 400 });
     }
 
     const created = await prisma.promoGroup.create({
-      data: { groupName: groupName },
+      data: { 
+        promoCode,
+        groupName,
+        description,
+        isActive
+      },
     });
+
+    // POS SYNC
+    try {
+      await posPool.query(
+        `INSERT INTO "PromoGroup" (id, "promoCode", "groupName", description, "isActive") 
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT ("promoCode") DO UPDATE 
+         SET "groupName" = EXCLUDED."groupName", description = EXCLUDED.description, "isActive" = EXCLUDED."isActive"`,
+        [created.id, created.promoCode, created.groupName, created.description, created.isActive]
+      );
+    } catch (posErr) {
+      console.error('POS Sync Error (PromoGroup POST):', posErr);
+    }
 
     return NextResponse.json({ success: true, message: 'Group Promo berhasil ditambahkan', data: created });
   } catch (error: any) {

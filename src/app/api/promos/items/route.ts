@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { Pool } from 'pg';
+
+const posPool = new Pool({
+  connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
+});
 
 export async function GET(request: Request) {
   try {
@@ -38,6 +43,14 @@ export async function GET(request: Request) {
       groupId: p.groupId,
       groupName: p.group?.groupName || 'Promo Utama',
       group_name: p.group?.groupName || 'Promo Utama',
+      promoBundle: p.promoBundle,
+      promoGrosir: p.promoGrosir,
+      promoGrosirType: p.promoGrosirType,
+      qtyMin: p.qtyMin,
+      qtyMax: p.qtyMax,
+      isPartial: p.isPartial,
+      isGroup: p.isGroup,
+      description: p.description,
       discountPct: p.discountPct,
       discount_pct: p.discountPct,
       startDate: p.startDate,
@@ -63,6 +76,14 @@ export async function POST(request: Request) {
     const promoName = body.promoName || body.promo_name;
     const groupId = body.groupId ?? body.group_id;
     const discountPct = body.discountPct ?? body.discount_pct ?? body.promoPercentage ?? 0;
+    const promoBundle = body.promoBundle;
+    const promoGrosir = body.promoGrosir;
+    const promoGrosirType = body.promoGrosirType ?? 'PERCENT';
+    const qtyMin = body.qtyMin ?? 1;
+    const qtyMax = body.qtyMax ?? 9999;
+    const isPartial = body.isPartial ?? true;
+    const isGroup = body.isGroup ?? true;
+    const description = body.description;
     const startDate = body.startDate || body.start_date;
     const endDate = body.endDate || body.end_date;
     const isActive = body.isActive ?? body.is_active ?? true;
@@ -76,12 +97,32 @@ export async function POST(request: Request) {
         promoNo: promoNo,
         promoName: promoName,
         groupId: groupId ? Number(groupId) : null,
+        promoBundle: promoBundle !== undefined ? Number(promoBundle) : null,
+        promoGrosir: promoGrosir !== undefined ? Number(promoGrosir) : null,
+        promoGrosirType: promoGrosirType,
         discountPct: Number(discountPct || 0),
+        qtyMin: Number(qtyMin || 1),
+        qtyMax: Number(qtyMax || 9999),
+        isPartial: Boolean(isPartial),
+        isGroup: Boolean(isGroup),
+        description: description || null,
         startDate: startDate ? new Date(startDate) : new Date(),
         endDate: endDate ? new Date(endDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         isActive: Boolean(isActive),
       },
     });
+
+    // POS SYNC
+    try {
+      await posPool.query(
+        `INSERT INTO "Promo" (id, "promoNo", "promoName", "groupId", "promoBundle", "promoGrosir", "promoGrosirType", "discountPct", "qtyMin", "qtyMax", "isPartial", "isGroup", description, "startDate", "endDate", "isActive", "createdAt") 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+         ON CONFLICT ("promoNo") DO NOTHING`,
+        [created.id, created.promoNo, created.promoName, created.groupId, created.promoBundle, created.promoGrosir, created.promoGrosirType, created.discountPct, created.qtyMin, created.qtyMax, created.isPartial, created.isGroup, created.description, created.startDate, created.endDate, created.isActive]
+      );
+    } catch (posErr) {
+      console.error('POS Sync Error (Promo POST):', posErr);
+    }
 
     return NextResponse.json({ success: true, message: 'Promo berhasil ditambahkan', data: created });
   } catch (error: any) {

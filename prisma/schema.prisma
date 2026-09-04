@@ -105,9 +105,13 @@ model Supplier {
   address      String?
   city         String?
   phone        String?
+  phone2       String?
   fax          String?
   email        String?
   contactPerson String? @map("contact_person")
+  taxNo        String?  @map("tax_no")
+  isTaxable    Boolean  @default(false) @map("is_taxable")
+  description  String?  @db.Text
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
 
@@ -155,6 +159,9 @@ model Inventory {
   uom           UoM?      @relation(fields: [uomId], references: [id], onDelete: SetNull)
   hpp           Float     @default(0)
   price         Float     @default(0)
+  grosir1       Float     @default(0)
+  grosir2       Float     @default(0)
+  grosir3       Float     @default(0)
   stock         Int       @default(0)
   isActive      Boolean   @default(true) @map("is_active")
   createdAt     DateTime  @default(now()) @map("created_at")
@@ -164,24 +171,35 @@ model Inventory {
 
 // Master Promo
 model PromoGroup {
-  id        Int      @id @default(autoincrement())
-  groupName String   @map("group_name")
-  promos    Promo[]
+  id          Int      @id @default(autoincrement())
+  promoCode   String   @unique @default(dbgenerated("gen_random_uuid()::text")) @map("promo_code")
+  groupName   String   @map("group_name")
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  promos      Promo[]
 
   @@map("m_promo_group")
 }
 
 model Promo {
-  id          Int         @id @default(autoincrement())
-  promoNo     String      @unique @map("promo_no")
-  promoName   String      @map("promo_name")
-  groupId     Int?        @map("group_id")
-  group       PromoGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  discountPct Float       @default(0) @map("discount_pct")
-  startDate   DateTime    @map("start_date")
-  endDate     DateTime    @map("end_date")
-  isActive    Boolean     @default(true) @map("is_active")
-  createdAt   DateTime    @default(now()) @map("created_at")
+  id              Int         @id @default(autoincrement())
+  promoNo         String      @unique @map("promo_no")
+  promoName       String      @map("promo_name")
+  groupId         Int?        @map("group_id")
+  group           PromoGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  promoBundle     Int?        @map("promo_bundle")
+  promoGrosir     Float?      @map("promo_grosir")
+  promoGrosirType String      @default("PERCENT") @map("promo_grosir_type")
+  discountPct     Float       @default(0) @map("discount_pct")
+  qtyMin          Int         @default(1) @map("qty_min")
+  qtyMax          Int         @default(9999) @map("qty_max")
+  isPartial       Boolean     @default(true) @map("is_partial")
+  isGroup         Boolean     @default(true) @map("is_group")
+  description     String?     @db.Text
+  startDate       DateTime    @map("start_date")
+  endDate         DateTime    @map("end_date")
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at")
 
   @@map("m_promo")
 }
@@ -305,7 +323,15 @@ model MaterialReceiveHeader {
   mrNo         String                  @unique @map("mr_no")
   mrDate       DateTime                @map("mr_date")
   poNo         String?                 @map("po_no")
+  supplierId   Int?                    @map("supplier_id")
   supplierName String                  @map("supplier_name")
+  doNo         String?                 @map("do_no")
+  driverName   String?                 @map("driver_name")
+  vehicleNo    String?                 @map("vehicle_no")
+  whName       String?                 @map("wh_name")
+  description  String?                 @db.Text
+  isExpress    Boolean                 @default(true) @map("is_express")
+  isVoid       Boolean                 @default(false) @map("is_void")
   isPriced     Boolean                 @default(false) @map("is_priced")
   createdAt    DateTime                @default(now()) @map("created_at")
   details      MaterialReceiveDetail[]
@@ -317,12 +343,15 @@ model MaterialReceiveDetail {
   id            Int                   @id @default(autoincrement())
   headerId      Int                   @map("header_id")
   header        MaterialReceiveHeader @relation(fields: [headerId], references: [id], onDelete: Cascade)
+  inventoryId   Int?                  @map("inventory_id")
   barcode       String
   inventoryNo   String                @map("inventory_no")
   inventoryName String                @map("inventory_name")
+  uomName       String?               @map("uom_name")
   qty           Int
   unitPrice     Float                 @default(0) @map("unit_price")
   subtotal      Float                 @default(0)
+  description   String?               @db.Text
 
   @@map("t_material_receive_detail")
 }

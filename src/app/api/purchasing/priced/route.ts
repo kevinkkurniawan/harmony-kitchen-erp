@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { Pool } from 'pg';
+
+const posPool = new Pool({
+  connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
+});
 
 export async function GET(req: Request) {
   try {
@@ -45,25 +50,34 @@ export async function GET(req: Request) {
         mr_date: formattedDate,
         poNo: mr.poNo || '-',
         po_no: mr.poNo || '-',
+        doNo: mr.doNo || '-',
+        supplierId: mr.supplierId,
         supplierName: mr.supplierName,
         supplier_name: mr.supplierName,
-        whName: 'Gudang Utama',
-        description: '-',
+        driverName: mr.driverName || '-',
+        vehicleNo: mr.vehicleNo || '-',
+        whName: mr.whName || 'Gudang Utama',
+        description: mr.description || '-',
+        isExpress: mr.isExpress,
+        isVoid: mr.isVoid,
         totalQty: totalQty,
         total_qty: totalQty,
         totalAmount: totalAmount,
         total_amount: totalAmount,
         items: mr.details.map((d) => ({
           id: d.id,
+          inventoryId: d.inventoryId,
           barcode: d.barcode,
           inventoryNo: d.inventoryNo,
           inventory_no: d.inventoryNo,
           inventoryName: d.inventoryName,
           inventory_name: d.inventoryName,
+          uomName: d.uomName || 'PCS',
           qty: d.qty,
           unitPrice: d.unitPrice,
           unit_price: d.unitPrice,
           subtotal: d.subtotal,
+          description: d.description || '',
         })),
         createdAt: mr.createdAt,
       };
@@ -81,8 +95,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const mrNo = body.mrNo || body.mr_no;
     const mrDate = body.mrDate || body.mr_date;
-    const poNo = body.poNo || body.po_no || body.doNo;
+    const supplierId = body.supplierId;
     const supplierName = body.supplierName || body.supplier_name;
+    const poNo = body.poNo || body.po_no;
+    const doNo = body.doNo;
+    const driverName = body.driverName;
+    const vehicleNo = body.vehicleNo;
+    const whName = body.whName || 'Gudang Utama Dapur';
+    const description = body.description;
+    const isExpress = body.isExpress ?? false;
+    const isVoid = body.isVoid ?? false;
     const items = body.items;
 
     if (!mrNo || !supplierName || !items || !Array.isArray(items) || items.length === 0) {
@@ -94,7 +116,15 @@ export async function POST(req: Request) {
         mrNo: mrNo,
         mrDate: mrDate ? new Date(mrDate) : new Date(),
         poNo: poNo || null,
+        doNo: doNo || null,
+        supplierId: supplierId ? Number(supplierId) : null,
         supplierName: supplierName,
+        driverName: driverName || null,
+        vehicleNo: vehicleNo || null,
+        whName: whName,
+        description: description || null,
+        isExpress: Boolean(isExpress),
+        isVoid: Boolean(isVoid),
         isPriced: true,
         details: {
           create: items.map((it: any) => {
@@ -103,12 +133,15 @@ export async function POST(req: Request) {
             const discPercentage = Number(it.discPercentage || 0);
             const subtotal = Number(it.subtotal || (qty * unitPrice * (1 - discPercentage / 100)));
             return {
+              inventoryId: it.inventoryId ? Number(it.inventoryId) : null,
               barcode: it.barcode || '',
               inventoryNo: it.inventoryNo || it.inventory_no || '',
               inventoryName: it.inventoryName || it.inventory_name || '',
+              uomName: it.uomName || 'PCS',
               qty: qty,
               unitPrice: unitPrice,
               subtotal: subtotal,
+              description: it.description || null,
             };
           }),
         },
@@ -123,9 +156,10 @@ export async function POST(req: Request) {
       const invId = it.inventoryId ? Number(it.inventoryId) : undefined;
       const qty = Number(it.qty || 0);
       const unitPrice = Number(it.price || it.unitPrice || it.unit_price || 0);
+      let updatedBarcode = it.barcode;
 
       if (invId) {
-        await prisma.inventory.update({
+        const inv = await prisma.inventory.update({
           where: { id: invId },
           data: {
             hpp: unitPrice > 0 ? unitPrice : undefined,
@@ -133,15 +167,20 @@ export async function POST(req: Request) {
           },
         }).catch(async () => {
           if (it.barcode) {
-            await prisma.inventory.updateMany({
+            return await prisma.inventory.update({
               where: { barcode: it.barcode },
               data: {
                 hpp: unitPrice > 0 ? unitPrice : undefined,
                 stock: { increment: qty },
               },
-            }).catch(() => {});
+            }).catch(() => null);
           }
+          return null;
         });
+        
+        if (inv && inv.barcode) {
+          updatedBarcode = inv.barcode;
+        }
       } else if (it.barcode) {
         await prisma.inventory.updateMany({
           where: { barcode: it.barcode },
@@ -150,6 +189,18 @@ export async function POST(req: Request) {
             stock: { increment: qty },
           },
         }).catch(() => {});
+      }
+      
+      // POS SYNC
+      if (updatedBarcode) {
+        try {
+          await posPool.query(
+            `UPDATE "Product" SET stock = stock + $1, "updatedAt" = NOW() WHERE barcode = $2`,
+            [qty, updatedBarcode]
+          );
+        } catch (posErr) {
+          console.error('POS Sync Error on Priced Receive:', posErr);
+        }
       }
     }
 

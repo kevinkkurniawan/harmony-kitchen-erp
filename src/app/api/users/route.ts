@@ -1,7 +1,12 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { Pool } from 'pg';
+import crypto from 'crypto';
 
+const posPool = new Pool({
+  connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
+});
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -51,6 +56,19 @@ export async function POST(req: Request) {
         userLevel,
       },
     });
+
+    // Sync to POS Database
+    try {
+      await posPool.query(`
+        INSERT INTO "User" (id, username, name, password, role, "updatedAt")
+        VALUES ($1, $2, $3, '123', $4, NOW())
+        ON CONFLICT (username) DO UPDATE
+        SET name = EXCLUDED.name, role = EXCLUDED.role, "updatedAt" = NOW()
+      `, [crypto.randomUUID(), username, fullName, userLevel === 'Kasir' ? 'Cashier' : userLevel === 'Supervisor' ? 'Supervisor' : 'Manager']);
+    } catch (posErr) {
+      console.error('Failed to sync user to POS:', posErr);
+      // We still return success for ERP, but maybe log it
+    }
 
     return NextResponse.json({ success: true, message: 'User berhasil dibuat', data: created });
   } catch (error: any) {
