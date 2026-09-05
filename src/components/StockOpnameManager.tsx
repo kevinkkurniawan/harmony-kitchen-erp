@@ -228,7 +228,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
 
     if (!targetInvId) {
-      showToast('Pilih barang atau scan barcode yang valid terlebih dahulu!', 'error');
+      alert('Pilih barang atau scan barcode yang valid terlebih dahulu!');
       return;
     }
 
@@ -246,13 +246,15 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     const existingIdx = opnameItems.findIndex((i) => i.inventoryId === found.id);
     if (existingIdx >= 0) {
       const updated = [...opnameItems];
-      updated[existingIdx].qty = qty;
-      updated[existingIdx].description = descInput || 'Penyesuaian Opname';
+      const [itemToMove] = updated.splice(existingIdx, 1);
+      itemToMove.qty = qty;
+      itemToMove.description = descInput || 'Penyesuaian Opname';
+      // Move to top so user can see it immediately
+      updated.unshift(itemToMove);
       setOpnameItems(updated);
       showToast(`Qty "${found.inventoryName}" diperbarui menjadi ${qty}`, 'info');
     } else {
       setOpnameItems((prev) => [
-        ...prev,
         {
           inventoryId: found.id,
           inventoryNo: found.inventoryNo,
@@ -263,6 +265,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           price: found.price || 0,
           description: descInput || 'Stok Fisik Opname',
         },
+        ...prev,
       ]);
       showToast(`"${found.inventoryName}" berhasil ditambahkan ke daftar`, 'success');
     }
@@ -748,8 +751,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       </div>
 
       {/* 📥 INLINE FAST SCAN ENTRY ROW (Height: 48px) */}
-      <form
-        onSubmit={handleAddItem}
+      <div
         className={`px-5 py-2.5 border-b flex flex-wrap items-center gap-3 shrink-0 ${
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-amber-50/50 border-amber-200/60'
         }`}
@@ -765,6 +767,12 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             type="text"
             value={barcodeInput}
             onChange={(e) => handleBarcodeChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAddItem();
+              }
+            }}
             placeholder="Scan Barcode / SKU..."
             className={`w-full px-3 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
               isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
@@ -818,13 +826,14 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <button
-          type="submit"
+          type="button"
+          onClick={handleAddItem}
           className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs cursor-pointer shadow transition-all shrink-0 flex items-center gap-1"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Tambah</span>
         </button>
-      </form>
+      </div>
 
       {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT (1:1 with SyncStock) */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">

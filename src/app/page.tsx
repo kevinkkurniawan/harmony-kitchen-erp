@@ -1,5 +1,10 @@
 import ERPDashboard from '@/components/ERPDashboard';
+import AuthGuard from '@/components/AuthGuard';
 
 export default function Page() {
-  return <ERPDashboard />;
+  return (
+    <AuthGuard>
+      <ERPDashboard />
+    </AuthGuard>
+  );
 }

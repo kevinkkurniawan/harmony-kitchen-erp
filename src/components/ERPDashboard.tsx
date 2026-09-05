@@ -19,6 +19,7 @@ import {
   Database,
   Sparkles,
   DollarSign,
+  LogOut,
 } from 'lucide-react';
 import { MOCK_ERP_USERS, ERPUser } from '@/types/user';
 import LoginModal from '@/components/LoginModal';
@@ -119,11 +120,9 @@ export default function ERPDashboard() {
 
         {/* Right Tools */}
         <div className="flex items-center gap-3">
-          {/* User Profile Badge Button */}
-          <button
-            onClick={() => setIsLoginOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 text-amber-400 font-bold border border-amber-500/30 text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-            title="Klik untuk ganti user atau login"
+          {/* User Profile Badge */}
+          <div
+            className="px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-400 font-bold border border-amber-500/30 text-xs flex items-center gap-2 shadow-sm"
           >
             <UserIcon className="w-3.5 h-3.5" />
             <span>
@@ -131,7 +130,7 @@ export default function ERPDashboard() {
                 ? `Current user: ${currentUser.fullName || currentUser.username} (${(currentUser.userLevel || 'User').toUpperCase()})`
                 : 'Login ERP'}
             </span>
-          </button>
+          </div>
 
           {/* Theme Toggle Button */}
           <button
@@ -145,6 +144,23 @@ export default function ERPDashboard() {
           >
             {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
             <span className="hidden sm:inline">{isDark ? 'Light' : 'Dark'}</span>
+          </button>
+
+          {/* Logout Button */}
+          <button
+            onClick={() => {
+              sessionStorage.removeItem('isLoggedIn');
+              window.location.reload();
+            }}
+            className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-sm ${
+              isDark
+                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200'
+            }`}
+            title="Keluar dari Sistem ERP"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </header>
