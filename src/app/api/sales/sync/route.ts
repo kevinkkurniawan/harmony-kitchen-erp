@@ -69,7 +69,7 @@ export async function GET(req: Request) {
     // Fetch POS sales quantities per inventory item across database
     const { Client } = require('pg');
     const posClient = new Client({
-      connectionString: process.env.DATABASE_URL?.replace('harmony_erp', 'harmony_pos') || "postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public"
+      connectionString: process.env.POS_DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public"
     });
     
     await posClient.connect();
@@ -202,7 +202,7 @@ export async function POST(req: Request) {
     // 3. Update POS database to mark items as synced
     const { Client } = require('pg');
     const posClient = new Client({
-      connectionString: process.env.DATABASE_URL?.replace('harmony_erp', 'harmony_pos') || "postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public"
+      connectionString: process.env.POS_DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public"
     });
     
     await posClient.connect();

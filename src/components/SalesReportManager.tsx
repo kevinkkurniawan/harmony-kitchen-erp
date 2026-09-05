@@ -444,7 +444,17 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 text-xs">
-                {dailyData.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={9} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin mb-4 shadow-lg shadow-purple-500/20"></div>
+                        <h3 className="text-lg font-black text-purple-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className="text-xs text-slate-400 mt-2 font-semibold">Menghitung rekapitulasi data penjualan dari Cloud Database</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : dailyData.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-12 text-center text-slate-400 font-medium">
                       Belum ada data transaksi harian.

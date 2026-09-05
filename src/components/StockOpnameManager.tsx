@@ -907,7 +907,17 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/30 text-xs">
-              {filteredTableItems.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="py-24">
+                    <div className="flex flex-col items-center justify-center animate-pulse">
+                      <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
+                      <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                      <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat riwayat Stok Opname dari ERP Database</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredTableItems.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-20 text-center text-slate-400 font-medium">
                     {opnameItems.length === 0

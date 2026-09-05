@@ -505,9 +505,12 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
-                      <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-400" />
-                      Memuat daftar barang yang perlu disinkronkan...
+                    <td colSpan={8} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin mb-4 shadow-lg shadow-indigo-500/20"></div>
+                        <h3 className="text-lg font-black text-indigo-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className="text-xs text-slate-400 mt-2 font-semibold">Menyinkronkan stok POS dan ERP dengan Supabase Cloud</p>
+                      </div>
                     </td>
                   </tr>
                 ) : items.length === 0 ? (

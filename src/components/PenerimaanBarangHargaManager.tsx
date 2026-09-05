@@ -531,9 +531,12 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoadingList ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
-                      <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-400" />
-                      Memuat daftar faktur penerimaan dengan harga...
+                    <td colSpan={8} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
+                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat faktur penerimaan dengan harga dari Database</p>
+                      </div>
                     </td>
                   </tr>
                 ) : receiptsList.length === 0 ? (

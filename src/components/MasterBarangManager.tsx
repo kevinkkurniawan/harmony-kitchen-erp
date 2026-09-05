@@ -828,9 +828,12 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               <tbody className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-300'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={16} className={`py-12 text-center font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                      <RefreshCw className="w-5 h-5 text-slate-800 animate-spin mx-auto mb-2" />
-                      Memuat data barang dari PostgreSQL database...
+                    <td colSpan={16} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
+                        <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat master data barang dari ERP Database</p>
+                      </div>
                     </td>
                   </tr>
                 ) : paginatedProducts.length === 0 ? (

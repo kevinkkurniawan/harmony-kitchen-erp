@@ -767,9 +767,12 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center font-bold text-slate-400">
-                      <RefreshCw className="w-5 h-5 text-amber-400 animate-spin mx-auto mb-2" />
-                      Memuat kelompok promo dari database...
+                    <td colSpan={5} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
+                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat data kelompok promo dari Cloud Database</p>
+                      </div>
                     </td>
                   </tr>
                 ) : promoGroups.length === 0 ? (

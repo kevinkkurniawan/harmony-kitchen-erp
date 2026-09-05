@@ -331,7 +331,23 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/40 text-xs">
-              {usersList.map((user) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="py-24">
+                    <div className="flex flex-col items-center justify-center animate-pulse">
+                      <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
+                      <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                      <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat data user dari Database System</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : usersList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                    Tidak ada data user.
+                  </td>
+                </tr>
+              ) : usersList.map((user) => (
                 <tr
                   key={user.id}
                   className={`transition-colors ${
