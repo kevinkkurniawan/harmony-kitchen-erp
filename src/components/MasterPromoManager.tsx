@@ -169,22 +169,29 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
-      if (promoTab === 'rules') {
-        let url = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
-        if (filterOnlyActive) url += `&onlyActive=true`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setPromoRules(json.data);
+      setIsLoading(true);
+      try {
+        if (promoTab === 'rules') {
+          let url = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
+          if (filterOnlyActive) url += `&onlyActive=true`;
+          const res = await fetch(url);
+          const json = await res.json();
+          if (isMounted && json.success && Array.isArray(json.data)) {
+            setPromoRules(json.data);
+          }
+        } else {
+          let url = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
+          if (filterOnlyActive) url += `&onlyActive=true`;
+          const res = await fetch(url);
+          const json = await res.json();
+          if (isMounted && json.success && Array.isArray(json.data)) {
+            setPromoGroups(json.data);
+          }
         }
-      } else {
-        let url = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
-        if (filterOnlyActive) url += `&onlyActive=true`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setPromoGroups(json.data);
-        }
+      } catch (err) {
+        console.error('Error fetching promos:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
     };
     load();

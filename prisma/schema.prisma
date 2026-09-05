@@ -319,22 +319,30 @@ model PurchaseOrderDetail {
 
 // Transaction: Material Receivement (MR / Express & Priced)
 model MaterialReceiveHeader {
-  id           Int                     @id @default(autoincrement())
-  mrNo         String                  @unique @map("mr_no")
-  mrDate       DateTime                @map("mr_date")
-  poNo         String?                 @map("po_no")
-  supplierId   Int?                    @map("supplier_id")
-  supplierName String                  @map("supplier_name")
-  doNo         String?                 @map("do_no")
-  driverName   String?                 @map("driver_name")
-  vehicleNo    String?                 @map("vehicle_no")
-  whName       String?                 @map("wh_name")
-  description  String?                 @db.Text
-  isExpress    Boolean                 @default(true) @map("is_express")
-  isVoid       Boolean                 @default(false) @map("is_void")
-  isPriced     Boolean                 @default(false) @map("is_priced")
-  createdAt    DateTime                @default(now()) @map("created_at")
-  details      MaterialReceiveDetail[]
+  id             Int                     @id @default(autoincrement())
+  mrNo           String                  @unique @map("mr_no")
+  mrDate         DateTime                @map("mr_date")
+  poNo           String?                 @map("po_no")
+  supplierId     Int?                    @map("supplier_id")
+  supplierName   String                  @map("supplier_name")
+  doNo           String?                 @map("do_no")
+  driverName     String?                 @map("driver_name")
+  vehicleNo      String?                 @map("vehicle_no")
+  whName         String?                 @map("wh_name")
+  description    String?                 @db.Text
+  isExpress      Boolean                 @default(true) @map("is_express")
+  isVoid         Boolean                 @default(false) @map("is_void")
+  isPriced       Boolean                 @default(false) @map("is_priced")
+  paymentType    String?                 @map("payment_type")
+  dueDate        DateTime?               @map("due_date")
+  downPayment    Float?                  @default(0) @map("down_payment")
+  discPercentage Float?                  @default(0) @map("disc_percentage")
+  ppnPercentage  Float?                  @default(0) @map("ppn_percentage")
+  subtotal       Float?                  @default(0)
+  tax            Float?                  @default(0)
+  grandTotal     Float?                  @default(0) @map("grand_total")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  details        MaterialReceiveDetail[]
 
   @@map("t_material_receive_header")
 }

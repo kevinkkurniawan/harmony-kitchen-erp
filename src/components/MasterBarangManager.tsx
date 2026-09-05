@@ -181,6 +181,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   useEffect(() => {
     let isMounted = true;
     const runFetch = async () => {
+      setIsLoading(true);
       try {
         let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000`;
         if (filterMinusStock) url += `&minusStock=true`;
@@ -195,6 +196,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         }
       } catch (err) {
         console.error('Error fetching inventory:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
     };
     runFetch();

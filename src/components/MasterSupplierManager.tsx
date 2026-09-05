@@ -108,6 +108,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   useEffect(() => {
     let isMounted = true;
     const runFetch = async () => {
+      setIsLoading(true);
       try {
         let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
         if (filterOnlyActive) url += `&onlyActive=true`;
@@ -119,6 +120,8 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
         }
       } catch (err) {
         console.error('Error fetching suppliers:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
     };
     runFetch();

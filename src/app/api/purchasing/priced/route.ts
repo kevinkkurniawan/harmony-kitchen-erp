@@ -63,8 +63,17 @@ export async function GET(req: Request) {
         isVoid: mr.isVoid,
         totalQty: totalQty,
         total_qty: totalQty,
-        totalAmount: totalAmount,
-        total_amount: totalAmount,
+        totalAmount: (mr.grandTotal && mr.grandTotal > 0) ? mr.grandTotal : totalAmount,
+        total_amount: (mr.grandTotal && mr.grandTotal > 0) ? mr.grandTotal : totalAmount,
+        paymentType: mr.paymentType || '-',
+        dueDate: mr.dueDate ? new Date(mr.dueDate).toLocaleDateString('id-ID') : '-',
+        downPayment: mr.downPayment || 0,
+        discPercentage: mr.discPercentage || 0,
+        ppnPercentage: mr.ppnPercentage || 0,
+        subtotal: mr.subtotal || totalAmount,
+        tax: mr.tax || 0,
+        grandTotal: (mr.grandTotal && mr.grandTotal > 0) ? mr.grandTotal : totalAmount,
+        grand_total: (mr.grandTotal && mr.grandTotal > 0) ? mr.grandTotal : totalAmount,
         items: mr.details.map((d) => ({
           id: d.id,
           inventoryId: d.inventoryId,
@@ -108,9 +117,21 @@ export async function POST(req: Request) {
     const isVoid = body.isVoid ?? false;
     const items = body.items;
 
+    const paymentType = body.paymentType;
+    const dueDate = body.dueDate;
+    const downPayment = Number(body.downPayment || 0);
+    const discPercentage = Number(body.discPercentage || 0);
+    const ppnPercentage = Number(body.ppnPercentage || 0);
+
     if (!mrNo || !supplierName || !items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ success: false, error: 'No. MR, Supplier, dan detail item barang wajib diisi' }, { status: 400 });
     }
+
+    const calculatedSubtotal = items.reduce((sum: number, it: any) => sum + Number(it.subtotal || (Number(it.qty || 0) * Number(it.price || it.unitPrice || it.unit_price || 0) * (1 - Number(it.discPercentage || 0) / 100))), 0);
+    const calculatedDiscValue = calculatedSubtotal * (discPercentage / 100);
+    const afterDiscSubtotal = calculatedSubtotal - calculatedDiscValue;
+    const calculatedTax = afterDiscSubtotal * (ppnPercentage / 100);
+    const calculatedGrandTotal = afterDiscSubtotal + calculatedTax;
 
     const created = await prisma.materialReceiveHeader.create({
       data: {
@@ -127,6 +148,14 @@ export async function POST(req: Request) {
         isExpress: Boolean(isExpress),
         isVoid: Boolean(isVoid),
         isPriced: true,
+        paymentType: paymentType || null,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        downPayment,
+        discPercentage,
+        ppnPercentage,
+        subtotal: calculatedSubtotal,
+        tax: calculatedTax,
+        grandTotal: calculatedGrandTotal,
         details: {
           create: items.map((it: any) => {
             const qty = Number(it.qty || 0);
@@ -150,7 +179,7 @@ export async function POST(req: Request) {
       include: { details: true },
     });
 
-    const grandTotal = created.details.reduce((sum, d) => sum + Number(d.subtotal || 0), 0);
+    const grandTotal = created.grandTotal ?? created.details.reduce((sum, d) => sum + Number(d.subtotal || 0), 0);
 
     // Update HPP and increment stock in PostgreSQL
     for (const it of items) {

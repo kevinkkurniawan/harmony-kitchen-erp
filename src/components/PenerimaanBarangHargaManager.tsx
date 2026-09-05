@@ -141,7 +141,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
         if (isMounted) setIsLoadingList(false);
       }
     }
-    load();
+    loadData();
     return () => { isMounted = false; };
   }, [debouncedListSearch]);
 
