@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 
@@ -7,127 +7,33 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
-
-    const where = q
-      ? {
-          OR: [
-            { employeeNo: { contains: q, mode: 'insensitive' as const } },
-            { employeeName: { contains: q, mode: 'insensitive' as const } },
-            { positionName: { contains: q, mode: 'insensitive' as const } },
-            { description: { contains: q, mode: 'insensitive' as const } },
-          ],
-        }
-      : undefined;
-
-    const [total, employees] = await Promise.all([
+    const where = q ? { OR: [{ employeeno: { contains: q, mode: 'insensitive' as const } }, { employeename: { contains: q, mode: 'insensitive' as const } }] } : undefined;
+    const [total, emps] = await Promise.all([
       prisma.employee.count({ where }),
-      prisma.employee.findMany({
-        where,
-        include: {
-          position: true,
-        },
-        orderBy: { id: 'asc' },
-        skip: paginationParams.skip,
-        take: paginationParams.limit,
-      }),
+      prisma.employee.findMany({ where, orderBy: { id: 'asc' }, skip: paginationParams.skip, take: paginationParams.limit }),
     ]);
-
-    const mapped = employees.map((e) => ({
-      id: e.id,
-      employee_no: e.employeeNo,
-      employee_name: e.employeeName,
-      position_id: e.positionId,
-      position_name: e.position?.positionName || e.positionName || 'Staff',
-      description: e.description || '',
-      is_active: e.isActive,
-      created_at: e.createdAt,
-    }));
-
+    const mapped = emps.map((e) => ({ id: e.id, employee_no: e.employeeno, employee_name: e.employeename, position_id: null, position_name: '', description: '', is_active: true, created_at: e.createddate }));
     return createPaginatedResponse(mapped, total, paginationParams);
-  } catch (error: any) {
-    console.error('Error in GET /api/employees:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const {
-      employee_no,
-      employee_name,
-      position_id,
-      position_name = 'Staff',
-      description = '',
-      is_active = true,
-    } = body;
-
-    if (!employee_no || !employee_name) {
-      return NextResponse.json({ success: false, error: 'Kode / No. Karyawan dan Nama Karyawan wajib diisi' }, { status: 400 });
-    }
-
-    const created = await prisma.employee.create({
-      data: {
-        employeeNo: employee_no,
-        employeeName: employee_name,
-        positionId: position_id ? Number(position_id) : null,
-        positionName: position_name,
-        description,
-        isActive: Boolean(is_active),
-      },
-    });
-
-    return NextResponse.json({ success: true, message: 'Karyawan berhasil ditambahkan', data: created });
-  } catch (error: any) {
-    console.error('Error in POST /api/employees:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+    const created = await prisma.employee.create({ data: { employeeno: body.employee_no, employeename: body.employee_name } });
+    return NextResponse.json({ success: true, data: created });
+  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
-
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { id, employee_no, employee_name, position_id, position_name, description, is_active } = body;
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID Karyawan diperlukan' }, { status: 400 });
-    }
-
-    const updated = await prisma.employee.update({
-      where: { id: Number(id) },
-      data: {
-        employeeNo: employee_no,
-        employeeName: employee_name,
-        positionId: position_id ? Number(position_id) : undefined,
-        positionName: position_name,
-        description,
-        isActive: is_active !== undefined ? Boolean(is_active) : undefined,
-      },
-    });
-
-    return NextResponse.json({ success: true, message: 'Data Karyawan berhasil diperbarui', data: updated });
-  } catch (error: any) {
-    console.error('Error in PUT /api/employees:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+    const updated = await prisma.employee.update({ where: { id: Number(body.id) }, data: { employeeno: body.employee_no, employeename: body.employee_name } });
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
-
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json({ success: false, error: 'ID Karyawan diperlukan' }, { status: 400 });
-    }
-
-    await prisma.employee.delete({
-      where: { id: Number(id) },
-    });
-
-    return NextResponse.json({ success: true, message: 'Karyawan berhasil dihapus' });
-  } catch (error: any) {
-    console.error('Error in DELETE /api/employees:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+    await prisma.employee.delete({ where: { id: Number(searchParams.get('id')) } });
+    return NextResponse.json({ success: true });
+  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
