@@ -7,6 +7,7 @@ import crypto from 'crypto';
 const posPool = new Pool({
   connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
 });
+posPool.on('connect', client => client.query('SET search_path TO pos, public;'));
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);

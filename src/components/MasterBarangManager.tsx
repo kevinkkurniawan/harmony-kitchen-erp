@@ -25,6 +25,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
+import { useDebounce } from '@/hooks/useDebounce';
 
 interface LookupItem {
   id: number;
@@ -68,8 +69,9 @@ interface MasterBarangManagerProps {
 export default function MasterBarangManager({ isDark, mode = 'master' }: MasterBarangManagerProps) {
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
   
   // Explicit Filter Checkboxes from Frm_Inventory / Frm_InventoryStock
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
@@ -156,7 +158,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(searchQuery)}&limit=1000`;
+      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000`;
       if (filterMinusStock) url += `&minusStock=true`;
       if (filterOnlyActive) url += `&onlyActive=true`;
       const res = await fetch(url);
@@ -173,14 +175,14 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, filterMinusStock, filterOnlyActive, addToast]);
+  }, [debouncedSearchQuery, filterMinusStock, filterOnlyActive, addToast]);
 
   // Initial load and filter change trigger
   useEffect(() => {
     let isMounted = true;
     const runFetch = async () => {
       try {
-        let url = `/api/inventory?q=${encodeURIComponent(searchQuery)}&limit=1000`;
+        let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000`;
         if (filterMinusStock) url += `&minusStock=true`;
         if (filterOnlyActive) url += `&onlyActive=true`;
         const res = await fetch(url);
@@ -197,7 +199,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     };
     runFetch();
     return () => { isMounted = false; };
-  }, [searchQuery, filterMinusStock, filterOnlyActive]);
+  }, [debouncedSearchQuery, filterMinusStock, filterOnlyActive]);
 
   // Fetch Dropdown Lookups on Mount
   useEffect(() => {

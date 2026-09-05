@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useDebounce } from '@/hooks/useDebounce';
 import {
   RefreshCw,
   Search,
@@ -87,6 +88,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [activeDateFilter, setActiveDateFilter] = useState<'all' | 'today' | '7days' | 'month'>('all');
@@ -112,7 +114,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
     async function loadData() {
       setIsLoading(true);
       try {
-        const url = `/api/sales/monitoring?q=${encodeURIComponent(searchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+        const url = `/api/sales/monitoring?q=${encodeURIComponent(debouncedSearchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
         const res = await fetch(url);
         const json = await res.json();
         if (isMounted && (json.success || Array.isArray(json.data))) {
@@ -127,12 +129,12 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
     }
     loadData();
     return () => { isMounted = false; };
-  }, [searchQuery, dateFrom, dateTo]);
+  }, [debouncedSearchQuery, dateFrom, dateTo]);
 
   const reloadData = async () => {
     setIsLoading(true);
     try {
-      const url = `/api/sales/monitoring?q=${encodeURIComponent(searchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+      const url = `/api/sales/monitoring?q=${encodeURIComponent(debouncedSearchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
       const res = await fetch(url);
       const json = await res.json();
       if (json.success || Array.isArray(json.data)) {

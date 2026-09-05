@@ -21,6 +21,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { ERPProduct, Supplier } from '@/types/erp';
+import { useDebounce } from '@/hooks/useDebounce';
 
 export interface PricedReceiptItem {
   inventoryId: string;
@@ -78,6 +79,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
   // List View States
   const [receiptsList, setReceiptsList] = useState<PricedReceiptHeader[]>([]);
   const [listSearch, setListSearch] = useState<string>('');
+  const debouncedListSearch = useDebounce(listSearch, 500);
   const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
 
   // Form Header States
@@ -100,6 +102,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
   // Item Entry States
   const [items, setItems] = useState<PricedReceiptItem[]>([]);
   const [productSearch, setProductSearch] = useState<string>('');
+  const debouncedProductSearch = useDebounce(productSearch, 500);
   const [searchResults, setSearchResults] = useState<ERPProduct[]>([]);
   const [isSearchingProduct, setIsSearchingProduct] = useState<boolean>(false);
 
@@ -127,7 +130,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
     async function loadData() {
       setIsLoadingList(true);
       try {
-        const res = await fetch(`/api/purchasing/priced?q=${encodeURIComponent(listSearch)}`);
+        const res = await fetch(`/api/purchasing/priced?q=${encodeURIComponent(debouncedListSearch)}`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setReceiptsList(json.data);
@@ -138,14 +141,14 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
         if (isMounted) setIsLoadingList(false);
       }
     }
-    loadData();
+    load();
     return () => { isMounted = false; };
-  }, [listSearch]);
+  }, [debouncedListSearch]);
 
   const reloadReceipts = async () => {
     setIsLoadingList(true);
     try {
-      const res = await fetch(`/api/purchasing/priced?q=${encodeURIComponent(listSearch)}`);
+      const res = await fetch(`/api/purchasing/priced?q=${encodeURIComponent(debouncedListSearch)}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setReceiptsList(json.data);
@@ -182,13 +185,14 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
   // Live product search for Barcode / SKU input in create mode
   useEffect(() => {
     let isMounted = true;
-    if (!productSearch.trim()) {
+    if (!debouncedProductSearch.trim()) {
+      setSearchResults([]);
       return;
     }
     const timer = setTimeout(async () => {
       setIsSearchingProduct(true);
       try {
-        const res = await fetch(`/api/inventory?q=${encodeURIComponent(productSearch)}`);
+        const res = await fetch(`/api/inventory?q=${encodeURIComponent(debouncedProductSearch)}`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setSearchResults(json.data.slice(0, 8));

@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 const posPool = new Pool({
   connectionString: process.env.POS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/harmony_pos?schema=public',
 });
+posPool.on('connect', client => client.query('SET search_path TO pos, public;'));
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

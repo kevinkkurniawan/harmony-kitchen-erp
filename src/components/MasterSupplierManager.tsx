@@ -23,6 +23,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { Supplier } from '@/types/erp';
+import { useDebounce } from '@/hooks/useDebounce';
 
 interface ToastMessage {
   id: string;
@@ -37,8 +38,9 @@ interface MasterSupplierManagerProps {
 export default function MasterSupplierManager({ isDark }: MasterSupplierManagerProps) {
   // Main Data States
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
   const [filterOnlyTaxable, setFilterOnlyTaxable] = useState<boolean>(false);
 
@@ -87,7 +89,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   const fetchSuppliers = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/suppliers?q=${encodeURIComponent(searchQuery)}`;
+      let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
       if (filterOnlyActive) url += `&onlyActive=true`;
       if (filterOnlyTaxable) url += `&onlyTaxable=true`;
       const res = await fetch(url);
@@ -101,23 +103,27 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, filterOnlyActive, filterOnlyTaxable, addToast]);
+  }, [debouncedSearchQuery, filterOnlyActive, filterOnlyTaxable, addToast]);
 
   useEffect(() => {
     let isMounted = true;
-    const load = async () => {
-      let url = `/api/suppliers?q=${encodeURIComponent(searchQuery)}`;
-      if (filterOnlyActive) url += `&onlyActive=true`;
-      if (filterOnlyTaxable) url += `&onlyTaxable=true`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (isMounted && json.success && Array.isArray(json.data)) {
-        setSuppliers(json.data);
+    const runFetch = async () => {
+      try {
+        let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
+        if (filterOnlyActive) url += `&onlyActive=true`;
+        if (filterOnlyTaxable) url += `&onlyTaxable=true`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (isMounted && json.success && Array.isArray(json.data)) {
+          setSuppliers(json.data);
+        }
+      } catch (err) {
+        console.error('Error fetching suppliers:', err);
       }
     };
-    load();
+    runFetch();
     return () => { isMounted = false; };
-  }, [searchQuery, filterOnlyActive, filterOnlyTaxable]);
+  }, [debouncedSearchQuery, filterOnlyActive, filterOnlyTaxable]);
 
   // Open Create Modal
   const handleOpenCreateModal = useCallback(() => {

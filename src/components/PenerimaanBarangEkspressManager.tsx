@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   Eye,
 } from 'lucide-react';
+import { useDebounce } from '@/hooks/useDebounce';
 import { ERPProduct, Supplier } from '@/types/erp';
 
 export interface ExpressReceiptItem {
@@ -66,6 +67,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
   // List View States
   const [receiptsList, setReceiptsList] = useState<ExpressReceiptHeader[]>([]);
   const [listSearch, setListSearch] = useState<string>('');
+  const debouncedListSearch = useDebounce(listSearch, 500);
   const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
 
   // Form Header States
@@ -82,6 +84,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
   // Item Entry States
   const [items, setItems] = useState<ExpressReceiptItem[]>([]);
   const [productSearch, setProductSearch] = useState<string>('');
+  const debouncedProductSearch = useDebounce(productSearch, 500);
   const [searchResults, setSearchResults] = useState<ERPProduct[]>([]);
   const [isSearchingProduct, setIsSearchingProduct] = useState<boolean>(false);
 
@@ -106,10 +109,10 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
   // Fetch Express Receipts List
   useEffect(() => {
     let isMounted = true;
-    async function loadData() {
+    async function load() {
       setIsLoadingList(true);
       try {
-        const res = await fetch(`/api/purchasing/express?q=${encodeURIComponent(listSearch)}`);
+        const res = await fetch(`/api/purchasing/express?q=${encodeURIComponent(debouncedListSearch)}`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setReceiptsList(json.data);
@@ -120,14 +123,14 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
         if (isMounted) setIsLoadingList(false);
       }
     }
-    loadData();
+    load();
     return () => { isMounted = false; };
-  }, [listSearch]);
+  }, [debouncedListSearch]);
 
   const reloadReceipts = async () => {
     setIsLoadingList(true);
     try {
-      const res = await fetch(`/api/purchasing/express?q=${encodeURIComponent(listSearch)}`);
+      const res = await fetch(`/api/purchasing/express?q=${encodeURIComponent(debouncedListSearch)}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setReceiptsList(json.data);
@@ -164,13 +167,14 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
   // Live product search for Barcode / SKU input in create mode
   useEffect(() => {
     let isMounted = true;
-    if (!productSearch.trim()) {
+    if (!debouncedProductSearch.trim()) {
+      setSearchResults([]);
       return;
     }
     const timer = setTimeout(async () => {
       setIsSearchingProduct(true);
       try {
-        const res = await fetch(`/api/inventory?q=${encodeURIComponent(productSearch)}`);
+        const res = await fetch(`/api/inventory?q=${encodeURIComponent(debouncedProductSearch)}`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setSearchResults(json.data.slice(0, 8));

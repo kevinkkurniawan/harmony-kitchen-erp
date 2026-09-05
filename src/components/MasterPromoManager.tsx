@@ -19,6 +19,7 @@ import {
   Layers,
   Percent,
 } from 'lucide-react';
+import { useDebounce } from '@/hooks/useDebounce';
 
 export interface PromoRuleItem {
   id: number | string;
@@ -74,8 +75,9 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   const [promoTab, setPromoTab] = useState<'rules' | 'groups'>('rules');
   const [promoRules, setPromoRules] = useState<PromoRuleItem[]>([]);
   const [promoGroups, setPromoGroups] = useState<PromoGroupItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
 
   // Selection & Context Menu
@@ -130,7 +132,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   const fetchPromoRules = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/promos/items?q=${encodeURIComponent(searchQuery)}`;
+      let url = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
       if (filterOnlyActive) url += `&onlyActive=true`;
       const res = await fetch(url);
       const json = await res.json();
@@ -143,13 +145,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, filterOnlyActive, addToast]);
+  }, [debouncedSearchQuery, filterOnlyActive, addToast]);
 
   // Fetch Promo Groups
   const fetchPromoGroups = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/promos?q=${encodeURIComponent(searchQuery)}`;
+      let url = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
       if (filterOnlyActive) url += `&onlyActive=true`;
       const res = await fetch(url);
       const json = await res.json();
@@ -162,13 +164,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, filterOnlyActive, addToast]);
+  }, [debouncedSearchQuery, filterOnlyActive, addToast]);
 
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
       if (promoTab === 'rules') {
-        let url = `/api/promos/items?q=${encodeURIComponent(searchQuery)}`;
+        let url = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
         if (filterOnlyActive) url += `&onlyActive=true`;
         const res = await fetch(url);
         const json = await res.json();
@@ -176,7 +178,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
           setPromoRules(json.data);
         }
       } else {
-        let url = `/api/promos?q=${encodeURIComponent(searchQuery)}`;
+        let url = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
         if (filterOnlyActive) url += `&onlyActive=true`;
         const res = await fetch(url);
         const json = await res.json();
@@ -187,7 +189,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
     };
     load();
     return () => { isMounted = false; };
-  }, [promoTab, searchQuery, filterOnlyActive]);
+  }, [promoTab, debouncedSearchQuery, filterOnlyActive]);
 
   // Open Rule Modal
   const handleOpenCreateRuleModal = useCallback(() => {

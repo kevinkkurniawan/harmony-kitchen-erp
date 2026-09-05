@@ -73,6 +73,7 @@ export async function GET(req: Request) {
     });
     
     await posClient.connect();
+    await posClient.query('SET search_path TO pos, public;');
     
     const posRes = await posClient.query(`
       SELECT "productId", SUM(quantity) as "totalQty" 
@@ -206,6 +207,7 @@ export async function POST(req: Request) {
     });
     
     await posClient.connect();
+    await posClient.query('SET search_path TO pos, public;');
     const barcodes = itemsToSync.map((item: any) => `'${item.barcode}'`).join(',');
     
     if (barcodes.length > 0) {
