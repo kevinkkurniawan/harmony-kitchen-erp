@@ -13,7 +13,37 @@ export async function GET(req: Request) {
       prisma.inventory.count({ where }),
       prisma.inventory.findMany({ where, orderBy: { id: 'asc' }, skip: paginationParams.skip, take: paginationParams.limit }),
     ]);
-    const mapped = items.map((i) => ({ id: i.id, barcode: i.barcode, inventory_no: i.inventoryno, inventory_name: i.inventoryname, category_id: null, category_name: '', brand_id: null, brand_name: '', uom_id: null, uom_name: '', hpp: 0, price: i.price, grosir1: i.grosir1, grosir2: i.grosir2, grosir3: i.grosir3, stock: 0, is_active: true, created_at: i.createddate }));
+    const mapped = items.map((i: any) => ({
+      id: String(i.id),
+      barcode: i.barcode || i.inventoryno,
+      inventoryNo: i.inventoryno,
+      inventory_no: i.inventoryno,
+      inventoryName: i.inventoryname,
+      inventory_name: i.inventoryname,
+      inventoryBrandId: null,
+      brandName: 'General',
+      brand_name: 'General',
+      inventoryCategoryId: null,
+      categoryName: 'General',
+      category_name: 'General',
+      uoMId: null,
+      uomName: 'Pcs',
+      uom_name: 'Pcs',
+      minStock: 5,
+      maxStock: 100,
+      kodeHarga: 'STD',
+      description: '',
+      hpp: 0,
+      price: i.price,
+      grosir1: i.grosir1,
+      grosir2: i.grosir2,
+      grosir3: i.grosir3,
+      stock: Number(i.stokupdate || 0),
+      isActive: true,
+      is_active: true,
+      createdAt: i.createddate,
+      created_at: i.createddate
+    }));
     return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
