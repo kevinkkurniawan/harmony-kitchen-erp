@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     const transactions = txResult.rows;
 
     // Get Items for these transactions
-    let mapped = [];
+    let mapped: any[] = [];
     if (transactions.length > 0) {
       const txIds = transactions.map(t => t.id);
       const itemsQuery = `
