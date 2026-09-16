@@ -993,7 +993,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
       {/* 🖨️ PRINTABLE RECEIPT INVOICE MODAL */}
       {isPrintModalOpen && printData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-4xl bg-white text-slate-900 rounded-3xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className={`w-full max-w-4xl ${isDark ? "bg-slate-900 text-slate-100 border-2 border-slate-700" : "bg-white text-slate-900"} rounded-3xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
             {/* Action Header */}
             <div className="flex items-center justify-between pb-6 border-b border-slate-300 print:hidden">
               <div className="font-black text-slate-800 text-sm flex items-center gap-2">
