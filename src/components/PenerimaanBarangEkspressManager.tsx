@@ -512,7 +512,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                       <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
-                        <td className={`py-3.5 px-4 font-black text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{supplier}</td>
+                        <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
                         <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
                         <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{driver}</td>
                         <td className="py-3.5 px-4 text-center font-black text-emerald-400">{qty} Items</td>

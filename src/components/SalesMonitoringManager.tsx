@@ -534,7 +534,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                     <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                       <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
                       <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{txDate}</td>
-                      <td className={`py-3.5 px-4 font-bold text-slate-900 dark: flex items-center gap-1.5 ${isDark ? "text-white" : "text-slate-900"}`}>
+                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                         <User className={`w-3.5 h-3.5 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
                         <span>{cashier}</span>
                       </td>

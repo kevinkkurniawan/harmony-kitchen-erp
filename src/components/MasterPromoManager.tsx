@@ -562,7 +562,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -702,7 +702,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                       >
                         <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{rule.id}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-500">{code}</td>
-                        <td className={`py-3 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{name}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
                         <td className={`py-3 px-4 font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{group}</td>
                         <td className="py-3 px-3 text-right font-mono font-black text-emerald-400">
                           {pct > 0 ? `${pct}%` : '-'}
@@ -811,7 +811,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         }`}
                       >
                         <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{group.id}</td>
-                        <td className={`py-3 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{name}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
                         <td className="py-3 px-3 text-center font-mono font-bold text-amber-400">{count} Promo</td>
                         <td className="py-3 px-3 text-center">
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
@@ -932,7 +932,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               </div>
               <button
                 onClick={() => setIsRuleModalOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1094,7 +1094,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               </div>
               <button
                 onClick={() => setIsGroupModalOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>

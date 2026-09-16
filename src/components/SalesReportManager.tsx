@@ -156,11 +156,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className={`text-xl font-black text-slate-900 dark: tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                 Laporan Penjualan ERP
               </h1>
             </div>
-            <p className={`text-xs text-slate-500 dark: font-medium mt-0.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
               Rekapitulasi Penjualan Harian, Bulanan, Per Barang, dan Profit Analysis
             </p>
           </div>
@@ -259,7 +259,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Omset Bersih
             </span>
-            <div className={`text-lg font-black text-slate-900 dark: mt-0.5 ${isDark ? "text-white" : "text-slate-900"}`}>
+            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
               {formatIDR(summaryData?.netSales || 0)}
             </div>
             <span className="text-[10px] text-emerald-500 font-semibold">
@@ -281,7 +281,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Transaksi
             </span>
-            <div className={`text-lg font-black text-slate-900 dark: mt-0.5 ${isDark ? "text-white" : "text-slate-900"}`}>
+            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
               {summaryData?.totalOrders || 0} Orders
             </div>
             <span className="text-[10px] text-amber-500 font-semibold">
@@ -325,7 +325,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Metode Pembayaran Utama
             </span>
-            <div className={`text-xs font-black text-slate-900 dark: mt-1 space-y-0.5 ${isDark ? "text-white" : "text-slate-900"}`}>
+            <div className="text-xs font-black text-slate-900 dark:text-white mt-1 space-y-0.5">
               <div>Cash: <strong className="text-emerald-400">{formatIDR(summaryData?.cashSales || 0)}</strong></div>
               <div>QRIS: <strong className="text-blue-400">{formatIDR(summaryData?.qrisSales || 0)}</strong></div>
             </div>
@@ -591,7 +591,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       <td className="py-3.5 px-4 font-mono font-semibold text-purple-400">
                         {row.barcode}
                       </td>
-                      <td className={`py-3.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>
+                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
                         {row.inventoryName}
                       </td>
                       <td className="py-3.5 px-4 text-center font-black text-amber-500">

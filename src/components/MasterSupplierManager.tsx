@@ -393,7 +393,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -682,7 +682,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>

@@ -564,7 +564,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
               <PackageCheck className="w-5 h-5" />
             </div>
             <div>
-              <h1 className={`text-base font-black text-slate-900 dark: tracking-tight leading-none ${isDark ? "text-white" : "text-slate-900"}`}>
+              <h1 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-none">
                 Stok Opname
               </h1>
               <span className="text-[10px] font-bold text-amber-500 font-mono">
@@ -947,7 +947,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         <span className="font-bold text-amber-500 block">{item.inventoryNo}</span>
                         <span className={`text-[10px] font-normal ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.barcode}</span>
                       </td>
-                      <td className={`py-2.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>
+                      <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">
                         {item.inventoryName}
                       </td>
 
@@ -1032,7 +1032,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         }`}>
           <div className="flex items-center gap-4 text-xs font-bold">
             <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Barang: <strong className={`text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{stats.totalItems} SKU</strong>
+              Total Barang: <strong className="text-slate-900 dark:text-white">{stats.totalItems} SKU</strong>
             </span>
             <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Qty Fisik: <strong className="text-amber-500">{stats.totalPhysicalQty} Unit</strong>

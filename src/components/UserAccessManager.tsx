@@ -264,11 +264,11 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className={`text-xl font-black text-slate-900 dark: tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
+              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                 User ERP & Hak Akses Management
               </h1>
             </div>
-            <p className={`text-xs text-slate-500 dark: font-medium mt-0.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
               Manajemen Pengguna ERP dan Matriks Hak Akses Modul (View, Add, Edit, Delete, Print)
             </p>
           </div>
@@ -352,7 +352,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                 >
                   <td className={`py-3.5 px-4 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{user.id}</td>
                   <td className="py-3.5 px-4 font-mono font-black text-emerald-400">@{user.username}</td>
-                  <td className={`py-3.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{user.fullName}</td>
+                  <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{user.fullName}</td>
                   <td className="py-3.5 px-4">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
@@ -569,7 +569,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                 <UserIcon className="w-4 h-4 text-emerald-400" />
                 Tambah User ERP Baru
               </h3>
-              <button onClick={() => setIsAddUserOpen(false)} className={`text-slate-400 hover: ${isDark ? "text-white" : "text-slate-900"}`}>
+              <button onClick={() => setIsAddUserOpen(false)} className={`hover:text-white ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                 <X className="w-4 h-4" />
               </button>
             </div>

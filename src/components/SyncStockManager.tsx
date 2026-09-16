@@ -77,7 +77,7 @@ const SyncStockRow = React.memo(function SyncStockRow({
         />
       </td>
       <td className="py-3.5 px-4 font-mono font-bold text-amber-500">{row.inventoryNo}</td>
-      <td className={`py-3.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{row.inventoryName}</td>
+      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{row.inventoryName}</td>
       <td className="py-3.5 px-3 text-center font-bold">{row.uomName}</td>
       <td className="py-3.5 px-4 text-center font-mono font-bold">{row.stokGudang}</td>
       <td className="py-3.5 px-4 text-center font-mono font-black text-rose-500">
@@ -605,7 +605,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
               </div>
               <button
                 onClick={() => setIsHistoryOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>
