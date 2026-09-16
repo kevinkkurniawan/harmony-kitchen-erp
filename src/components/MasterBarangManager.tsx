@@ -212,7 +212,12 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         const res = await fetch('/api/inventory/lookups');
         const json = await res.json();
         if (isMounted && json.success && json.data) {
-          setLookups(json.data);
+          setLookups({
+            brands: json.data.brands || [],
+            categories: json.data.categories || [],
+            productTypes: json.data.productTypes || [],
+            uoms: json.data.uoms || [],
+          });
         }
       } catch (err) {
         console.error('Error fetching lookups:', err);
@@ -913,6 +918,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setContextMenu(null);
                                 handleOpenEditModal(item);
                               }}
                               className={`p-1 rounded transition-colors cursor-pointer ${
@@ -926,6 +932,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              setContextMenu(null);
                               handleOpenOpname(item);
                             }}
                             className={`p-1 rounded transition-colors cursor-pointer ${
@@ -939,6 +946,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setContextMenu(null);
                                 handleDeleteProduct(item);
                               }}
                               className={`p-1 rounded transition-colors cursor-pointer ${
@@ -1028,7 +1036,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               className="w-full px-3 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
             >
               <Edit className="w-3.5 h-3.5" />
-              <span>&Detail / Edit Barang</span>
+              <span>Detail / Edit Barang</span>
             </button>
           )}
           <button
@@ -1039,7 +1047,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             className="w-full px-3 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Sliders className="w-3.5 h-3.5" />
-            <span>&Stok Opname</span>
+            <span>Stok Opname</span>
           </button>
           <button
             onClick={() => {
@@ -1049,7 +1057,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             className="w-full px-3.5 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>&Cetak Barcode</span>
+            <span>Cetak Barcode</span>
           </button>
           {mode !== 'stock' && (
             <>
@@ -1062,7 +1070,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 className="w-full px-3 py-2 text-left hover:bg-rose-600 hover:text-white font-black text-rose-800 flex items-center gap-2 cursor-pointer transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>&Hapus Barang</span>
+                <span>Hapus Barang</span>
               </button>
             </>
           )}
@@ -1552,7 +1560,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
             <div className="space-y-2 text-xs font-black max-h-60 overflow-y-auto">
               {barcodeQueue.length === 0 ? (
-                <div className="text-center p-6 text-slate-950 font-black">Daftar cetak barcode masih kosong. Klik kanan barang lalu pilih &Cetak Barcode.</div>
+                <div className="text-center p-6 text-slate-950 font-black">Daftar cetak barcode masih kosong. Klik kanan barang lalu pilih Cetak Barcode.</div>
               ) : (
                 barcodeQueue.map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 rounded-xl border-2 border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-950">
