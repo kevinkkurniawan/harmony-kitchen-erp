@@ -94,7 +94,7 @@ export default function ERPDashboard() {
   return (
     <div
       className={`h-screen w-screen flex flex-col font-sans overflow-hidden select-none transition-colors duration-200 ${
-        isDark ? 'bg-[#070b14] text-slate-100' : 'bg-slate-100 text-slate-900'
+        isDark ? 'dark bg-[#070b14] text-slate-100' : 'bg-slate-100 text-slate-900'
       }`}
     >
       {/* 🚀 ERP TOP HEADER WITH PREMIUM UI/UX */}
