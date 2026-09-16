@@ -529,9 +529,9 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             }`}>
               <div className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-amber-400" />
-                <h3 className="font-black text-sm text-white">{isCreatingNew ? 'Tambah Barang Baru' : `Detail Barang: ${formData.inventoryName}`}</h3>
+                <h3 className={`font-black text-sm ${isDark ? "text-white" : "text-slate-900"}`}>{isCreatingNew ? 'Tambah Barang Baru' : `Detail Barang: ${formData.inventoryName}`}</h3>
               </div>
-              <button onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }} className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer transition-colors">
+              <button onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }} className={`p-1 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -801,7 +801,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           hppHistory.map((h) => (
                             <tr key={h.id}>
                               <td className="p-2.5 font-mono text-slate-950 dark:text-amber-400 font-black">{h.mrNo}</td>
-                              <td className="p-2.5 text-slate-950 dark:text-slate-300">{h.mrDate}</td>
+                              <td className={`p-2.5 text-slate-950 dark: ${isDark ? "text-slate-300" : "text-slate-700"}`}>{h.mrDate}</td>
                               <td className="p-2.5 text-slate-950 dark:text-slate-100 font-black">{h.supplierName}</td>
                               <td className="p-2.5 text-right font-black text-emerald-950 dark:text-emerald-400">Rp {h.hpp.toLocaleString('id-ID')}</td>
                             </tr>
@@ -818,7 +818,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 <button
                   type="button"
                   onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }}
-                  className="px-4 py-2 rounded-xl border-2 border-slate-400 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                  className={`px-4 py-2 rounded-xl border-2 border-slate-400 text-slate-950 dark: text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors ${isDark ? "text-slate-300" : "text-slate-700"}`}
                 >
                   Batal
                 </button>
@@ -1011,7 +1011,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             </div>
             <button
               onClick={() => setShowDetailPane(false)}
-              className="text-xs font-black flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-slate-300 text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors"
+              className={`text-xs font-black flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-slate-300 text-slate-950 dark:text-slate-400 dark:hover: transition-colors ${isDark ? "text-white" : "text-slate-900"}`}
             >
               <X className="w-4 h-4" /> Tutup
             </button>
@@ -1022,26 +1022,26 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">SKU / Barcode</div>
+              <div className={`text-[11px] font-black text-slate-950 dark: uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU / Barcode</div>
               <div className="font-mono font-black text-sm text-slate-950 dark:text-amber-400">{selectedProduct.inventoryNo}</div>
-              <div className="font-mono text-slate-950 dark:text-slate-300 text-xs font-bold">{selectedProduct.barcode}</div>
+              <div className={`font-mono text-slate-950 dark: text-xs font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{selectedProduct.barcode}</div>
             </div>
 
             {/* Box 2: Category & Brand */}
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Kategori / Brand</div>
-              <div className="font-black text-sm text-slate-950 dark:text-white">{selectedProduct.brandName || 'Maspion'}</div>
-              <div className="text-slate-950 dark:text-slate-300 text-xs font-bold">{selectedProduct.categoryName || 'Kitchenware'} ({selectedProduct.uomName || 'PCS'})</div>
+              <div className={`text-[11px] font-black text-slate-950 dark: uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kategori / Brand</div>
+              <div className={`font-black text-sm text-slate-950 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{selectedProduct.brandName || 'Maspion'}</div>
+              <div className={`text-slate-950 dark: text-xs font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{selectedProduct.categoryName || 'Kitchenware'} ({selectedProduct.uomName || 'PCS'})</div>
             </div>
 
             {/* Box 3: Retail Price & HPP Modal */}
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Harga Retail & HPP</div>
-              <div className="font-black text-sm text-slate-950 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
+              <div className={`text-[11px] font-black text-slate-950 dark: uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>Harga Retail & HPP</div>
+              <div className={`font-black text-sm text-slate-950 dark: ${isDark ? "text-white" : "text-slate-900"}`}>Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
               <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
             </div>
 
@@ -1049,7 +1049,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Tier Harga Grosir</div>
+              <div className={`text-[11px] font-black text-slate-950 dark: uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>Tier Harga Grosir</div>
               <div className="font-black text-xs text-amber-950 dark:text-amber-400">G1: Rp {(selectedProduct.grosir1 || 0).toLocaleString('id-ID')}</div>
               <div className="font-black text-xs text-slate-950 dark:text-amber-300">G2: Rp {(selectedProduct.grosir2 || 0).toLocaleString('id-ID')} | G3: Rp {(selectedProduct.grosir3 || 0).toLocaleString('id-ID')}</div>
             </div>
@@ -1058,7 +1058,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Status Balance Stok</div>
+              <div className={`text-[11px] font-black text-slate-950 dark: uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>Status Balance Stok</div>
               <div className="flex items-center gap-2">
                 <span className="text-slate-950 dark:text-slate-200 text-xs font-black">Awal: {selectedProduct.stokAwal}</span>
                 <span className={`px-2 py-0.5 rounded font-black text-xs ${
@@ -1069,7 +1069,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                   Akhir: {selectedProduct.stokAkhir}
                 </span>
               </div>
-              <div className="text-slate-950 dark:text-slate-400 text-[11px] font-black">Safety: {selectedProduct.minStock} - {selectedProduct.maxStock}</div>
+              <div className={`text-slate-950 dark: text-[11px] font-black ${isDark ? "text-slate-400" : "text-slate-600"}`}>Safety: {selectedProduct.minStock} - {selectedProduct.maxStock}</div>
             </div>
           </div>
         </div>
@@ -1150,7 +1150,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
                         <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat master data barang dari ERP Database</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat master data barang dari ERP Database</p>
                       </div>
                     </td>
                   </tr>
@@ -1388,9 +1388,9 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className="flex items-center justify-between px-6 py-4 bg-slate-950 border-b-2 border-slate-900 text-white">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-purple-400" />
-                <h3 className="font-black text-sm text-white">Laporan Mutasi & Saldo Stok Barang</h3>
+                <h3 className={`font-black text-sm ${isDark ? "text-white" : "text-slate-900"}`}>Laporan Mutasi & Saldo Stok Barang</h3>
               </div>
-              <button onClick={() => setIsStockReportModalOpen(false)} className="p-1 rounded hover:bg-slate-800 text-slate-300 hover:text-white cursor-pointer transition-colors">
+              <button onClick={() => setIsStockReportModalOpen(false)} className={`p-1 rounded hover:bg-slate-800 hover:text-white cursor-pointer transition-colors ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1445,9 +1445,9 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       <tr key={p.id} className="hover:bg-slate-200 odd:bg-white even:bg-slate-100">
                         <td className="p-3 font-mono font-black text-slate-950 dark:text-amber-400">{p.inventoryNo}</td>
                         <td className="p-3 font-black text-slate-950 dark:text-slate-100">{p.inventoryName}</td>
-                        <td className="p-3 text-center text-slate-950 dark:text-slate-300">{p.stokAwal}</td>
+                        <td className={`p-3 text-center text-slate-950 dark: ${isDark ? "text-slate-300" : "text-slate-700"}`}>{p.stokAwal}</td>
                         <td className="p-3 text-center font-black text-emerald-950 dark:text-emerald-400">{p.stokAkhir}</td>
-                        <td className="p-3 text-right text-slate-950 dark:text-slate-300">Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
+                        <td className={`p-3 text-right text-slate-950 dark: ${isDark ? "text-slate-300" : "text-slate-700"}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
                         <td className="p-3 text-right font-black text-emerald-950 dark:text-emerald-400">
                           Rp {((p.hpp || 0) * (p.stokAkhir || 0)).toLocaleString('id-ID')}
                         </td>
@@ -1462,7 +1462,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className="flex justify-end gap-3 p-4 bg-slate-100 dark:bg-slate-950 border-t-2 border-slate-300 dark:border-slate-800">
               <button
                 onClick={() => setIsStockReportModalOpen(false)}
-                className="px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                className={`px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark: text-xs font-black hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors ${isDark ? "text-slate-300" : "text-slate-700"}`}
               >
                 Tutup
               </button>
@@ -1487,7 +1487,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className="flex items-center justify-between border-b-2 border-slate-300 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Printer className="w-5 h-5 text-slate-950 dark:text-indigo-400" />
-                <h3 className="font-black text-sm text-slate-950 dark:text-white">Cetak Queue Barcode Label</h3>
+                <h3 className={`font-black text-sm text-slate-950 dark: ${isDark ? "text-white" : "text-slate-900"}`}>Cetak Queue Barcode Label</h3>
               </div>
               <button onClick={() => setIsBarcodeModalOpen(false)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-950 cursor-pointer transition-colors">
                 <X className="w-4 h-4" />
@@ -1501,11 +1501,11 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 barcodeQueue.map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 rounded-xl border-2 border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-950">
                     <div>
-                      <div className="font-black text-slate-950 dark:text-white">{item.product.inventoryName}</div>
-                      <div className="font-mono text-slate-950 dark:text-slate-400 text-[11px] font-black">{item.product.barcode}</div>
+                      <div className={`font-black text-slate-950 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{item.product.inventoryName}</div>
+                      <div className={`font-mono text-slate-950 dark: text-[11px] font-black ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.product.barcode}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-slate-950 dark:text-slate-300 font-black">Jumlah Label:</label>
+                      <label className={`text-slate-950 dark: font-black ${isDark ? "text-slate-300" : "text-slate-700"}`}>Jumlah Label:</label>
                       <input
                         type="number"
                         min="1"
@@ -1529,7 +1529,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 Kosongkan Queue
               </button>
               <div className="flex gap-2">
-                <button onClick={() => setIsBarcodeModalOpen(false)} className="px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                <button onClick={() => setIsBarcodeModalOpen(false)} className={`px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark: text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                   Tutup
                 </button>
                 <button

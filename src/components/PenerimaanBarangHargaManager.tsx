@@ -393,7 +393,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Penerimaan Barang dengan Harga
             </h2>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Modul Purchasing Goods Receipt Resmi dengan Rincian PO, Harga Beli Unit, PPn & Update HPP Otomatis
             </p>
           </div>
@@ -435,7 +435,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 <DollarSign className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Total Tagihan Penerimaan</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Tagihan Penerimaan</div>
                 <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
                   Rp {totalSumGrandTotal.toLocaleString('id-ID')}
                 </div>
@@ -449,7 +449,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 <Package className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Total Faktur MR</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Faktur MR</div>
                 <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
                   {receiptsList.length} Faktur MR
                 </div>
@@ -463,7 +463,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 <Receipt className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Status Pembayaran</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Status Pembayaran</div>
                 <div className={`text-sm font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>
                   TEMPO & CASH
                 </div>
@@ -477,7 +477,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 <Building2 className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Supplier Terhubung</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Terhubung</div>
                 <div className={`text-sm font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
                   {suppliersList.length} Pemasok
                 </div>
@@ -490,7 +490,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
               <input
                 type="text"
                 placeholder="Cari No MR / PO / Supplier / Surat Jalan..."
@@ -539,13 +539,13 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat faktur penerimaan dengan harga dari Database</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat faktur penerimaan dengan harga dari Database</p>
                       </div>
                     </td>
                   </tr>
                 ) : receiptsList.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                    <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada faktur penerimaan barang dengan harga. Klik tombol <strong>&quot;+ Input Penerimaan Baru&quot;</strong> di atas.
                     </td>
                   </tr>
@@ -561,10 +561,10 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     return (
                       <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
-                        <td className="py-3.5 px-4 font-mono text-slate-300">{mrDate}</td>
-                        <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-300">{poNo}</td>
-                        <td className="py-3.5 px-4 font-bold text-slate-400">{payType}</td>
+                        <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
+                        <td className={`py-3.5 px-4 font-black text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{supplier}</td>
+                        <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
+                        <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{payType}</td>
                         <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
                           Rp {Number(grandTotal).toLocaleString('id-ID')}
                         </td>
@@ -632,7 +632,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Supplier Pemasok *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Pemasok *</label>
                 <select
                   value={selectedSupplierId}
                   onChange={(e) => {
@@ -654,7 +654,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">No. PO (Purchase Order)</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. PO (Purchase Order)</label>
                 <input
                   type="text"
                   placeholder="PO-2026-0881"
@@ -667,7 +667,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">No. Surat Jalan / DO *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Surat Jalan / DO *</label>
                 <input
                   type="text"
                   placeholder="DO-8899221"
@@ -680,7 +680,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Tipe Pembayaran</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Tipe Pembayaran</label>
                 <select
                   value={paymentType}
                   onChange={(e) => setPaymentType(e.target.value)}
@@ -695,7 +695,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Jatuh Tempo Pembayaran</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Jatuh Tempo Pembayaran</label>
                 <input
                   type="date"
                   value={dueDate}
@@ -707,7 +707,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Nama Sopir / Driver</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Sopir / Driver</label>
                 <input
                   type="text"
                   placeholder="Bpk. Joko"
@@ -720,7 +720,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Gudang Tujuan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Tujuan</label>
                 <input
                   type="text"
                   value={whName}
@@ -732,7 +732,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">No. Polisi Kendaraan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Polisi Kendaraan</label>
                 <input
                   type="text"
                   placeholder="L 9872 AB"
@@ -787,7 +787,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     >
                       <div>
                         <div className="font-black text-amber-400">{prod.inventoryName}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">SKU: {prod.inventoryNo} | Harga Beli: Rp {(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}</div>
+                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo} | Harga Beli: Rp {(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}</div>
                       </div>
                       <div className="text-right">
                         <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[10px]">
@@ -847,7 +847,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-16 text-center text-slate-400 font-bold">
+                      <td colSpan={10} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         <ScanLine className="w-8 h-8 mx-auto mb-2 text-slate-500 animate-pulse" />
                         Belum ada barang diinput. Gunakan pencarian barcode di atas untuk menambah barang dengan harga beli.
                       </td>
@@ -855,7 +855,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                   ) : (
                     items.map((item, idx) => (
                       <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
-                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
                         <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
                         <td className="py-3 px-4 font-black">{item.inventoryName}</td>
@@ -940,12 +940,12 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             }`}>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-1 text-xs">
                 <div>
-                  <div className="text-slate-400 font-bold mb-1">Subtotal Item Barang:</div>
-                  <div className="text-sm font-black text-white">Rp {rawSubtotal.toLocaleString('id-ID')}</div>
+                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Subtotal Item Barang:</div>
+                  <div className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"}`}>Rp {rawSubtotal.toLocaleString('id-ID')}</div>
                 </div>
 
                 <div>
-                  <div className="text-slate-400 font-bold mb-1">Diskon Faktur (%):</div>
+                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon Faktur (%):</div>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -957,12 +957,12 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                         isDark ? 'bg-slate-800 border-slate-700 text-amber-400' : 'bg-slate-100 border-slate-300'
                       }`}
                     />
-                    <span className="text-slate-400">(- Rp {discValue.toLocaleString('id-ID')})</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(- Rp {discValue.toLocaleString('id-ID')})</span>
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-slate-400 font-bold mb-1">PPn Pajak (%):</div>
+                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>PPn Pajak (%):</div>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -974,7 +974,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                         isDark ? 'bg-slate-800 border-slate-700 text-purple-400' : 'bg-slate-100 border-slate-300'
                       }`}
                     />
-                    <span className="text-slate-400">(+ Rp {ppnValue.toLocaleString('id-ID')})</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(+ Rp {ppnValue.toLocaleString('id-ID')})</span>
                   </div>
                 </div>
               </div>

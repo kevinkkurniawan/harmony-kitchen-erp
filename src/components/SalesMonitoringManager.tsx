@@ -244,7 +244,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Sales Monitoring Real-time
             </h2>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Pemantauan Omset Penjualan POS Kasir Dapur, Metode Pembayaran & Rincian Struk Nota
             </p>
           </div>
@@ -272,7 +272,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             <DollarSign className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Total Omset Penjualan</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Omset Penjualan</div>
             <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
               Rp {(summary?.grossSales ?? 0).toLocaleString('id-ID')}
             </div>
@@ -286,7 +286,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             <Receipt className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Total Struk Transaksi</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Struk Transaksi</div>
             <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
               {summary?.totalCount ?? 0} Nota Lunas
             </div>
@@ -300,7 +300,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             <TrendingUp className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Rata-Rata Struk (Basket)</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Rata-Rata Struk (Basket)</div>
             <div className={`text-lg font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>
               Rp {(summary?.avgBasket ?? 0).toLocaleString('id-ID')}
             </div>
@@ -314,7 +314,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             <QrCode className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Paling Dominan</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Paling Dominan</div>
             <div className={`text-sm font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
               QRIS & CASH POS
             </div>
@@ -331,7 +331,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         }`}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-emerald-400" />
-            <span className="font-bold text-slate-400">CASH / Tunai:</span>
+            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>CASH / Tunai:</span>
           </div>
           <span className="font-mono font-black text-emerald-400">
             Rp {(summary.paymentBreakdown?.CASH || 0).toLocaleString('id-ID')}
@@ -343,7 +343,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         }`}>
           <div className="flex items-center gap-2">
             <QrCode className="w-4 h-4 text-blue-400" />
-            <span className="font-bold text-slate-400">QRIS Instant:</span>
+            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>QRIS Instant:</span>
           </div>
           <span className="font-mono font-black text-blue-400">
             Rp {(summary.paymentBreakdown?.QRIS || 0).toLocaleString('id-ID')}
@@ -355,7 +355,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         }`}>
           <div className="flex items-center gap-2">
             <Building2 className="w-4 h-4 text-indigo-400" />
-            <span className="font-bold text-slate-400">Bank Transfer:</span>
+            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Bank Transfer:</span>
           </div>
           <span className="font-mono font-black text-indigo-400">
             Rp {(summary.paymentBreakdown?.TRANSFER || 0).toLocaleString('id-ID')}
@@ -367,7 +367,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         }`}>
           <div className="flex items-center gap-2">
             <CreditCard className="w-4 h-4 text-purple-400" />
-            <span className="font-bold text-slate-400">EDC Debit/Credit:</span>
+            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>EDC Debit/Credit:</span>
           </div>
           <span className="font-mono font-black text-purple-400">
             Rp {(summary.paymentBreakdown?.DEBIT || 0).toLocaleString('id-ID')}
@@ -379,7 +379,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         }`}>
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-amber-400" />
-            <span className="font-bold text-slate-400">Tempo / Corporate:</span>
+            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Tempo / Corporate:</span>
           </div>
           <span className="font-mono font-black text-amber-400">
             Rp {(summary.paymentBreakdown?.TEMPO || 0).toLocaleString('id-ID')}
@@ -394,7 +394,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         <div className="flex items-center gap-3 flex-1 flex-wrap min-w-[300px]">
           {/* Live Search Input */}
           <div className="relative flex-1 max-w-xs">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
             <input
               type="text"
               placeholder="Cari No Struk / Kasir / Customer..."
@@ -408,7 +408,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
           {/* Date From & Date To */}
           <div className="flex items-center gap-2 text-xs font-bold">
-            <Calendar className="w-4 h-4 text-slate-400" />
+            <Calendar className={`w-4 h-4 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
             <input
               type="date"
               value={dateFrom}
@@ -420,7 +420,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                 isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
               }`}
             />
-            <span className="text-slate-400">-</span>
+            <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>-</span>
             <input
               type="date"
               value={dateTo}
@@ -509,13 +509,13 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                     <div className="flex flex-col items-center justify-center animate-pulse">
                       <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin mb-4 shadow-lg shadow-indigo-500/20"></div>
                       <h3 className="text-lg font-black text-indigo-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className="text-xs text-slate-400 mt-2 font-semibold">Mengambil data penjualan real-time dari POS Cloud Database</p>
+                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Mengambil data penjualan real-time dari POS Cloud Database</p>
                     </div>
                   </td>
                 </tr>
               ) : transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-16 text-center text-slate-400 font-bold">
+                  <td colSpan={10} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                     Belum ada data transaksi penjualan POS untuk filter yang dipilih.
                   </td>
                 </tr>
@@ -533,12 +533,12 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   return (
                     <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                       <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
-                      <td className="py-3.5 px-4 font-mono text-slate-300">{txDate}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-slate-400" />
+                      <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{txDate}</td>
+                      <td className={`py-3.5 px-4 font-bold text-slate-900 dark: flex items-center gap-1.5 ${isDark ? "text-white" : "text-slate-900"}`}>
+                        <User className={`w-3.5 h-3.5 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
                         <span>{cashier}</span>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-300">{customer}</td>
+                      <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{customer}</td>
                       <td className="py-3.5 px-4">
                         <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
                           payType === 'CASH'
@@ -550,7 +550,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                           {payType}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-300">Rp {Number(subtotal).toLocaleString('id-ID')}</td>
+                      <td className={`py-3.5 px-4 text-right font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>Rp {Number(subtotal).toLocaleString('id-ID')}</td>
                       <td className="py-3.5 px-4 text-right font-mono text-rose-400">
                         {disc > 0 ? `- Rp ${Number(disc).toLocaleString('id-ID')}` : '-'}
                       </td>

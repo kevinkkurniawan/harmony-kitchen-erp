@@ -156,11 +156,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+              <h1 className={`text-xl font-black text-slate-900 dark: tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
                 Laporan Penjualan ERP
               </h1>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+            <p className={`text-xs text-slate-500 dark: font-medium mt-0.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Rekapitulasi Penjualan Harian, Bulanan, Per Barang, dan Profit Analysis
             </p>
           </div>
@@ -256,10 +256,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <DollarSign className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Omset Bersih
             </span>
-            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
+            <div className={`text-lg font-black text-slate-900 dark: mt-0.5 ${isDark ? "text-white" : "text-slate-900"}`}>
               {formatIDR(summaryData?.netSales || 0)}
             </div>
             <span className="text-[10px] text-emerald-500 font-semibold">
@@ -278,10 +278,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <ShoppingBag className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Transaksi
             </span>
-            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
+            <div className={`text-lg font-black text-slate-900 dark: mt-0.5 ${isDark ? "text-white" : "text-slate-900"}`}>
               {summaryData?.totalOrders || 0} Orders
             </div>
             <span className="text-[10px] text-amber-500 font-semibold">
@@ -300,7 +300,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <TrendingUp className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Profit / Margin Keuntungan
             </span>
             <div className="text-lg font-black text-purple-400 mt-0.5">
@@ -322,10 +322,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <CreditCard className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Metode Pembayaran Utama
             </span>
-            <div className="text-xs font-black text-slate-900 dark:text-white mt-1 space-y-0.5">
+            <div className={`text-xs font-black text-slate-900 dark: mt-1 space-y-0.5 ${isDark ? "text-white" : "text-slate-900"}`}>
               <div>Cash: <strong className="text-emerald-400">{formatIDR(summaryData?.cashSales || 0)}</strong></div>
               <div>QRIS: <strong className="text-blue-400">{formatIDR(summaryData?.qrisSales || 0)}</strong></div>
             </div>
@@ -392,7 +392,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
 
         {/* Payment Filter Dropdown */}
         <div className="flex items-center gap-2">
-          <label className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+          <label className={`text-xs font-bold flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             <Filter className="w-3.5 h-3.5 text-purple-400" />
             <span>Metode Bayar:</span>
           </label>
@@ -446,13 +446,13 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin mb-4 shadow-lg shadow-purple-500/20"></div>
                         <h3 className="text-lg font-black text-purple-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className="text-xs text-slate-400 mt-2 font-semibold">Menghitung rekapitulasi data penjualan dari Cloud Database</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Menghitung rekapitulasi data penjualan dari Cloud Database</p>
                       </div>
                     </td>
                   </tr>
                 ) : dailyData.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan={9} className={`py-12 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada data transaksi harian.
                     </td>
                   </tr>
@@ -469,7 +469,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       </td>
                       <td className="py-3.5 px-4 text-center font-bold">{row.totalOrders} Order</td>
                       <td className="py-3.5 px-4 text-center font-semibold">{row.totalItems} Pcs</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-400">
+                      <td className={`py-3.5 px-4 text-right font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         {formatIDR(row.grossSales)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-red-400">
@@ -478,7 +478,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
                         {formatIDR(row.netSales)}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-300">
+                      <td className={`py-3.5 px-4 text-right font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                         {formatIDR(row.cashSales)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-blue-400">
@@ -517,7 +517,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
               <tbody className="divide-y divide-slate-800/40 text-xs">
                 {monthlyData.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan={7} className={`py-12 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada data transaksi bulanan.
                     </td>
                   </tr>
@@ -534,7 +534,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       </td>
                       <td className="py-3.5 px-4 text-center font-bold">{row.totalOrders} Transaksi</td>
                       <td className="py-3.5 px-4 text-center font-semibold">{row.totalItems} Items</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-400">
+                      <td className={`py-3.5 px-4 text-right font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         {formatIDR(row.grossSales)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-red-400">
@@ -576,7 +576,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
               <tbody className="divide-y divide-slate-800/40 text-xs">
                 {itemData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan={6} className={`py-12 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada data penjualan per barang.
                     </td>
                   </tr>
@@ -591,13 +591,13 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       <td className="py-3.5 px-4 font-mono font-semibold text-purple-400">
                         {row.barcode}
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
+                      <td className={`py-3.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>
                         {row.inventoryName}
                       </td>
                       <td className="py-3.5 px-4 text-center font-black text-amber-500">
                         {row.totalQtySold} Pcs
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-300">
+                      <td className={`py-3.5 px-4 text-right font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                         {formatIDR(row.avgUnitPrice)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
@@ -630,19 +630,19 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                 </h3>
                 <div className="space-y-3 text-xs">
                   <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Transaksi POS:</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Transaksi POS:</span>
                     <strong className="text-slate-200">{summaryData.totalOrders} Order</strong>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Qty Item Terjual:</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Qty Item Terjual:</span>
                     <strong className="text-slate-200">{summaryData.totalItemsSold} Pcs</strong>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Penjualan Kotor (Gross):</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Penjualan Kotor (Gross):</span>
                     <strong className="font-mono text-slate-200">{formatIDR(summaryData.grossSales)}</strong>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Potongan / Diskon Promo:</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Potongan / Diskon Promo:</span>
                     <strong className="font-mono text-red-400">-{formatIDR(summaryData.totalDiscount)}</strong>
                   </div>
                   <div className="flex justify-between py-2 text-sm font-black">
@@ -664,11 +664,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                 </h3>
                 <div className="space-y-3 text-xs">
                   <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Omset Bersih:</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Omset Bersih:</span>
                     <strong className="font-mono text-emerald-400">{formatIDR(summaryData.netSales)}</strong>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Harga Pokok Penjualan (HPP):</span>
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Harga Pokok Penjualan (HPP):</span>
                     <strong className="font-mono text-red-400">-{formatIDR(summaryData.totalCost)}</strong>
                   </div>
                   <div className="flex justify-between py-2 text-sm font-black">

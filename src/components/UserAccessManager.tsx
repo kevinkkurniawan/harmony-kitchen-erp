@@ -264,11 +264,11 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+              <h1 className={`text-xl font-black text-slate-900 dark: tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>
                 User ERP & Hak Akses Management
               </h1>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+            <p className={`text-xs text-slate-500 dark: font-medium mt-0.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Manajemen Pengguna ERP dan Matriks Hak Akses Modul (View, Add, Edit, Delete, Print)
             </p>
           </div>
@@ -307,7 +307,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
             <Users className="w-4 h-4" />
             Daftar User & Hak Akses ERP
           </span>
-          <span className="text-xs text-slate-400 font-semibold">Total: {usersList.length} User Terdaftar</span>
+          <span className={`text-xs font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total: {usersList.length} User Terdaftar</span>
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto relative">
@@ -333,13 +333,13 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                     <div className="flex flex-col items-center justify-center animate-pulse">
                       <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
                       <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat data user dari Database System</p>
+                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat data user dari Database System</p>
                     </div>
                   </td>
                 </tr>
               ) : usersList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                  <td colSpan={6} className={`py-12 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                     Tidak ada data user.
                   </td>
                 </tr>
@@ -350,9 +350,9 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                     isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
                   }`}
                 >
-                  <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">{user.id}</td>
+                  <td className={`py-3.5 px-4 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{user.id}</td>
                   <td className="py-3.5 px-4 font-mono font-black text-emerald-400">@{user.username}</td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{user.fullName}</td>
+                  <td className={`py-3.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{user.fullName}</td>
                   <td className="py-3.5 px-4">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
@@ -407,14 +407,14 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   <h2 className="text-base font-black tracking-tight">
                     Pengaturan Hak Akses: <span className="text-emerald-400">{selectedUser.fullName}</span> (@{selectedUser.username})
                   </h2>
-                  <p className="text-xs text-slate-400 font-medium">
+                  <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                     Level Access: <strong className="text-amber-400 uppercase">{selectedUser.userLevel}</strong> | Sesuaikan matriks fungsi modul
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsPermModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                className={`p-2 rounded-xl hover:text-white hover:bg-slate-800 cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -422,7 +422,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
 
             {/* Quick Action Controls */}
             <div className="px-6 py-3 border-b border-slate-800/40 bg-slate-950/40 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 font-bold text-slate-400">
+              <div className={`flex items-center gap-2 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                 <Sparkles className="w-4 h-4 text-emerald-400" />
                 <span>Pilih Opsi Hak Akses Massal:</span>
               </div>
@@ -569,14 +569,14 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                 <UserIcon className="w-4 h-4 text-emerald-400" />
                 Tambah User ERP Baru
               </h3>
-              <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setIsAddUserOpen(false)} className={`text-slate-400 hover: ${isDark ? "text-white" : "text-slate-900"}`}>
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleCreateUser} className="space-y-4 mt-4 text-xs">
               <div className="space-y-1">
-                <label className="font-bold text-slate-400">Username :</label>
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Username :</label>
                 <input
                   type="text"
                   required
@@ -590,7 +590,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-slate-400">Nama Lengkap :</label>
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Lengkap :</label>
                 <input
                   type="text"
                   required
@@ -604,7 +604,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
               </div>
 
               <div className="space-y-1">
-                <label className="font-bold text-slate-400">Level Access / Role :</label>
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Level Access / Role :</label>
                 <select
                   value={newUserLevel}
                   onChange={(e) => setNewUserLevel(e.target.value)}

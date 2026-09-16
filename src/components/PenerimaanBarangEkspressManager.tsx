@@ -343,7 +343,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Penerimaan Barang Ekspress
             </h2>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Modul Purchasing Goods Receipt Fisik Gudang tanpa Kunci Harga Modal
             </p>
           </div>
@@ -385,7 +385,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 <Package className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Total Transaksi</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Transaksi</div>
                 <div className={`text-lg font-black ${isDark ? 'text-orange-300' : 'text-orange-950'}`}>
                   {receiptsList.length} Nota MR
                 </div>
@@ -399,7 +399,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 <Building2 className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Supplier Terhubung</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Terhubung</div>
                 <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
                   {suppliersList.length} Pemasok
                 </div>
@@ -413,7 +413,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 <Truck className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Penerimaan Selesai</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Penerimaan Selesai</div>
                 <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
                   {receiptsList.filter((r) => !r.isVoid).length} Sukses
                 </div>
@@ -427,7 +427,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 <FileText className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-400">Gudang Utama</div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Utama</div>
                 <div className={`text-sm font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>
                   Gudang Dapur
                 </div>
@@ -440,7 +440,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
               <input
                 type="text"
                 placeholder="Cari No MR / Supplier / Surat Jalan / Sopir..."
@@ -489,13 +489,13 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat daftar transaksi penerimaan ekspress dari Database</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat daftar transaksi penerimaan ekspress dari Database</p>
                       </div>
                     </td>
                   </tr>
                 ) : receiptsList.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                    <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada transaksi penerimaan barang ekspress. Klik tombol <strong>&quot;+ Input Penerimaan Baru&quot;</strong> di atas.
                     </td>
                   </tr>
@@ -511,10 +511,10 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     return (
                       <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
-                        <td className="py-3.5 px-4 font-mono text-slate-300">{mrDate}</td>
-                        <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-300">{poNo}</td>
-                        <td className="py-3.5 px-4 font-bold text-slate-400">{driver}</td>
+                        <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
+                        <td className={`py-3.5 px-4 font-black text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{supplier}</td>
+                        <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
+                        <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{driver}</td>
                         <td className="py-3.5 px-4 text-center font-black text-emerald-400">{qty} Items</td>
                         <td className="py-3.5 px-4 text-center">
                           {row.isVoid ? (
@@ -580,7 +580,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Supplier Pemasok *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Pemasok *</label>
                 <select
                   value={selectedSupplierId}
                   onChange={(e) => {
@@ -602,7 +602,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">No. Surat Jalan / DO *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Surat Jalan / DO *</label>
                 <input
                   type="text"
                   placeholder="DO-8899221"
@@ -615,7 +615,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Gudang Tujuan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Tujuan</label>
                 <input
                   type="text"
                   value={whName}
@@ -627,7 +627,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Nama Sopir / Driver</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Sopir / Driver</label>
                 <input
                   type="text"
                   placeholder="Bpk. Joko"
@@ -640,7 +640,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">No. Polisi Kendaraan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Polisi Kendaraan</label>
                 <input
                   type="text"
                   placeholder="L 9872 AB"
@@ -653,7 +653,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
               </div>
 
               <div className="col-span-2">
-                <label className="block mb-1 text-slate-400">Catatan Penerimaan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Catatan Penerimaan</label>
                 <input
                   type="text"
                   placeholder="Catatan pemeriksaan kondisi dus / fisik barang..."
@@ -708,7 +708,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     >
                       <div>
                         <div className="font-black text-amber-400">{prod.inventoryName}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">SKU: {prod.inventoryNo} | Barcode: {prod.barcode || '-'}</div>
+                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo} | Barcode: {prod.barcode || '-'}</div>
                       </div>
                       <div className="text-right">
                         <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[10px]">
@@ -766,7 +766,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                      <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         <ScanLine className="w-8 h-8 mx-auto mb-2 text-slate-500 animate-pulse" />
                         Belum ada barang diinput. Gunakan pencarian barcode di atas untuk menambah barang yang diterima.
                       </td>
@@ -774,7 +774,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                   ) : (
                     items.map((item, idx) => (
                       <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
-                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
                         <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
                         <td className="py-3 px-4 font-black">{item.inventoryName}</td>

@@ -77,7 +77,7 @@ const SyncStockRow = React.memo(function SyncStockRow({
         />
       </td>
       <td className="py-3.5 px-4 font-mono font-bold text-amber-500">{row.inventoryNo}</td>
-      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{row.inventoryName}</td>
+      <td className={`py-3.5 px-4 font-bold text-slate-900 dark: ${isDark ? "text-white" : "text-slate-900"}`}>{row.inventoryName}</td>
       <td className="py-3.5 px-3 text-center font-bold">{row.uomName}</td>
       <td className="py-3.5 px-4 text-center font-mono font-bold">{row.stokGudang}</td>
       <td className="py-3.5 px-4 text-center font-mono font-black text-rose-500">
@@ -337,7 +337,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Sync Stock (Sales & Gudang ERP)
             </h2>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Sinkronisasi Penjualan Kasir POS dengan Stok Fisik Inventoris Gudang Dapur
             </p>
           </div>
@@ -392,7 +392,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Pending Qty Penjualan POS</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Pending Qty Penjualan POS</div>
             <div className={`text-lg font-black ${isDark ? 'text-indigo-300' : 'text-indigo-950'}`}>
               {totalPendingQty} Items
             </div>
@@ -406,7 +406,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             <Package className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Barang Siap Di-sync</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Barang Siap Di-sync</div>
             <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
               {selectedCount} dari {items.length} Item
             </div>
@@ -420,7 +420,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             <Store className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Terminal POS Active</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Terminal POS Active</div>
             <div className={`text-sm font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
               Kasir Utama POS ONLINE
             </div>
@@ -434,7 +434,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
             <ArrowRightLeft className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Status Sinkronisasi</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Status Sinkronisasi</div>
             <div className={`text-sm font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
               REALTIME READY
             </div>
@@ -448,7 +448,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
       }`}>
         <div className="flex items-center gap-3 flex-1 max-w-md">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
             <input
               type="text"
               placeholder="Cari Kode Barang / Nama Barang / SKU..."
@@ -509,13 +509,13 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin mb-4 shadow-lg shadow-indigo-500/20"></div>
                         <h3 className="text-lg font-black text-indigo-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className="text-xs text-slate-400 mt-2 font-semibold">Menyinkronkan stok POS dan ERP dengan Supabase Cloud</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Menyinkronkan stok POS dan ERP dengan Supabase Cloud</p>
                       </div>
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-400 font-bold">
+                    <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Seluruh barang gudang ERP dan transaksi kasir POS sudah dalam posisi 100% sinkron.
                     </td>
                   </tr>
@@ -605,7 +605,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
               </div>
               <button
                 onClick={() => setIsHistoryOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -629,14 +629,14 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                   {isHistoryLoading ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                      <td colSpan={6} className={`py-8 text-center ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-indigo-400" />
                         Memuat riwayat log sync...
                       </td>
                     </tr>
                   ) : historyLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 font-bold">
+                      <td colSpan={6} className={`py-8 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         Belum ada riwayat audit log sinkronisasi stok.
                       </td>
                     </tr>

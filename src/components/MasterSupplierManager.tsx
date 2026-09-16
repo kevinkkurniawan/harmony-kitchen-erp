@@ -393,7 +393,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover:text-white cursor-pointer"
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -506,7 +506,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     <div className="flex flex-col items-center justify-center animate-pulse">
                       <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                       <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat master data supplier dari ERP Database</p>
+                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat master data supplier dari ERP Database</p>
                     </div>
                   </td>
                 </tr>
@@ -538,19 +538,19 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                         : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
                     }`}
                   >
-                    <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{sup.id}</td>
+                    <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{sup.id}</td>
                     <td className="py-3 px-4 font-mono font-black text-amber-400">{sup.supplierNo || '-'}</td>
                     <td className="py-3 px-4 font-black">
                       <div>{sup.supplierName}</div>
                       {sup.email && <div className="text-[11px] font-normal text-indigo-400 flex items-center gap-1 mt-0.5"><Mail className="w-3 h-3" />{sup.email}</div>}
                     </td>
-                    <td className="py-3 px-4 text-slate-300 max-w-xs truncate">
+                    <td className={`py-3 px-4 max-w-xs truncate ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       <div>{sup.address && sup.address !== '-' ? sup.address : 'Alamat belum diisi'}</div>
                       {sup.city && <div className="text-[11px] font-bold text-amber-400/90 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{sup.city}</div>}
                     </td>
                     <td className="py-3 px-4 font-mono">
                       <div className="flex items-center gap-1">{sup.phone1 && sup.phone1 !== '-' ? <Phone className="w-3 h-3 text-emerald-400 shrink-0" /> : null}<span>{sup.phone1 || '-'}</span></div>
-                      {sup.phone2 && sup.phone2 !== '-' && <div className="text-slate-400 text-[11px]">Alt: {sup.phone2}</div>}
+                      {sup.phone2 && sup.phone2 !== '-' && <div className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alt: {sup.phone2}</div>}
                     </td>
                     <td className="py-3 px-4 font-bold">
                       {sup.contactPerson && sup.contactPerson !== '-' ? (
@@ -568,7 +568,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                           PKP
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 border border-slate-700 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                           Non-PKP
                         </span>
                       )}
@@ -625,7 +625,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
           }`}
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
-          <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-700/50">
+          <div className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b border-slate-700/50 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             Aksi Supplier Menu
           </div>
           <button
@@ -682,7 +682,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover: cursor-pointer ${isDark ? "text-white" : "text-slate-900"}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -692,7 +692,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             <form onSubmit={handleSaveForm} className="p-6 space-y-4 text-xs font-bold overflow-y-auto flex-1">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Kode Supplier *</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kode Supplier *</label>
                   <input
                     type="text"
                     required
@@ -705,7 +705,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block mb-1 text-slate-400">Nama Supplier / Perusahaan *</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Supplier / Perusahaan *</label>
                   <input
                     type="text"
                     required
@@ -721,7 +721,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2">
-                  <label className="block mb-1 text-slate-400">Alamat Perusahaan</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alamat Perusahaan</label>
                   <input
                     type="text"
                     placeholder="Jl. Raya Industri No. 88"
@@ -733,7 +733,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Kota</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kota</label>
                   <input
                     type="text"
                     placeholder="Surabaya / Jakarta"
@@ -748,7 +748,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">No. Telepon 1</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Telepon 1</label>
                   <input
                     type="text"
                     placeholder="031-888999"
@@ -760,7 +760,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">No. Telepon 2</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Telepon 2</label>
                   <input
                     type="text"
                     placeholder="0812345678"
@@ -772,7 +772,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Fax</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Fax</label>
                   <input
                     type="text"
                     placeholder="031-888990"
@@ -787,7 +787,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Contact Person (PIC Sales)</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Contact Person (PIC Sales)</label>
                   <input
                     type="text"
                     placeholder="Bpk. Budi Santoso"
@@ -799,7 +799,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Email Resmi</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Email Resmi</label>
                   <input
                     type="email"
                     placeholder="sales@supplier.com"
@@ -814,7 +814,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Nomor NPWP Pajak</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nomor NPWP Pajak</label>
                   <input
                     type="text"
                     placeholder="01.234.567.8-012.000"
@@ -839,7 +839,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Deskripsi / Catatan Tambahan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Catatan Tambahan</label>
                 <textarea
                   rows={2}
                   placeholder="Catatan ketentuan pembayaran / term of payment..."

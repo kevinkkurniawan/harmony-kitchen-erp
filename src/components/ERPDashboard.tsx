@@ -167,7 +167,7 @@ export default function ERPDashboard() {
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
           }`}
         >
-          <div className="p-4 border-b border-slate-800/60 font-bold text-xs uppercase text-slate-400 tracking-wider flex items-center justify-between">
+          <div className={`p-4 border-b border-slate-800/60 font-bold text-xs uppercase tracking-wider flex items-center justify-between ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             <span>Modul Utama ERP</span>
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
           </div>
