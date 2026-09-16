@@ -103,15 +103,18 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const [selectedProduct, setSelectedProduct] = useState<ERPProduct | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ERPProduct } | null>(null);
 
-  // Form Modal States
-  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-  const [activeFormTab, setActiveFormTab] = useState<'general' | 'pricing' | 'history'>('general');
+  // Inline Expand States
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
+  const [activeFormTab, setActiveFormTab] = useState<'general' | 'pricing' | 'stock'>('general');
   const [hppHistory, setHppHistory] = useState<HppHistoryItem[]>([]);
 
   // Opname Modal State
-  const [isOpnameModalOpen, setIsOpnameModalOpen] = useState(false);
   const [opnameQty, setOpnameQty] = useState<number>(0);
+  useEffect(() => {
+    if (selectedProduct) setOpnameQty(selectedProduct.stokAkhir);
+  }, [selectedProduct]);
+
 
   // Stock Report Modal State (Laporan Stok)
   const [isStockReportModalOpen, setIsStockReportModalOpen] = useState(false);
@@ -264,9 +267,10 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     return () => { isMounted = false; };
   }, [selectedProduct]);
 
-  // Open Add Modal
-  const handleOpenCreateModal = useCallback(() => {
-    setModalMode('create');
+  // Open Add Inline
+  const handleOpenCreateInline = useCallback(() => {
+    setIsCreatingNew(true);
+    setExpandedRowId('new');
     setActiveFormTab('general');
     setFormData({
       inventoryNo: `BRG-${Date.now().toString().slice(-4)}`,
@@ -291,29 +295,29 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       stokAwal: 0,
       stokAkhir: 0,
     });
-    setIsFormModalOpen(true);
+    setHppHistory([]);
   }, [lookups]);
 
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsFormModalOpen(false);
-        setIsOpnameModalOpen(false);
+        setExpandedRowId(null);
+        setIsCreatingNew(false);
         setIsStockReportModalOpen(false);
         setIsBarcodeModalOpen(false);
         setContextMenu(null);
-      } else if (e.key === '/' && !isFormModalOpen && !isOpnameModalOpen) {
+      } else if (e.key === '/' && !expandedRowId) {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        handleOpenCreateModal();
+        handleOpenCreateInline();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFormModalOpen, isOpnameModalOpen, handleOpenCreateModal]);
+  }, [expandedRowId, handleOpenCreateInline]);
 
   // Sort Handler
   const handleSort = (field: keyof ERPProduct) => {
@@ -407,21 +411,27 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     addToast(`Berhasil mengexport ${products.length} data barang ke CSV`, 'success');
   };
 
-  // Open Edit Modal
-  const handleOpenEditModal = (product: ERPProduct) => {
+  // Open Edit Inline
+  const handleToggleExpand = (product: ERPProduct) => {
+    const strId = product.id.toString();
+    if (expandedRowId === strId) {
+      setExpandedRowId(null);
+      setIsCreatingNew(false);
+      return;
+    }
     setSelectedProduct(product);
-    setModalMode('edit');
+    setIsCreatingNew(false);
+    setExpandedRowId(strId);
     setActiveFormTab('general');
     setFormData({ ...product });
     fetchHppHistory(product.id);
-    setIsFormModalOpen(true);
   };
 
   // Save Form (Create / Edit)
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const isEdit = modalMode === 'edit' && selectedProduct;
+      const isEdit = !isCreatingNew && selectedProduct;
       const url = isEdit ? `/api/inventory/${selectedProduct.id}` : `/api/inventory`;
       const method = isEdit ? 'PUT' : 'POST';
 
@@ -433,7 +443,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
       const json = await res.json();
       if (json.success) {
-        setIsFormModalOpen(false);
+        setExpandedRowId(null);
+        setIsCreatingNew(false);
         addToast(isEdit ? 'Data barang berhasil diperbarui!' : 'Barang baru berhasil ditambahkan!', 'success');
         fetchProducts();
       } else {
@@ -463,12 +474,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     }
   };
 
-  // Open Opname Modal
-  const handleOpenOpname = (product: ERPProduct) => {
-    setSelectedProduct(product);
-    setOpnameQty(product.stokAkhir);
-    setIsOpnameModalOpen(true);
-  };
+
 
   // Submit Opname
   const handleSaveOpname = async () => {
@@ -484,7 +490,6 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       });
       const json = await res.json();
       if (json.success) {
-        setIsOpnameModalOpen(false);
         addToast(`Stok Opname "${selectedProduct.inventoryName}" berhasil diperbarui menjadi ${opnameQty}`, 'success');
         fetchProducts();
       } else {
@@ -515,6 +520,315 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);
   }, []);
+
+  const renderExpandedForm = (productId: string) => (
+      <div className={`w-full overflow-hidden flex flex-col ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-950'}`}>
+            {/* Modal Header */}
+            <div className={`px-3 py-1.5 border-b-2 flex items-center justify-between ${
+              isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-900 border-slate-950 text-white'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-amber-400" />
+                <h3 className="font-black text-sm text-white">{isCreatingNew ? 'Tambah Barang Baru' : `Detail Barang: ${formData.inventoryName}`}</h3>
+              </div>
+              <button onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }} className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form Tabs */}
+            <div className={`flex border-b-2 px-3 gap-2 pt-1 ${
+              isDark ? 'border-slate-800 bg-slate-950/30' : 'border-slate-400 bg-slate-100'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setActiveFormTab('general')}
+                className={`px-3 py-1 text-xs font-black rounded-t-lg border-b-2 transition-all cursor-pointer ${
+                  activeFormTab === 'general'
+                    ? isDark ? 'border-amber-500 text-amber-400 bg-slate-900' : 'border-slate-950 text-slate-950 bg-white'
+                    : 'border-transparent text-slate-700 hover:text-slate-950'
+                }`}
+              >
+                Informasi Umum
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFormTab('pricing')}
+                className={`px-3 py-1 text-xs font-black rounded-t-lg border-b-2 transition-all cursor-pointer ${
+                  activeFormTab === 'pricing'
+                    ? isDark ? 'border-amber-500 text-amber-400 bg-slate-900' : 'border-slate-950 text-slate-950 bg-white'
+                    : 'border-transparent text-slate-700 hover:text-slate-950'
+                }`}
+              >
+                Harga & Grosir
+              </button>
+              {!isCreatingNew && (
+                <button
+                  type="button"
+                  onClick={() => setActiveFormTab('stock')}
+                  className={`px-3 py-1 text-xs font-black rounded-t-lg border-b-2 transition-all cursor-pointer ${
+                    activeFormTab === 'stock'
+                      ? isDark ? 'border-amber-500 text-amber-400 bg-slate-900' : 'border-slate-950 text-slate-950 bg-white'
+                      : 'border-transparent text-slate-700 hover:text-slate-950'
+                  }`}
+                >
+                  Riwayat HPP Modal
+                </button>
+              )}
+            </div>
+
+            {/* Modal Body Form */}
+            <form onSubmit={handleSaveForm} className="flex-1 overflow-y-auto p-3 space-y-2">
+              {activeFormTab === 'general' && (
+                <div className="grid grid-cols-2 gap-2 text-xs font-black text-slate-950 dark:text-slate-100">
+                  <div>
+                    <label className="block mb-1">Inventory No (SKU)</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.inventoryNo || ''}
+                      onChange={(e) => setFormData({ ...formData, inventoryNo: e.target.value })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-mono font-black focus:ring-2 focus:ring-slate-500 outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Barcode</label>
+                    <input
+                      type="text"
+                      value={formData.barcode || ''}
+                      onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-mono font-black focus:ring-2 focus:ring-slate-500 outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block mb-1">Nama Barang</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.inventoryName || ''}
+                      onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black focus:ring-2 focus:ring-slate-500 outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Brand</label>
+                    <select
+                      value={formData.inventoryBrandId || 1}
+                      onChange={(e) => setFormData({ ...formData, inventoryBrandId: parseInt(e.target.value) })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black cursor-pointer outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      {lookups.brands.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.brandName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-1">Category</label>
+                    <select
+                      value={formData.inventoryCategoryId || 1}
+                      onChange={(e) => setFormData({ ...formData, inventoryCategoryId: parseInt(e.target.value) })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black cursor-pointer outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      {lookups.categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.categoryName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-1">Product Type</label>
+                    <select
+                      value={formData.inventoryProductId || 1}
+                      onChange={(e) => setFormData({ ...formData, inventoryProductId: parseInt(e.target.value) })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black cursor-pointer outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      {lookups.productTypes.map((pt) => (
+                        <option key={pt.id} value={pt.id}>
+                          {pt.productName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-1">Satuan (UoM)</label>
+                    <select
+                      value={formData.uoMId || 1}
+                      onChange={(e) => setFormData({ ...formData, uoMId: parseInt(e.target.value) })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black cursor-pointer outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      {lookups.uoms.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.uomName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-1">Min Stock Threshold</label>
+                    <input
+                      type="number"
+                      value={formData.minStock ?? 0}
+                      onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Max Stock Limit</label>
+                    <input
+                      type="number"
+                      value={formData.maxStock ?? 0}
+                      onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeFormTab === 'pricing' && (
+                <div className="grid grid-cols-2 gap-2 text-xs font-black text-slate-950 dark:text-slate-100">
+                  <div>
+                    <label className="block mb-1">Harga Retail (Jual)</label>
+                    <input
+                      type="number"
+                      required
+                      value={formData.price ?? 0}
+                      onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
+                    <input
+                      type="number"
+                      value={formData.hpp ?? 0}
+                      onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-950 border-emerald-900/50 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Harga Grosir Tier 1</label>
+                    <input
+                      type="number"
+                      value={formData.grosir1 ?? 0}
+                      onChange={(e) => setFormData({ ...formData, grosir1: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-slate-950'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Harga Grosir Tier 2</label>
+                    <input
+                      type="number"
+                      value={formData.grosir2 ?? 0}
+                      onChange={(e) => setFormData({ ...formData, grosir2: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-slate-950'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Harga Grosir Tier 3</label>
+                    <input
+                      type="number"
+                      value={formData.grosir3 ?? 0}
+                      onChange={(e) => setFormData({ ...formData, grosir3: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-slate-950'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-1">Diskon Standard (%)</label>
+                    <input
+                      type="number"
+                      value={formData.disc ?? 0}
+                      onChange={(e) => setFormData({ ...formData, disc: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeFormTab === 'stock' && (
+                <div className="space-y-3 text-xs font-black">
+                  <h4 className="font-black text-slate-950 dark:text-slate-200">Riwayat HPP & Penerimaan Barang</h4>
+                  <div className="rounded-xl border-2 border-slate-400 dark:border-slate-800 overflow-hidden">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-900 text-white border-b-2 border-slate-950 font-black">
+                          <th className="p-2.5">No Penerimaan (MR)</th>
+                          <th className="p-2.5">Tanggal</th>
+                          <th className="p-2.5">Supplier</th>
+                          <th className="p-2.5 text-right">HPP Item</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-300 dark:divide-slate-800 font-black text-slate-950 dark:text-slate-100">
+                        {hppHistory.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-4 text-center text-slate-950 font-black">
+                              Belum ada riwayat HPP penerimaan.
+                            </td>
+                          </tr>
+                        ) : (
+                          hppHistory.map((h) => (
+                            <tr key={h.id}>
+                              <td className="p-2.5 font-mono text-slate-950 dark:text-amber-400 font-black">{h.mrNo}</td>
+                              <td className="p-2.5 text-slate-950 dark:text-slate-300">{h.mrDate}</td>
+                              <td className="p-2.5 text-slate-950 dark:text-slate-100 font-black">{h.supplierName}</td>
+                              <td className="p-2.5 text-right font-black text-emerald-950 dark:text-emerald-400">Rp {h.hpp.toLocaleString('id-ID')}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer Buttons */}
+              <div className="pt-2 border-t-2 border-slate-300 dark:border-slate-800 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }}
+                  className="px-4 py-2 rounded-xl border-2 border-slate-400 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                >
+                  Batal
+                </button>
+                <button type="submit" className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs shadow-md cursor-pointer transition-all">
+                  Simpan Barang
+                </button>
+              </div>
+            </form>
+          </div>
+  );
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
@@ -588,8 +902,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         <div className="flex items-center gap-2 flex-wrap">
           {mode !== 'stock' && (
             <button
-              onClick={handleOpenCreateModal}
-              className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+              onClick={handleOpenCreateInline}
+              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
               title="Tambah Barang Baru (Alt+N)"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
@@ -599,7 +913,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
           <button
             onClick={() => setShowDetailPane(!showDetailPane)}
-            className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+            className={`px-2.5 py-1.5 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               showDetailPane
                 ? isDark
                   ? 'bg-amber-500/30 text-amber-200 border-amber-500/60'
@@ -616,7 +930,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
           <button
             onClick={() => setIsStockReportModalOpen(true)}
-            className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               isDark
                 ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border-purple-500/50'
                 : 'bg-purple-100 hover:bg-purple-200 text-purple-900 border-purple-300 shadow-sm'
@@ -631,7 +945,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               fetchProducts();
               addToast('Data barang berhasil di-refresh', 'info');
             }}
-            className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+            className={`px-2.5 py-1.5 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               isDark
                 ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
@@ -643,7 +957,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
           <button
             onClick={() => setIsBarcodeModalOpen(true)}
-            className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               isDark
                 ? 'bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border-indigo-500/50'
                 : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-900 border-indigo-300 shadow-sm'
@@ -658,7 +972,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
           <button
             onClick={exportToCSV}
-            className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               isDark
                 ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50'
                 : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
@@ -717,7 +1031,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             </button>
           </div>
 
-          <div className="grid grid-cols-5 gap-3 text-xs font-black">
+          <div className="grid grid-cols-6 gap-3 text-xs font-black">
             {/* Box 1: SKU & Barcode */}
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
@@ -787,55 +1101,63 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 <tr className={`uppercase text-[11px] font-black tracking-wider border-b-2 ${
                   isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}>
-                  <th onClick={() => handleSort('inventoryNo')} className="py-3 px-3 cursor-pointer hover:text-amber-400 transition-colors">
+                  <th className="py-1.5 px-2 w-8 text-center"></th>
+                  <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center gap-1">
                       <span>Inventory No</span>
                       {sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('barcode')} className="py-3 px-3 cursor-pointer hover:text-amber-400 transition-colors">
+                  <th onClick={() => handleSort('barcode')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center gap-1">
                       <span>Barcode</span>
                       {sortField === 'barcode' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('inventoryName')} className="py-3 px-3 cursor-pointer hover:text-amber-400 transition-colors">
+                  <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center gap-1">
                       <span>Nama Barang</span>
                       {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th className="py-3 px-3">Brand</th>
-                  <th className="py-3 px-3">Category</th>
-                  <th className="py-3 px-3">Product</th>
-                  <th className="py-3 px-3">UoM</th>
-                  <th onClick={() => handleSort('price')} className="py-3 px-3 text-right cursor-pointer hover:text-amber-400 transition-colors">
+                  <th className="py-1.5 px-2">Brand</th>
+                  <th className="py-1.5 px-2">Category</th>
+                  <th className="py-1.5 px-2">Product</th>
+                  <th className="py-1.5 px-2">UoM</th>
+                  <th onClick={() => handleSort('price')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center justify-end gap-1">
                       <span>Price (Retail)</span>
                       {sortField === 'price' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('hpp')} className="py-3 px-3 text-right cursor-pointer hover:text-emerald-400 transition-colors">
+                  <th onClick={() => handleSort('hpp')} className="py-1.5 px-2 text-right cursor-pointer hover:text-emerald-400 transition-colors">
                     <div className="flex items-center justify-end gap-1">
                       <span>HPP (Modal)</span>
                       {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
                     </div>
                   </th>
-                  <th className="py-3 px-3 text-right">Grosir 1</th>
-                  <th className="py-3 px-3 text-right">Grosir 2</th>
-                  <th className="py-3 px-3 text-right">Grosir 3</th>
-                  <th className="py-3 px-3 text-center">Min/Max</th>
-                  <th onClick={() => handleSort('stokAkhir')} className="py-3 px-3 text-center cursor-pointer hover:text-amber-400 transition-colors">
+                  <th className="py-1.5 px-2 text-right">Grosir 1</th>
+                  <th className="py-1.5 px-2 text-right">Grosir 2</th>
+                  <th className="py-1.5 px-2 text-right">Grosir 3</th>
+                  <th className="py-1.5 px-2 text-center">Min/Max</th>
+                  <th onClick={() => handleSort('stokAkhir')} className="py-1.5 px-2 text-center cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center justify-center gap-1">
                       <span>Stok Akhir</span>
                       {sortField === 'stokAkhir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th className="py-3 px-3 text-center">Status</th>
-                  <th className="py-3 px-3 text-center">Aksi</th>
+                  <th className="py-1.5 px-2 text-center">Status</th>
+                  <th className="py-1.5 px-2 text-center">Aksi</th>
                 </tr>
               </thead>
-              <tbody className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-300'}`}>
+              <tbody className={`divide-y text-[11px] ${isDark ? 'divide-slate-700' : 'divide-slate-300'}`}>
+                {isCreatingNew && expandedRowId === 'new' && (
+                  <tr>
+                    <td colSpan={17} className="p-0 border-b-4 border-amber-500 shadow-inner">
+                      {renderExpandedForm('new')}
+                    </td>
+                  </tr>
+                )}
                 {isLoading ? (
                   <tr>
                     <td colSpan={16} className="py-24">
@@ -854,12 +1176,13 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                   </tr>
                 ) : (
                   paginatedProducts.map((item) => (
+                    <React.Fragment key={item.id}>
                     <tr
                       key={item.id}
                       onClick={() => {
                         setSelectedProduct(item);
                       }}
-                      onDoubleClick={() => handleOpenEditModal(item)}
+                      onDoubleClick={() => handleToggleExpand(item)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         setSelectedProduct(item);
@@ -875,22 +1198,30 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           : 'hover:bg-slate-200 odd:bg-white even:bg-slate-50 text-slate-800'
                       }`}
                     >
-                      <td className={`py-2.5 px-3 font-mono text-[11px] font-black ${isDark ? 'text-amber-300' : 'text-slate-800'}`}>{item.inventoryNo}</td>
-                      <td className={`py-2.5 px-3 font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.barcode}</td>
-                      <td className={`py-2.5 px-3 font-black max-w-[200px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
-                      <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.brandName || '-'}</td>
-                      <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.categoryName || '-'}</td>
-                      <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.productName || '-'}</td>
-                      <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
-                      <td className={`py-2.5 px-3 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-2.5 px-3 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-2.5 px-3 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir1 || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-2.5 px-3 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir2 || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-2.5 px-3 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir3 || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-2.5 px-3 text-center font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                      <td className="py-1 px-2 text-center w-10">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleToggleExpand(item); }}
+                          className={`p-1 rounded transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-600 text-slate-300' : 'hover:bg-slate-300 text-slate-700'}`}
+                        >
+                          {expandedRowId === item.id.toString() ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <Plus className="w-4 h-4" />}
+                        </button>
+                      </td>
+                      <td className={`py-1 px-2 font-mono text-[11px] font-black ${isDark ? 'text-amber-300' : 'text-slate-800'}`}>{item.inventoryNo}</td>
+                      <td className={`py-1 px-2 font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.barcode}</td>
+                      <td className={`py-1 px-2 font-black max-w-[200px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
+                      <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.brandName || '-'}</td>
+                      <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.categoryName || '-'}</td>
+                      <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.productName || '-'}</td>
+                      <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
+                      <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
+                      <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>
+                      <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir1 || 0).toLocaleString('id-ID')}</td>
+                      <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir2 || 0).toLocaleString('id-ID')}</td>
+                      <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir3 || 0).toLocaleString('id-ID')}</td>
+                      <td className={`py-1 px-2 text-center font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
                         {item.minStock} / {item.maxStock}
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-1 px-2 text-center">
                         <span
                           className={`px-2 py-0.5 rounded font-black text-[11px] ${
                             item.stokAkhir < item.minStock
@@ -903,7 +1234,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           {item.stokAkhir}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-1 px-2 text-center">
                         <span className={`px-2 py-0.5 rounded font-black text-[10px] ${
                           item.isActive
                             ? 'bg-slate-950 text-white'
@@ -912,14 +1243,14 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           {item.isActive ? 'AKTIF' : 'NON-AKTIF'}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-center">
+                      <td className="py-1 px-2 text-center">
                         <div className="flex items-center justify-center gap-1">
                           {mode !== 'stock' && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setContextMenu(null);
-                                handleOpenEditModal(item);
+                                handleToggleExpand(item);
                               }}
                               className={`p-1 rounded transition-colors cursor-pointer ${
                                 isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-amber-300' : 'hover:bg-slate-300 text-slate-700 hover:text-amber-700'
@@ -929,19 +1260,6 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                               <Edit className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setContextMenu(null);
-                              handleOpenOpname(item);
-                            }}
-                            className={`p-1 rounded transition-colors cursor-pointer ${
-                              isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-emerald-300' : 'hover:bg-slate-300 text-slate-700 hover:text-emerald-700'
-                            }`}
-                            title="Input Stok Opname"
-                          >
-                            <Sliders className="w-3.5 h-3.5" />
-                          </button>
                           {mode !== 'stock' && (
                             <button
                               onClick={(e) => {
@@ -959,7 +1277,15 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                           )}
                         </div>
                       </td>
-                    </tr>
+                      </tr>
+                      {expandedRowId === item.id.toString() && (
+                        <tr>
+                          <td colSpan={17} className="p-0 border-b-4 border-amber-500 bg-slate-900/50 shadow-inner">
+                            {renderExpandedForm(item.id.toString())}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))
                 )}
               </tbody>
@@ -1030,31 +1356,22 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
           {mode !== 'stock' && (
             <button
               onClick={() => {
-                handleOpenEditModal(contextMenu.item);
+                handleToggleExpand(contextMenu.item);
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
+              className="w-full px-2.5 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
             >
               <Edit className="w-3.5 h-3.5" />
               <span>Detail / Edit Barang</span>
             </button>
           )}
-          <button
-            onClick={() => {
-              handleOpenOpname(contextMenu.item);
-              setContextMenu(null);
-            }}
-            className="w-full px-3 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Stok Opname</span>
-          </button>
+
           <button
             onClick={() => {
               handleAddToBarcodeQueue(contextMenu.item);
               setContextMenu(null);
             }}
-            className="w-full px-3.5 py-2 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
+            className="w-full px-3 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Tag className="w-3.5 h-3.5" />
             <span>Cetak Barcode</span>
@@ -1067,7 +1384,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                   handleDeleteProduct(contextMenu.item);
                   setContextMenu(null);
                 }}
-                className="w-full px-3 py-2 text-left hover:bg-rose-600 hover:text-white font-black text-rose-800 flex items-center gap-2 cursor-pointer transition-colors"
+                className="w-full px-2.5 py-1.5 text-left hover:bg-rose-600 hover:text-white font-black text-rose-800 flex items-center gap-2 cursor-pointer transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Hapus Barang</span>
@@ -1077,370 +1394,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         </div>
       )}
 
-      {/* 📝 MODAL 1: ADD / EDIT ITEM DIALOG */}
-      {isFormModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full max-w-3xl rounded-2xl border-2 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
-            isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-500 text-slate-950'
-          }`}>
-            {/* Modal Header */}
-            <div className={`px-6 py-4 border-b-2 flex items-center justify-between ${
-              isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-900 border-slate-950 text-white'
-            }`}>
-              <div className="flex items-center gap-2">
-                <Package className="w-5 h-5 text-amber-400" />
-                <h3 className="font-black text-sm text-white">{modalMode === 'create' ? 'Tambah Barang Baru' : `Detail Barang: ${formData.inventoryName}`}</h3>
-              </div>
-              <button onClick={() => setIsFormModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Form Tabs */}
-            <div className={`flex border-b-2 px-6 gap-2 pt-2 ${
-              isDark ? 'border-slate-800 bg-slate-950/30' : 'border-slate-400 bg-slate-100'
-            }`}>
-              <button
-                type="button"
-                onClick={() => setActiveFormTab('general')}
-                className={`px-4 py-2 text-xs font-black rounded-t-xl border-b-2 transition-all cursor-pointer ${
-                  activeFormTab === 'general'
-                    ? isDark ? 'border-amber-500 text-amber-400 bg-slate-900' : 'border-slate-950 text-slate-950 bg-white'
-                    : 'border-transparent text-slate-700 hover:text-slate-950'
-                }`}
-              >
-                Informasi Umum
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveFormTab('pricing')}
-                className={`px-4 py-2 text-xs font-black rounded-t-xl border-b-2 transition-all cursor-pointer ${
-                  activeFormTab === 'pricing'
-                    ? isDark ? 'border-amber-500 text-amber-400 bg-slate-900' : 'border-slate-950 text-slate-950 bg-white'
-                    : 'border-transparent text-slate-700 hover:text-slate-950'
-                }`}
-              >
-                Harga & Grosir
-              </button>
-              {modalMode === 'edit' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveFormTab('history')}
-                  className={`px-4 py-2 text-xs font-black rounded-t-xl border-b-2 transition-all cursor-pointer ${
-                    activeFormTab === 'history'
-                      ? isDark ? 'border-amber-500 text-amber-400 bg-slate-900' : 'border-slate-950 text-slate-950 bg-white'
-                      : 'border-transparent text-slate-700 hover:text-slate-950'
-                  }`}
-                >
-                  Riwayat HPP Modal
-                </button>
-              )}
-            </div>
-
-            {/* Modal Body Form */}
-            <form onSubmit={handleSaveForm} className="flex-1 overflow-y-auto p-6 space-y-4">
-              {activeFormTab === 'general' && (
-                <div className="grid grid-cols-2 gap-4 text-xs font-black text-slate-950 dark:text-slate-100">
-                  <div>
-                    <label className="block mb-1">Inventory No (SKU)</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.inventoryNo || ''}
-                      onChange={(e) => setFormData({ ...formData, inventoryNo: e.target.value })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-mono font-black focus:ring-2 focus:ring-slate-500 outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Barcode</label>
-                    <input
-                      type="text"
-                      value={formData.barcode || ''}
-                      onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-mono font-black focus:ring-2 focus:ring-slate-500 outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block mb-1">Nama Barang</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.inventoryName || ''}
-                      onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black focus:ring-2 focus:ring-slate-500 outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Brand</label>
-                    <select
-                      value={formData.inventoryBrandId || 1}
-                      onChange={(e) => setFormData({ ...formData, inventoryBrandId: parseInt(e.target.value) })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black cursor-pointer outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      {lookups.brands.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.brandName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block mb-1">Category</label>
-                    <select
-                      value={formData.inventoryCategoryId || 1}
-                      onChange={(e) => setFormData({ ...formData, inventoryCategoryId: parseInt(e.target.value) })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black cursor-pointer outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      {lookups.categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.categoryName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block mb-1">Product Type</label>
-                    <select
-                      value={formData.inventoryProductId || 1}
-                      onChange={(e) => setFormData({ ...formData, inventoryProductId: parseInt(e.target.value) })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black cursor-pointer outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      {lookups.productTypes.map((pt) => (
-                        <option key={pt.id} value={pt.id}>
-                          {pt.productName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block mb-1">Satuan (UoM)</label>
-                    <select
-                      value={formData.uoMId || 1}
-                      onChange={(e) => setFormData({ ...formData, uoMId: parseInt(e.target.value) })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black cursor-pointer outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      {lookups.uoms.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.uomName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block mb-1">Min Stock Threshold</label>
-                    <input
-                      type="number"
-                      value={formData.minStock ?? 0}
-                      onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Max Stock Limit</label>
-                    <input
-                      type="number"
-                      value={formData.maxStock ?? 0}
-                      onChange={(e) => setFormData({ ...formData, maxStock: parseInt(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeFormTab === 'pricing' && (
-                <div className="grid grid-cols-2 gap-4 text-xs font-black text-slate-950 dark:text-slate-100">
-                  <div>
-                    <label className="block mb-1">Harga Retail (Jual)</label>
-                    <input
-                      type="number"
-                      required
-                      value={formData.price ?? 0}
-                      onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
-                    <input
-                      type="number"
-                      value={formData.hpp ?? 0}
-                      onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-950 border-emerald-900/50 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Harga Grosir Tier 1</label>
-                    <input
-                      type="number"
-                      value={formData.grosir1 ?? 0}
-                      onChange={(e) => setFormData({ ...formData, grosir1: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-slate-950'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Harga Grosir Tier 2</label>
-                    <input
-                      type="number"
-                      value={formData.grosir2 ?? 0}
-                      onChange={(e) => setFormData({ ...formData, grosir2: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-slate-950'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Harga Grosir Tier 3</label>
-                    <input
-                      type="number"
-                      value={formData.grosir3 ?? 0}
-                      onChange={(e) => setFormData({ ...formData, grosir3: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-100 border-amber-400 text-slate-950'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1">Diskon Standard (%)</label>
-                    <input
-                      type="number"
-                      value={formData.disc ?? 0}
-                      onChange={(e) => setFormData({ ...formData, disc: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {activeFormTab === 'history' && (
-                <div className="space-y-3 text-xs font-black">
-                  <h4 className="font-black text-slate-950 dark:text-slate-200">Riwayat HPP & Penerimaan Barang</h4>
-                  <div className="rounded-xl border-2 border-slate-400 dark:border-slate-800 overflow-hidden">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="bg-slate-900 text-white border-b-2 border-slate-950 font-black">
-                          <th className="p-2.5">No Penerimaan (MR)</th>
-                          <th className="p-2.5">Tanggal</th>
-                          <th className="p-2.5">Supplier</th>
-                          <th className="p-2.5 text-right">HPP Item</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-300 dark:divide-slate-800 font-black text-slate-950 dark:text-slate-100">
-                        {hppHistory.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="p-4 text-center text-slate-950 font-black">
-                              Belum ada riwayat HPP penerimaan.
-                            </td>
-                          </tr>
-                        ) : (
-                          hppHistory.map((h) => (
-                            <tr key={h.id}>
-                              <td className="p-2.5 font-mono text-slate-950 dark:text-amber-400 font-black">{h.mrNo}</td>
-                              <td className="p-2.5 text-slate-950 dark:text-slate-300">{h.mrDate}</td>
-                              <td className="p-2.5 text-slate-950 dark:text-slate-100 font-black">{h.supplierName}</td>
-                              <td className="p-2.5 text-right font-black text-emerald-950 dark:text-emerald-400">Rp {h.hpp.toLocaleString('id-ID')}</td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Modal Footer Buttons */}
-              <div className="pt-4 border-t-2 border-slate-300 dark:border-slate-800 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsFormModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border-2 border-slate-400 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-                >
-                  Batal
-                </button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs shadow-md cursor-pointer transition-all">
-                  Simpan Barang
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 📊 MODAL 2: STOK OPNAME ADJUSTMENT DIALOG */}
-      {isOpnameModalOpen && selectedProduct && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full max-w-md rounded-2xl border-2 shadow-2xl p-6 space-y-4 ${
-            isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-500 text-slate-950'
-          }`}>
-            <div className="flex items-center justify-between border-b-2 border-slate-300 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-5 h-5 text-slate-950 dark:text-emerald-400" />
-                <h3 className="font-black text-sm text-slate-950 dark:text-white">Input Qty Stok Opname</h3>
-              </div>
-              <button onClick={() => setIsOpnameModalOpen(false)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-950 cursor-pointer transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs font-black">
-              <div className="bg-slate-100 dark:bg-slate-950 p-3 rounded-xl border-2 border-slate-300 dark:border-slate-800">
-                <div className="text-slate-950 dark:text-slate-400 font-mono font-black">{selectedProduct.inventoryNo}</div>
-                <div className="font-black text-sm text-slate-950 dark:text-white">{selectedProduct.inventoryName}</div>
-                <div className="text-slate-950 dark:text-slate-300 mt-1">Stok System Saat Ini: <span className="font-black text-emerald-950 dark:text-emerald-400">{selectedProduct.stokAkhir}</span></div>
-              </div>
-
-              <div>
-                <label className="block text-slate-950 dark:text-slate-300 font-black mb-1">Stok Fisik Hasil Opname</label>
-                <input
-                  type="number"
-                  value={opnameQty}
-                  onChange={(e) => setOpnameQty(parseInt(e.target.value) || 0)}
-                  className={`w-full border-2 rounded-xl px-4 py-2.5 font-black text-base focus:ring-2 focus:ring-slate-500 outline-none ${
-                    isDark ? 'bg-slate-950 border-emerald-900 text-emerald-400' : 'bg-white border-slate-400 text-slate-950'
-                  }`}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setIsOpnameModalOpen(false)}
-                className="px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-              >
-                Batal
-              </button>
-              <button onClick={handleSaveOpname} className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs shadow-md cursor-pointer transition-all">
-                Perbarui Stok
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* 📈 MODAL 3: LAPORAN MUTASI STOK DIALOG - PITCH BLACK TEXT & CRISP BORDER CARDS */}
       {isStockReportModalOpen && (

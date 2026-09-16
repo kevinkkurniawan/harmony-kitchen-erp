@@ -89,36 +89,35 @@ test.describe('Master Barang Strict Parity UI & Functional Tests', () => {
 
     // Verify context menu terminology (no ampersands)
     await expect(contextMenu.locator('button', { hasText: 'Detail / Edit Barang' })).toBeVisible();
-    await expect(contextMenu.locator('button', { hasText: 'Stok Opname' })).toBeVisible();
     await expect(contextMenu.locator('button', { hasText: 'Cetak Barcode' })).toBeVisible();
     await expect(contextMenu.locator('button', { hasText: 'Hapus Barang' })).toBeVisible();
 
     // Test that clicking a row button closes context menu (bug fix verification)
-    await contextMenu.locator('button', { hasText: 'Stok Opname' }).click();
+    await contextMenu.locator('button', { hasText: 'Cetak Barcode' }).click();
     
-    // Opname modal should appear
-    await expect(page.locator('h3', { hasText: 'Input Qty Stok Opname' })).toBeVisible();
+    // Barcode modal should appear
+    await expect(page.locator('h3', { hasText: 'Cetak Queue Barcode Label' })).toBeVisible();
     
     // Context menu should be gone
     await expect(contextMenu).toBeHidden();
   });
 
-  test('Tambah Barang modal opens and cancel button works without submitting', async ({ page }) => {
+  test('Tambah Barang inline form opens and cancel button works without submitting', async ({ page }) => {
     // Click Tambah Barang
     await page.locator('button', { hasText: 'Tambah Barang' }).click();
     
-    // Modal should appear
-    const modal = page.locator('div.fixed.inset-0').first();
-    await expect(modal).toBeVisible();
+    // Inline form should appear
+    const inlineForm = page.locator('td[colSpan="17"]').first();
+    await expect(inlineForm).toBeVisible();
 
     // Verify legacy tabs structure
-    await expect(modal.locator('button', { hasText: 'Informasi Umum' })).toBeVisible();
-    await expect(modal.locator('button', { hasText: 'Harga & Grosir' })).toBeVisible();
+    await expect(inlineForm.locator('button', { hasText: 'Informasi Umum' })).toBeVisible();
+    await expect(inlineForm.locator('button', { hasText: 'Harga & Grosir' })).toBeVisible();
     // Click Batal
-    await modal.locator('button', { hasText: 'Batal' }).click();
+    await inlineForm.locator('button', { hasText: 'Batal' }).click();
 
-    // Modal should close without errors or page reloads (if it submitted, the page might show toast errors or reload depending on setup)
-    await expect(modal).toBeHidden();
+    // Inline form should close without errors
+    await expect(inlineForm).toBeHidden();
   });
 
   test('Show Detail pane can be toggled', async ({ page }) => {
