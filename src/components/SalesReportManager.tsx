@@ -71,9 +71,10 @@ interface SummaryReportData {
 
 interface SalesReportManagerProps {
   isDark: boolean;
+  hasHpp?: boolean;
 }
 
-export default function SalesReportManager({ isDark }: SalesReportManagerProps) {
+export default function SalesReportManager({ isDark, hasHpp = false }: SalesReportManagerProps) {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'items' | 'summary'>('daily');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('All');
   
@@ -657,34 +658,36 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
               </div>
 
               {/* Profit & Margin Breakdown */}
-              <div
-                className={`p-5 rounded-2xl border ${
-                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                }`}
-              >
-                <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-4 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  Estimasi Margin & Keuntungan
-                </h3>
-                <div className="space-y-3 text-xs">
-                  <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Omset Bersih:</span>
-                    <strong className="font-mono text-emerald-400">{formatIDR(summaryData.netSales)}</strong>
-                  </div>
-                  <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className="text-slate-400">Total Harga Pokok Penjualan (HPP):</span>
-                    <strong className="font-mono text-red-400">-{formatIDR(summaryData.totalCost)}</strong>
-                  </div>
-                  <div className="flex justify-between py-2 text-sm font-black">
-                    <span className="text-purple-400">Laba Bersih (Estimasi Net Profit):</span>
-                    <strong className="font-mono text-purple-400">{formatIDR(summaryData.profit)}</strong>
-                  </div>
-                  <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 flex justify-between items-center text-xs font-bold text-purple-300">
-                    <span>Persentase Margin Profit:</span>
-                    <span className="text-base font-black">{summaryData.profitMarginPct}%</span>
+              {hasHpp && (
+                <div
+                  className={`p-5 rounded-2xl border ${
+                    isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    Estimasi Margin & Keuntungan
+                  </h3>
+                  <div className="space-y-3 text-xs">
+                    <div className="flex justify-between py-1.5 border-b border-slate-800/40">
+                      <span className="text-slate-400">Total Omset Bersih:</span>
+                      <strong className="font-mono text-emerald-400">{formatIDR(summaryData.netSales)}</strong>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-slate-800/40">
+                      <span className="text-slate-400">Total Harga Pokok Penjualan (HPP):</span>
+                      <strong className="font-mono text-red-400">-{formatIDR(summaryData.totalCost)}</strong>
+                    </div>
+                    <div className="flex justify-between py-2 text-sm font-black">
+                      <span className="text-purple-400">Laba Bersih (Estimasi Net Profit):</span>
+                      <strong className="font-mono text-purple-400">{formatIDR(summaryData.profit)}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 flex justify-between items-center text-xs font-bold text-purple-300">
+                      <span>Persentase Margin Profit:</span>
+                      <span className="text-base font-black">{summaryData.profitMarginPct}%</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}

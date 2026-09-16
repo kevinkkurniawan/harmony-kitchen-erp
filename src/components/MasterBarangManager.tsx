@@ -64,14 +64,54 @@ interface ToastMessage {
 interface MasterBarangManagerProps {
   isDark: boolean;
   mode?: 'master' | 'stock';
+  hasHpp?: boolean;
+  userId?: number | string;
 }
 
-export default function MasterBarangManager({ isDark, mode = 'master' }: MasterBarangManagerProps) {
+export default function MasterBarangManager({
+  isDark,
+  mode = 'master',
+  hasHpp = false,
+  userId,
+}: MasterBarangManagerProps) {
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
+
+  // Column Width Resizing State (User Scoped)
+  const DEFAULT_NAME_WIDTH = 260;
+  const MIN_NAME_WIDTH = 160;
+  const MAX_NAME_WIDTH = 600;
+  const [nameColWidth, setNameColWidth] = useState<number>(DEFAULT_NAME_WIDTH);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+
+  useEffect(() => {
+    const userKey = userId ? `user_${userId}` : 'guest';
+    const saved = localStorage.getItem(`hk_erp_col_width_inventory_${userKey}`);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= MIN_NAME_WIDTH && parsed <= MAX_NAME_WIDTH) {
+        setNameColWidth(parsed);
+        return;
+      }
+    }
+    setNameColWidth(DEFAULT_NAME_WIDTH);
+  }, [userId]);
+
+  const updateNameColWidth = (newWidth: number) => {
+    const clamped = Math.min(MAX_NAME_WIDTH, Math.max(MIN_NAME_WIDTH, newWidth));
+    setNameColWidth(clamped);
+    const userKey = userId ? `user_${userId}` : 'guest';
+    localStorage.setItem(`hk_erp_col_width_inventory_${userKey}`, clamped.toString());
+  };
+
+  const resetNameColWidth = () => {
+    setNameColWidth(DEFAULT_NAME_WIDTH);
+    const userKey = userId ? `user_${userId}` : 'guest';
+    localStorage.removeItem(`hk_erp_col_width_inventory_${userKey}`);
+  };
   
   // Explicit Filter Checkboxes from Frm_Inventory / Frm_InventoryStock
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
@@ -239,7 +279,10 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
   useEffect(() => {
     let isMounted = true;
-    if (!selectedProduct) return;
+    if (!selectedProduct || !hasHpp) {
+      setHppHistory([]);
+      return;
+    }
     const runHppHistory = async () => {
       try {
         const res = await fetch(`/api/inventory/${selectedProduct.id}/hpp-history`);
@@ -257,7 +300,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     };
     runHppHistory();
     return () => { isMounted = false; };
-  }, [selectedProduct]);
+  }, [selectedProduct, hasHpp]);
 
   // Open Add Modal
   const handleOpenCreateModal = useCallback(() => {
@@ -336,70 +379,56 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const totalPages = Math.ceil(sortedProducts.length / pageSize) || 1;
   const paginatedProducts = sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  // Export CSV Functionality
-  const exportToCSV = () => {
-    if (products.length === 0) {
-      addToast('Tidak ada data barang untuk diexport', 'warning');
-      return;
+  // Server-backed Export Functionality (XLSX & CSV with HPP protection)
+  const handleExport = async (format: 'xlsx' | 'csv' = 'xlsx') => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams({
+        format,
+        q: searchQuery.trim(),
+        onlyActive: filterOnlyActive ? 'true' : 'false',
+        minusStock: filterMinusStock ? 'true' : 'false',
+        sortField: String(sortField),
+        sortOrder: sortOrder,
+      });
+
+      const res = await fetch(`/api/inventory/export?${params.toString()}`);
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        if (res.status === 404 || errJson?.isEmpty) {
+          addToast('Tidak ada data barang yang sesuai dengan filter saat ini', 'warning');
+          return;
+        }
+        addToast(errJson?.error || `Gagal mengeksport data (${res.status})`, 'error');
+        return;
+      }
+
+      const countHeader = res.headers.get('X-Export-Count');
+      const blob = await res.blob();
+      const ext = format === 'xlsx' ? 'xlsx' : 'csv';
+      const filename = `Master_Barang_${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+
+      addToast(
+        `Berhasil mengexport ${countHeader ? `${countHeader} ` : ''}data barang (${format.toUpperCase()})`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Export error:', err);
+      addToast(err.message || 'Terjadi kesalahan saat mengexport data', 'error');
+    } finally {
+      setIsExporting(false);
     }
-
-    const headers = [
-      'ID',
-      'Inventory No',
-      'Barcode',
-      'Nama Barang',
-      'Brand',
-      'Category',
-      'Product Type',
-      'Satuan (UoM)',
-      'Harga Retail',
-      'HPP (Modal)',
-      'Grosir 1',
-      'Grosir 2',
-      'Grosir 3',
-      'Min Stock',
-      'Max Stock',
-      'Stok Awal',
-      'Stok Akhir',
-      'Status Aktif',
-    ];
-
-    const csvRows = [headers.join(',')];
-
-    sortedProducts.forEach((p) => {
-      const row = [
-        p.id,
-        `"${p.inventoryNo || ''}"`,
-        `"${p.barcode || ''}"`,
-        `"${(p.inventoryName || '').replace(/"/g, '""')}"`,
-        `"${p.brandName || ''}"`,
-        `"${p.categoryName || ''}"`,
-        `"${p.productName || ''}"`,
-        `"${p.uomName || 'PCS'}"`,
-        p.price || 0,
-        p.hpp || 0,
-        p.grosir1 || 0,
-        p.grosir2 || 0,
-        p.grosir3 || 0,
-        p.minStock || 0,
-        p.maxStock || 0,
-        p.stokAwal || 0,
-        p.stokAkhir || 0,
-        p.isActive ? 'AKTIF' : 'NON-AKTIF',
-      ];
-      csvRows.push(row.join(','));
-    });
-
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Master_Barang_Export_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    addToast(`Berhasil mengexport ${products.length} data barang ke CSV`, 'success');
   };
 
   // Open Edit Modal
@@ -408,7 +437,11 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     setModalMode('edit');
     setActiveFormTab('general');
     setFormData({ ...product });
-    fetchHppHistory(product.id);
+    if (hasHpp) {
+      fetchHppHistory(product.id);
+    } else {
+      setHppHistory([]);
+    }
     setIsFormModalOpen(true);
   };
 
@@ -651,17 +684,33 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             </span>
           </button>
 
-          <button
-            onClick={exportToCSV}
-            className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50'
-                : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
-            }`}
-          >
-            <Download className="w-4 h-4 text-emerald-200" />
-            <span>Export Data</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleExport('xlsx')}
+              disabled={isExporting}
+              className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                isDark
+                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50'
+                  : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
+              }`}
+              title="Export seluruh data hasil filter ke format Microsoft Excel (.xlsx)"
+            >
+              {isExporting ? <RefreshCw className="w-4 h-4 animate-spin text-emerald-300" /> : <Download className="w-4 h-4 text-emerald-300" />}
+              <span>{isExporting ? 'Mengeksport...' : 'Export Excel'}</span>
+            </button>
+            <button
+              onClick={() => handleExport('csv')}
+              disabled={isExporting}
+              className={`px-2 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                isDark
+                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                  : 'bg-slate-200 hover:bg-slate-300 text-slate-800 border-slate-300'
+              }`}
+              title="Export ke format CSV"
+            >
+              CSV
+            </button>
+          </div>
 
           {/* Filter Checkboxes */}
           <div className={`flex items-center gap-3 border-l-2 pl-3 ml-1 ${isDark ? 'border-slate-800' : 'border-slate-400'}`}>
@@ -735,9 +784,13 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Harga Retail & HPP</div>
+              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">{hasHpp ? 'Harga Retail & HPP' : 'Harga Retail'}</div>
               <div className="font-black text-sm text-slate-950 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
-              <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
+              {hasHpp && (
+                <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">
+                  HPP Modal: {selectedProduct.hpp !== null && selectedProduct.hpp !== undefined ? `Rp ${Number(selectedProduct.hpp).toLocaleString('id-ID')}` : 'Tidak Tersedia'}
+                </div>
+              )}
             </div>
 
             {/* Box 4: Grosir Tiers */}
@@ -794,11 +847,66 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       {sortField === 'barcode' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('inventoryName')} className="py-3 px-3 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Nama Barang</span>
-                      {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                  <th
+                    style={{ width: `${nameColWidth}px`, minWidth: `${nameColWidth}px` }}
+                    className="py-3 px-3 relative select-none"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div
+                        onClick={() => handleSort('inventoryName')}
+                        className="flex items-center gap-1 cursor-pointer hover:text-amber-400 transition-colors"
+                        title="Urutkan berdasarkan Nama Barang"
+                      >
+                        <span>Nama Barang</span>
+                        {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] font-mono lowercase opacity-75 hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); updateNameColWidth(nameColWidth - 30); }}
+                          className="px-1 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+                          title="Perkecil kolom Nama Barang"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); updateNameColWidth(nameColWidth + 30); }}
+                          className="px-1 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+                          title="Perlebar kolom Nama Barang"
+                        >
+                          +
+                        </button>
+                        {nameColWidth !== DEFAULT_NAME_WIDTH && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); resetNameColWidth(); }}
+                            className="px-1 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
+                            title="Reset lebar kolom Nama Barang"
+                          >
+                            reset
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    <div
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        const startX = e.clientX;
+                        const startW = nameColWidth;
+                        const onMove = (moveEv: MouseEvent) => {
+                          updateNameColWidth(startW + (moveEv.clientX - startX));
+                        };
+                        const onUp = () => {
+                          window.removeEventListener('mousemove', onMove);
+                          window.removeEventListener('mouseup', onUp);
+                        };
+                        window.addEventListener('mousemove', onMove);
+                        window.addEventListener('mouseup', onUp);
+                      }}
+                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-amber-500 transition-colors"
+                      title="Tarik untuk mengubah lebar kolom Nama Barang"
+                    />
                   </th>
                   <th className="py-3 px-3">Brand</th>
                   <th className="py-3 px-3">Category</th>
@@ -810,12 +918,14 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       {sortField === 'price' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('hpp')} className="py-3 px-3 text-right cursor-pointer hover:text-emerald-400 transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>HPP (Modal)</span>
-                      {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
-                    </div>
-                  </th>
+                  {hasHpp && (
+                    <th onClick={() => handleSort('hpp')} className="py-3 px-3 text-right cursor-pointer hover:text-emerald-400 transition-colors">
+                      <div className="flex items-center justify-end gap-1">
+                        <span>HPP (Modal)</span>
+                        {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
+                      </div>
+                    </th>
+                  )}
                   <th className="py-3 px-3 text-right">Grosir 1</th>
                   <th className="py-3 px-3 text-right">Grosir 2</th>
                   <th className="py-3 px-3 text-right">Grosir 3</th>
@@ -833,7 +943,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               <tbody className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-300'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={16} className="py-24">
+                    <td colSpan={hasHpp ? 16 : 15} className="py-24">
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
                         <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
@@ -843,7 +953,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                   </tr>
                 ) : paginatedProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={16} className={`py-12 text-center font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <td colSpan={hasHpp ? 16 : 15} className={`py-12 text-center font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
                       Tidak ada barang ditemukan.
                     </td>
                   </tr>
@@ -872,13 +982,22 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                     >
                       <td className={`py-2.5 px-3 font-mono text-[11px] font-black ${isDark ? 'text-amber-300' : 'text-slate-800'}`}>{item.inventoryNo}</td>
                       <td className={`py-2.5 px-3 font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.barcode}</td>
-                      <td className={`py-2.5 px-3 font-black max-w-[200px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
+                      <td
+                        style={{ width: `${nameColWidth}px`, minWidth: `${nameColWidth}px`, maxWidth: `${nameColWidth}px` }}
+                        className={`py-2.5 px-3 font-black break-words whitespace-normal leading-snug ${isDark ? 'text-white' : 'text-slate-900'}`}
+                      >
+                        {item.inventoryName}
+                      </td>
                       <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.brandName || '-'}</td>
                       <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.categoryName || '-'}</td>
                       <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.productName || '-'}</td>
                       <td className={`py-2.5 px-3 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
                       <td className={`py-2.5 px-3 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-2.5 px-3 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>
+                      {hasHpp && (
+                        <td className={`py-2.5 px-3 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                          {item.hpp !== null && item.hpp !== undefined ? `Rp ${Number(item.hpp).toLocaleString('id-ID')}` : '-'}
+                        </td>
+                      )}
                       <td className={`py-2.5 px-3 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir1 || 0).toLocaleString('id-ID')}</td>
                       <td className={`py-2.5 px-3 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir2 || 0).toLocaleString('id-ID')}</td>
                       <td className={`py-2.5 px-3 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir3 || 0).toLocaleString('id-ID')}</td>
@@ -1114,7 +1233,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               >
                 Harga & Grosir
               </button>
-              {modalMode === 'edit' && (
+              {hasHpp && modalMode === 'edit' && (
                 <button
                   type="button"
                   onClick={() => setActiveFormTab('history')}
@@ -1271,17 +1390,19 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       }`}
                     />
                   </div>
-                  <div>
-                    <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
-                    <input
-                      type="number"
-                      value={formData.hpp ?? 0}
-                      onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
-                        isDark ? 'bg-slate-950 border-emerald-900/50 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
-                      }`}
-                    />
-                  </div>
+                  {hasHpp && (
+                    <div>
+                      <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
+                      <input
+                        type="number"
+                        value={formData.hpp ?? 0}
+                        onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
+                        className={`w-full border-2 rounded-xl px-3 py-2 font-black outline-none ${
+                          isDark ? 'bg-slate-950 border-emerald-900/50 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
+                        }`}
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block mb-1">Harga Grosir Tier 1</label>
                     <input
@@ -1453,7 +1574,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
             {/* Summary Cards: Deep Colored Cards with Solid Black/Purple/Emerald Text */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-black">
-              <div className="grid grid-cols-3 gap-4">
+              <div className={`grid ${hasHpp ? 'grid-cols-3' : 'grid-cols-2'} gap-4`}>
                 {/* Total Item Card */}
                 <div className={`p-4 rounded-xl border-2 ${
                   isDark ? 'bg-purple-950/30 border-purple-800/50' : 'bg-purple-200 border-purple-400 text-purple-950 shadow-sm'
@@ -1463,14 +1584,16 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 </div>
 
                 {/* Total Nilai HPP Card */}
-                <div className={`p-4 rounded-xl border-2 ${
-                  isDark ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-emerald-200 border-emerald-400 text-emerald-950 shadow-sm'
-                }`}>
-                  <div className="text-[11px] font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300">Total Nilai Persediaan (HPP)</div>
-                  <div className="font-black text-xl mt-1 text-emerald-950 dark:text-emerald-300">
-                    Rp {products.reduce((acc, p) => acc + (p.hpp || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
+                {hasHpp && (
+                  <div className={`p-4 rounded-xl border-2 ${
+                    isDark ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-emerald-200 border-emerald-400 text-emerald-950 shadow-sm'
+                  }`}>
+                    <div className="text-[11px] font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300">Total Nilai Persediaan (HPP)</div>
+                    <div className="font-black text-xl mt-1 text-emerald-950 dark:text-emerald-300">
+                      Rp {products.reduce((acc, p) => acc + (Number(p.hpp) || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Total Nilai Retail Card */}
                 <div className={`p-4 rounded-xl border-2 ${
@@ -1492,8 +1615,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       <th className="p-3">Nama Barang</th>
                       <th className="p-3 text-center">Stok Awal</th>
                       <th className="p-3 text-center">Stok Akhir</th>
-                      <th className="p-3 text-right">HPP Unit</th>
-                      <th className="p-3 text-right">Total Nilai HPP</th>
+                      {hasHpp && <th className="p-3 text-right">HPP Unit</th>}
+                      {hasHpp && <th className="p-3 text-right">Total Nilai HPP</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-300 dark:divide-slate-800 font-black text-slate-950 dark:text-slate-100">
@@ -1503,10 +1626,16 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                         <td className="p-3 font-black text-slate-950 dark:text-slate-100">{p.inventoryName}</td>
                         <td className="p-3 text-center text-slate-950 dark:text-slate-300">{p.stokAwal}</td>
                         <td className="p-3 text-center font-black text-emerald-950 dark:text-emerald-400">{p.stokAkhir}</td>
-                        <td className="p-3 text-right text-slate-950 dark:text-slate-300">Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
-                        <td className="p-3 text-right font-black text-emerald-950 dark:text-emerald-400">
-                          Rp {((p.hpp || 0) * (p.stokAkhir || 0)).toLocaleString('id-ID')}
-                        </td>
+                        {hasHpp && (
+                          <td className="p-3 text-right text-slate-950 dark:text-slate-300">
+                            {p.hpp !== null && p.hpp !== undefined ? `Rp ${Number(p.hpp).toLocaleString('id-ID')}` : '-'}
+                          </td>
+                        )}
+                        {hasHpp && (
+                          <td className="p-3 text-right font-black text-emerald-950 dark:text-emerald-400">
+                            {p.hpp !== null && p.hpp !== undefined ? `Rp ${(Number(p.hpp) * (p.stokAkhir || 0)).toLocaleString('id-ID')}` : '-'}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

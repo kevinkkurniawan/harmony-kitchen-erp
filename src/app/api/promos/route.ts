@@ -10,29 +10,30 @@ export async function GET(req: Request) {
 
     const where: any = {};
     if (q) {
-      where.promoname = { contains: q, mode: 'insensitive' as const };
+      where.groupName = { contains: q, mode: 'insensitive' as const };
     }
 
-    const [total, promos] = await Promise.all([
-      prisma.promo.count({ where }),
-      prisma.promo.findMany({
+    const [total, groups] = await Promise.all([
+      prisma.promoGroup.count({ where }),
+      prisma.promoGroup.findMany({
         where,
+        include: { promos: true },
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
         take: paginationParams.limit,
       }),
     ]);
 
-    const mapped = promos.map((p: any) => ({
-      id: String(p.id),
-      promoCode: `PRM-${p.id}`,
-      groupName: p.promoname,
-      group_name: p.promoname,
-      description: p.description,
-      isActive: p.isactive,
-      promosCount: 0,
-      promos_count: 0,
-      promos: [],
+    const mapped = groups.map((g: any) => ({
+      id: String(g.id),
+      promoCode: g.promoCode,
+      groupName: g.groupName,
+      group_name: g.groupName,
+      description: g.description,
+      isActive: g.isActive,
+      promosCount: g.promos?.length || 0,
+      promos_count: g.promos?.length || 0,
+      promos: g.promos || [],
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);
@@ -53,27 +54,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Nama Group Promo wajib diisi' }, { status: 400 });
     }
 
-    // Get a unique bundle id
-    const max = await prisma.promo.aggregate({ _max: { promobundle: true } });
-    const bundleId = (max._max.promobundle || 0) + 1;
-
-    const created = await prisma.promo.create({
+    const created = await prisma.promoGroup.create({
       data: {
-        promobundle: bundleId,
-        promogrosir: 0,
-        promoname: groupName,
-        promovalue: 0,
-        promopercentage: 0,
-        qtymin: 0,
-        qtymax: 0,
-        ispartial: false,
-        isgroup: true,
+        groupName,
         description,
-        isactive: isActive,
-        createduser: 'system',
-        createddate: new Date(),
-        modifieduser: 'system',
-        modifieddate: new Date(),
+        isActive,
       },
     });
 
@@ -83,3 +68,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

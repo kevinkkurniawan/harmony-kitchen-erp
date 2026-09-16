@@ -8,19 +8,20 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const where: any = { memotype: 'GENERAL' };
-    if (q) {
-      where.OR = [
-        { memocode: { contains: q, mode: 'insensitive' as const } },
-        { memoreason: { contains: q, mode: 'insensitive' as const } },
-        { remarks: { contains: q, mode: 'insensitive' as const } },
-        { createduser: { contains: q, mode: 'insensitive' as const } },
-      ];
-    }
+    const where = q
+      ? {
+          OR: [
+            { memoNo: { contains: q, mode: 'insensitive' as const } },
+            { title: { contains: q, mode: 'insensitive' as const } },
+            { content: { contains: q, mode: 'insensitive' as const } },
+            { author: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
 
     const [total, memos] = await Promise.all([
-      prisma.t_memoheader.count({ where }),
-      prisma.t_memoheader.findMany({
+      prisma.memo.count({ where }),
+      prisma.memo.findMany({
         where,
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
@@ -28,14 +29,14 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    const mapped = memos.map((m: any) => ({
+    const mapped = memos.map((m) => ({
       id: m.id,
-      memo_no: m.memocode,
-      title: m.memoreason || '-',
-      content: m.remarks || '-',
-      author: m.createduser || 'Manager',
-      status: m.isdone ? 'CLOSED' : 'OPEN',
-      created_at: m.createddate,
+      memo_no: m.memoNo,
+      title: m.title || '-',
+      content: m.content || '-',
+      author: m.author || 'Manager',
+      status: m.status || 'OPEN',
+      created_at: m.createdAt,
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);
@@ -54,18 +55,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'No. Memo, Judul, dan Isi Memo wajib diisi' }, { status: 400 });
     }
 
-    const created = await prisma.t_memoheader.create({
+    const created = await prisma.memo.create({
       data: {
-        memocode: memo_no,
-        memoreason: title,
-        remarks: content,
-        memotype: 'GENERAL',
-        createduser: author,
-        createddate: new Date(),
-        modifieduser: author,
-        modifieddate: new Date(),
-        isdone: status === 'CLOSED',
-        isvoid: false,
+        memoNo: memo_no,
+        title,
+        content,
+        author,
+        status: status || 'OPEN',
       },
     });
 
@@ -81,25 +77,28 @@ export async function PUT(req: Request) {
     const body = await req.json();
     const { id, title, content, status } = body;
 
-    const updated = await prisma.t_memoheader.update({
+    const updated = await prisma.memo.update({
       where: { id: Number(id) },
       data: {
-        memoreason: title,
-        remarks: content,
-        isdone: status === 'CLOSED',
-        modifieddate: new Date(),
-      }
+        title,
+        content,
+        status,
+      },
     });
 
     return NextResponse.json({ success: true, data: updated });
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) {
+    return NextResponse.json({ success: false }, { status: 500 });
+  }
 }
 
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get('id'));
-    await prisma.t_memoheader.delete({ where: { id } });
+    await prisma.memo.delete({ where: { id } });
     return NextResponse.json({ success: true });
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) {
+    return NextResponse.json({ success: false }, { status: 500 });
+  }
 }

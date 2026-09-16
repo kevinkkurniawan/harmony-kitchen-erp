@@ -36,14 +36,10 @@ import SalesReportManager from '@/components/SalesReportManager';
 import UserAccessManager from '@/components/UserAccessManager';
 
 export default function ERPDashboard() {
-  const [currentUser, setCurrentUser] = useState<any>({
-    id: 1,
-    username: 'admin',
-    fullName: 'Super Administrator ERP',
-    userLevel: 'Admin',
-  });
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [userPermissions, setUserPermissions] = useState<any[]>([]);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   const [activeTab, setActiveTab] = useState<
     | 'master-barang'
@@ -63,9 +59,40 @@ export default function ERPDashboard() {
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
+  // Verify server session on mount
+  useEffect(() => {
+    let isMounted = true;
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const json = await res.json();
+        if (isMounted) {
+          if (json.success && json.user) {
+            setCurrentUser(json.user);
+          } else {
+            setCurrentUser(null);
+            setIsLoginOpen(true);
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setCurrentUser(null);
+          setIsLoginOpen(true);
+        }
+      } finally {
+        if (isMounted) setIsCheckingAuth(false);
+      }
+    };
+    checkAuth();
+    return () => { isMounted = false; };
+  }, []);
+
   // Load User Permissions when logged in user changes
   useEffect(() => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id) {
+      setUserPermissions([]);
+      return;
+    }
     const fetchPerms = async () => {
       try {
         const res = await fetch(`/api/users/permissions?userId=${currentUser.id}`);
@@ -80,12 +107,35 @@ export default function ERPDashboard() {
     fetchPerms();
   }, [currentUser]);
 
+  // If user lacks HPP, they cannot stay on penerimaan-barang-harga
+  useEffect(() => {
+    if (activeTab === 'penerimaan-barang-harga' && !currentUser?.hasHpp) {
+      setActiveTab('master-barang');
+    }
+  }, [activeTab, currentUser]);
+
   // Permission Check Helper Function (1:1 with Module Manager Isi_NavBarMenu)
   const canView = (moduleCode: string) => {
-    if (currentUser?.userLevel === 'Admin') return true; // Super Admin has access to all
+    if (!currentUser) return false;
+    // Explicit HPP Protection: priced receiving requires verified inventory.viewHpp grant
+    if (moduleCode === 'penerimaan-barang-harga') {
+      if (!currentUser.hasHpp) return false;
+    }
+    if (currentUser.userLevel === 'Admin') return true; // Super Admin has access to all
     if (!userPermissions || userPermissions.length === 0) return true;
     const perm = userPermissions.find((p) => p.moduleCode === moduleCode);
     return perm ? perm.canView : true;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    sessionStorage.clear();
+    localStorage.clear();
+    setCurrentUser(null);
+    setUserPermissions([]);
+    setIsLoginOpen(true);
   };
 
   const isDark = theme === 'dark';
@@ -122,12 +172,15 @@ export default function ERPDashboard() {
         <div className="flex items-center gap-3">
           {/* User Profile Badge */}
           <div
-            className="px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-400 font-bold border border-amber-500/30 text-xs flex items-center gap-2 shadow-sm"
+            onClick={() => { if (!currentUser) setIsLoginOpen(true); }}
+            className={`px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-400 font-bold border border-amber-500/30 text-xs flex items-center gap-2 shadow-sm ${
+              !currentUser ? 'cursor-pointer hover:bg-amber-500/20' : ''
+            }`}
           >
             <UserIcon className="w-3.5 h-3.5" />
             <span>
               {currentUser
-                ? `Current user: ${currentUser.fullName || currentUser.username} (${(currentUser.userLevel || 'User').toUpperCase()})`
+                ? `User: ${currentUser.fullName || currentUser.username} (${(currentUser.userLevel || 'User').toUpperCase()}${currentUser.hasHpp ? ' • HPP' : ''})`
                 : 'Login ERP'}
             </span>
           </div>
@@ -148,10 +201,7 @@ export default function ERPDashboard() {
 
           {/* Logout Button */}
           <button
-            onClick={() => {
-              sessionStorage.removeItem('isLoggedIn');
-              window.location.reload();
-            }}
+            onClick={handleLogout}
             className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-sm ${
               isDark
                 ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30'
@@ -428,8 +478,24 @@ export default function ERPDashboard() {
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-y-auto min-h-0">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" />}
-          {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" />}
+          {activeTab === 'master-barang' && (
+            <MasterBarangManager
+              key={`master-${currentUser?.id || 'anon'}`}
+              isDark={isDark}
+              mode="master"
+              hasHpp={Boolean(currentUser?.hasHpp)}
+              userId={currentUser?.id}
+            />
+          )}
+          {activeTab === 'inventory-stok' && (
+            <MasterBarangManager
+              key={`stock-${currentUser?.id || 'anon'}`}
+              isDark={isDark}
+              mode="stock"
+              hasHpp={Boolean(currentUser?.hasHpp)}
+              userId={currentUser?.id}
+            />
+          )}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
           {(activeTab === 'sync-stok' || activeTab === 'memo-sync-stok' || activeTab === 'sales-sync-stok') && (
             <SyncStockManager isDark={isDark} />
@@ -439,21 +505,47 @@ export default function ERPDashboard() {
 
           {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
-          {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} />}
-          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
+          {activeTab === 'penerimaan-barang' && (
+            <PenerimaanBarangEkspressManager
+              isDark={isDark}
+              userId={currentUser?.id}
+            />
+          )}
+          {activeTab === 'penerimaan-barang-harga' && (
+            <PenerimaanBarangHargaManager
+              key={`rcv-price-${currentUser?.id || 'anon'}`}
+              isDark={isDark}
+              hasHpp={Boolean(currentUser?.hasHpp)}
+              userId={currentUser?.id}
+            />
+          )}
 
           {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} />}
 
-          {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} />}
+          {activeTab === 'laporan-penjualan' && (
+            <SalesReportManager
+              key={`report-${currentUser?.id || 'anon'}`}
+              isDark={isDark}
+              hasHpp={Boolean(currentUser?.hasHpp)}
+            />
+          )}
 
-          {activeTab === 'user-management' && <UserAccessManager isDark={isDark} />}
+          {activeTab === 'user-management' && (
+            <UserAccessManager
+              key={`user-mgmt-${currentUser?.id || 'anon'}`}
+              isDark={isDark}
+              currentUser={currentUser}
+            />
+          )}
         </main>
       </div>
 
       {/* Login Modal */}
       <LoginModal
         isOpen={isLoginOpen}
-        onClose={() => setIsLoginOpen(false)}
+        onClose={() => {
+          if (currentUser) setIsLoginOpen(false);
+        }}
         onLoginSuccess={(user, perms) => {
           setCurrentUser(user);
           setUserPermissions(perms);

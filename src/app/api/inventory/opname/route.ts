@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     const paginationParams = getPaginationParams(req, 50);
 
     if (noTx) {
-      const details = await prisma.t_opname.findMany({
+      const details = await (prisma as any).t_opname.findMany({
         where: { notransaction: noTx },
       });
 
@@ -21,14 +21,14 @@ export async function GET(req: Request) {
       const inventoryIds = details.map((d: any) => d.inventoryid).filter(Boolean);
       const inventories = await prisma.inventory.findMany({
         where: { id: { in: inventoryIds } },
-        select: { id: true, barcode: true, inventoryno: true, inventoryname: true, price: true, stokupdate: true },
+        select: { id: true, barcode: true, inventoryNo: true, inventoryName: true, price: true, stock: true },
       });
 
-      const invMap = new Map(inventories.map((inv: any) => [inv.id, inv]));
+      const invMap = new Map(inventories.map((inv) => [inv.id, inv]));
 
       const items = details.map((d: any) => {
         const matched = invMap.get(d.inventoryid);
-        const sysQty = matched?.stokupdate || 0;
+        const sysQty = matched?.stock || 0;
         const physQty = Number(d.qty || 0);
         const diffQty = physQty - sysQty;
 
@@ -36,10 +36,10 @@ export async function GET(req: Request) {
           id: String(d.id),
           inventoryId: d.inventoryid,
           barcode: matched?.barcode || d.barcode || '',
-          inventoryNo: matched?.inventoryno || '',
-          inventory_no: matched?.inventoryno || '',
-          inventoryName: matched?.inventoryname || '',
-          inventory_name: matched?.inventoryname || '',
+          inventoryNo: matched?.inventoryNo || '',
+          inventory_no: matched?.inventoryNo || '',
+          inventoryName: matched?.inventoryName || '',
+          inventory_name: matched?.inventoryName || '',
           systemQty: sysQty,
           system_qty: sysQty,
           physicalQty: physQty,
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
       : undefined;
 
     // We must group by notransaction to get headers
-    const groups = await prisma.t_opname.groupBy({
+    const groups = await (prisma as any).t_opname.groupBy({
       by: ['notransaction', 'opnamedate', 'createddate'],
       where,
       _count: { inventoryid: true },
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
     });
     
     // For total count of unique opnames
-    const totalGroups = await prisma.t_opname.groupBy({
+    const totalGroups = await (prisma as any).t_opname.groupBy({
       by: ['notransaction'],
       where,
     });
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
       const inv = await prisma.inventory.findUnique({ where: { id: Number(body.inventoryId) } });
       if (inv) {
         no_tx = no_tx || `OPN-SINGLE-${Date.now()}`;
-        const physQty = Number(body.qtyOpname ?? body.qty ?? body.physicalQty ?? inv.stokupdate);
+        const physQty = Number(body.qtyOpname ?? body.qty ?? body.physicalQty ?? inv.stock);
         items = [{
           inventoryId: inv.id,
           barcode: inv.barcode || '',
@@ -135,11 +135,11 @@ export async function POST(req: Request) {
 
     // Resolve inventory IDs for items that might only have barcodes or inventory_no
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
+    const inventories = await prisma.inventory.findMany({ where: { inventoryNo: { in: inventoryNos } } });
+    const invMapByNo = new Map(inventories.map((i) => [i.inventoryNo, i.id]));
 
     const result = await prisma.$transaction(async (tx) => {
-      await tx.t_opname.deleteMany({
+      await (tx as any).t_opname.deleteMany({
         where: { notransaction: no_tx },
       });
       
@@ -160,14 +160,14 @@ export async function POST(req: Request) {
         };
       });
 
-      await tx.t_opname.createMany({ data: toCreate });
+      await (tx as any).t_opname.createMany({ data: toCreate });
 
       // Adjust stock
       for (const it of toCreate) {
         if (it.inventoryid) {
           await tx.inventory.updateMany({
             where: { id: it.inventoryid },
-            data: { stokupdate: it.qty },
+            data: { stock: it.qty },
           });
         }
       }

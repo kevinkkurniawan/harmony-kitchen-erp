@@ -8,49 +8,40 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const where: any = { memotype: 'USAGE' };
+    const where: any = {};
     if (q) {
       where.OR = [
-        { memocode: { contains: q, mode: 'insensitive' as const } },
-        { remarks: { contains: q, mode: 'insensitive' as const } },
+        { usageNo: { contains: q, mode: 'insensitive' as const } },
+        { description: { contains: q, mode: 'insensitive' as const } },
       ];
     }
 
     const [total, headers] = await Promise.all([
-      prisma.t_memoheader.count({ where }),
-      prisma.t_memoheader.findMany({
+      prisma.inventoryUsageHeader.count({ where }),
+      prisma.inventoryUsageHeader.findMany({
         where,
-        include: { t_memodetail: true },
+        include: { details: true },
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
         take: paginationParams.limit,
       }),
     ]);
 
-    const inventoryIds = Array.from(new Set(
-      headers.flatMap((h: any) => h.t_memodetail.map((d: any) => d.inventoryid))
-    )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
-    const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
-
-    const mapped = headers.map((h: any) => ({
+    const mapped = headers.map((h) => ({
       id: h.id,
-      usage_no: h.memocode,
-      usage_date: h.memodate,
-      wh_name: 'Gudang Utama',
-      description: h.remarks || '',
-      items: h.t_memodetail.map((d: any) => {
-        const inv = inventoryMap.get(d.inventoryid);
-        return {
-          id: d.id,
-          barcode: inv?.barcode || '',
-          inventory_no: inv?.inventoryno || '',
-          inventory_name: inv?.inventoryname || '',
-          qty: Number(d.qty),
-          uom_name: d.uom || 'PCS',
-          notes: d.remarks || '',
-        };
-      }),
+      usage_no: h.usageNo,
+      usage_date: h.usageDate,
+      wh_name: h.whName || 'Gudang Utama',
+      description: h.description || '',
+      items: h.details.map((d) => ({
+        id: d.id,
+        barcode: d.barcode || '',
+        inventory_no: d.inventoryNo || '',
+        inventory_name: d.inventoryName || '',
+        qty: Number(d.qty),
+        uom_name: d.uomName || 'PCS',
+        notes: d.notes || '',
+      })),
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);
@@ -69,43 +60,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'No. Pemakaian dan detail barang wajib diisi' }, { status: 400 });
     }
 
-    const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
-
-    const created = await prisma.t_memoheader.create({
+    const created = await prisma.inventoryUsageHeader.create({
       data: {
-        memocode: usage_no,
-        memodate: usage_date ? new Date(usage_date) : new Date(),
-        memotype: 'USAGE',
-        remarks: description,
-        createduser: 'system',
-        createddate: new Date(),
-        modifieduser: 'system',
-        modifieddate: new Date(),
-        t_memodetail: {
+        usageNo: usage_no,
+        usageDate: usage_date ? new Date(usage_date) : new Date(),
+        whName: wh_name || 'Gudang Utama',
+        description: description || null,
+        details: {
           create: items.map((it: any) => ({
-            inventoryid: invMapByNo.get(it.inventory_no || it.inventoryNo) || 1,
+            barcode: it.barcode || '',
+            inventoryNo: it.inventoryNo || it.inventory_no || '',
+            inventoryName: it.inventoryName || it.inventory_name || '',
+            uomName: it.uomName || it.uom_name || 'PCS',
             qty: Number(it.qty) || 0,
-            uom: it.uom_name || it.uomName || 'PCS',
-            remarks: it.notes || null,
-            createduser: 'system',
-            createddate: new Date(),
-            modifieduser: 'system',
-            modifieddate: new Date(),
+            notes: it.notes || null,
           })),
         },
       },
-      include: { t_memodetail: true },
+      include: { details: true },
     });
 
     // Decrement stock for inventory items
     for (const it of items) {
-      const invId = invMapByNo.get(it.inventory_no || it.inventoryNo);
-      if (invId) {
+      const invNo = it.inventoryNo || it.inventory_no;
+      if (invNo) {
         await prisma.inventory.updateMany({
-          where: { id: invId },
-          data: { stokupdate: { decrement: Number(it.qty) } },
+          where: { inventoryNo: invNo },
+          data: { stock: { decrement: Number(it.qty) || 0 } },
         }).catch(() => {});
       }
     }

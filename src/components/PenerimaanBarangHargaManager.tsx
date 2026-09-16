@@ -70,9 +70,47 @@ interface ToastMessage {
 
 interface PenerimaanBarangHargaManagerProps {
   isDark: boolean;
+  hasHpp?: boolean;
+  userId?: number | string;
 }
 
-export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBarangHargaManagerProps) {
+export default function PenerimaanBarangHargaManager({
+  isDark,
+  hasHpp = false,
+  userId,
+}: PenerimaanBarangHargaManagerProps) {
+  // Column Width Resizing State (User Scoped)
+  const DEFAULT_NAME_WIDTH = 240;
+  const MIN_NAME_WIDTH = 160;
+  const MAX_NAME_WIDTH = 600;
+  const [nameColWidth, setNameColWidth] = useState<number>(DEFAULT_NAME_WIDTH);
+
+  useEffect(() => {
+    const userKey = userId ? `user_${userId}` : 'guest';
+    const saved = localStorage.getItem(`hk_erp_col_width_rcv_price_${userKey}`);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= MIN_NAME_WIDTH && parsed <= MAX_NAME_WIDTH) {
+        setNameColWidth(parsed);
+        return;
+      }
+    }
+    setNameColWidth(DEFAULT_NAME_WIDTH);
+  }, [userId]);
+
+  const updateNameColWidth = (newWidth: number) => {
+    const clamped = Math.min(MAX_NAME_WIDTH, Math.max(MIN_NAME_WIDTH, newWidth));
+    setNameColWidth(clamped);
+    const userKey = userId ? `user_${userId}` : 'guest';
+    localStorage.setItem(`hk_erp_col_width_rcv_price_${userKey}`, clamped.toString());
+  };
+
+  const resetNameColWidth = () => {
+    setNameColWidth(DEFAULT_NAME_WIDTH);
+    const userKey = userId ? `user_${userId}` : 'guest';
+    localStorage.removeItem(`hk_erp_col_width_rcv_price_${userKey}`);
+  };
+
   // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
 
@@ -837,7 +875,60 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     <th className="py-3 px-3.5 text-center w-12">No</th>
                     <th className="py-3 px-4">Barcode</th>
                     <th className="py-3 px-4">Kode Barang</th>
-                    <th className="py-3 px-4">Nama Barang</th>
+                    <th
+                      style={{ width: `${nameColWidth}px`, minWidth: `${nameColWidth}px` }}
+                      className="py-3 px-4 relative select-none"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span>Nama Barang</span>
+                        <div className="flex items-center gap-1 text-[10px] font-mono lowercase opacity-75 hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => updateNameColWidth(nameColWidth - 30)}
+                            className="px-1 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+                            title="Perkecil kolom (-30px)"
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateNameColWidth(nameColWidth + 30)}
+                            className="px-1 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-white cursor-pointer"
+                            title="Perlebar kolom (+30px)"
+                          >
+                            +
+                          </button>
+                          {nameColWidth !== DEFAULT_NAME_WIDTH && (
+                            <button
+                              type="button"
+                              onClick={resetNameColWidth}
+                              className="px-1 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
+                              title="Reset lebar kolom"
+                            >
+                              reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          const startX = e.clientX;
+                          const startW = nameColWidth;
+                          const onMove = (moveEv: MouseEvent) => {
+                            updateNameColWidth(startW + (moveEv.clientX - startX));
+                          };
+                          const onUp = () => {
+                            window.removeEventListener('mousemove', onMove);
+                            window.removeEventListener('mouseup', onUp);
+                          };
+                          window.addEventListener('mousemove', onMove);
+                          window.addEventListener('mouseup', onUp);
+                        }}
+                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-amber-500 transition-colors"
+                        title="Tarik untuk mengubah lebar kolom"
+                      />
+                    </th>
                     <th className="py-3 px-3 text-center">Satuan</th>
                     <th className="py-3 px-3 text-center w-24">Qty Masuk *</th>
                     <th className="py-3 px-4 text-right w-36">Harga Beli (Rp) *</th>
@@ -860,7 +951,12 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                         <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
                         <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
-                        <td className="py-3 px-4 font-black">{item.inventoryName}</td>
+                        <td
+                          style={{ width: `${nameColWidth}px`, minWidth: `${nameColWidth}px`, maxWidth: `${nameColWidth}px` }}
+                          className="py-3 px-4 font-black break-words whitespace-normal leading-snug"
+                        >
+                          {item.inventoryName}
+                        </td>
                         <td className="py-3 px-3 text-center font-bold">{item.uomName}</td>
                         <td className="py-3 px-3 text-center">
                           <input

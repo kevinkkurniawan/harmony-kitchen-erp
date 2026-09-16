@@ -60,12 +60,14 @@ export const MODULE_LABEL_MAP: Record<string, { label: string; group: string }> 
 
 interface UserAccessManagerProps {
   isDark: boolean;
+  currentUser?: any;
 }
 
-export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
+export default function UserAccessManager({ isDark, currentUser }: UserAccessManagerProps) {
   const [usersList, setUsersList] = useState<UserRecord[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
   const [userPermissions, setUserPermissions] = useState<ModulePermission[]>([]);
+  const [userGrants, setUserGrants] = useState<string[]>([]);
 
   // Add User Form Modal
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -116,6 +118,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setUserPermissions(json.data);
+        setUserGrants(json.grants || []);
         setIsPermModalOpen(true);
       } else {
         showToast('Gagal memuat permission user', 'error');
@@ -126,6 +129,12 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleToggleGrant = (grantKey: string) => {
+    setUserGrants((prev) =>
+      prev.includes(grantKey) ? prev.filter((k) => k !== grantKey) : [...prev, grantKey]
+    );
   };
 
   // Toggle single permission checkbox
@@ -166,6 +175,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         body: JSON.stringify({
           userId: selectedUser.id,
           permissions: userPermissions,
+          grants: userGrants,
         }),
       });
 
@@ -535,6 +545,109 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   </div>
                 </div>
               ))}
+
+              {/* 🛡️ PRIVILEGED GRANTS SECTION */}
+              <div className="pt-4 border-t border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <span>Hak Akses Khusus & Privileged Grants</span>
+                  </h3>
+                  <span className="text-[10px] text-slate-500 font-mono">Explicit Grants (T_User_Grant)</span>
+                </div>
+
+                {!currentUser?.canManageGrants && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs">
+                    ℹ️ Hanya akun dengan wewenang <strong>Grant Administrator</strong> (<code>auth.manageGrants</code>) yang dapat mengubah hak akses khusus di bawah.
+                  </div>
+                )}
+
+                {currentUser?.id === selectedUser?.id && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs">
+                    ⚠️ Administrator tidak dapat memberikan atau mencabut hak akses khusus untuk akunnya sendiri.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Grant 1: inventory.viewHpp */}
+                  <label
+                    className={`p-3 rounded-xl border flex items-start gap-2.5 transition-all ${
+                      currentUser?.canManageGrants && currentUser?.id !== selectedUser?.id
+                        ? 'cursor-pointer hover:border-amber-500/50'
+                        : 'opacity-60 cursor-not-allowed'
+                    } ${
+                      userGrants.includes('inventory.viewHpp')
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+                        : isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={!currentUser?.canManageGrants || currentUser?.id === selectedUser?.id}
+                      checked={userGrants.includes('inventory.viewHpp')}
+                      onChange={() => handleToggleGrant('inventory.viewHpp')}
+                      className="mt-0.5 w-4 h-4 accent-amber-500 rounded"
+                    />
+                    <div>
+                      <div className="text-xs font-bold">Lihat HPP & Modal</div>
+                      <div className="text-[10px] text-slate-400">Menampilkan kolom dan nilai HPP di master barang, purchasing, dan laporan stok</div>
+                      <div className="text-[9px] font-mono text-amber-500/70 mt-1">inventory.viewHpp</div>
+                    </div>
+                  </label>
+
+                  {/* Grant 2: reports.viewAllCashiers */}
+                  <label
+                    className={`p-3 rounded-xl border flex items-start gap-2.5 transition-all ${
+                      currentUser?.canManageGrants && currentUser?.id !== selectedUser?.id
+                        ? 'cursor-pointer hover:border-amber-500/50'
+                        : 'opacity-60 cursor-not-allowed'
+                    } ${
+                      userGrants.includes('reports.viewAllCashiers')
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+                        : isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={!currentUser?.canManageGrants || currentUser?.id === selectedUser?.id}
+                      checked={userGrants.includes('reports.viewAllCashiers')}
+                      onChange={() => handleToggleGrant('reports.viewAllCashiers')}
+                      className="mt-0.5 w-4 h-4 accent-amber-500 rounded"
+                    />
+                    <div>
+                      <div className="text-xs font-bold">Rekap Seluruh Kasir</div>
+                      <div className="text-[10px] text-slate-400">Melihat rekap transaksi kasir lain dan total lintas kasir di POS & ERP</div>
+                      <div className="text-[9px] font-mono text-amber-500/70 mt-1">reports.viewAllCashiers</div>
+                    </div>
+                  </label>
+
+                  {/* Grant 3: auth.manageGrants */}
+                  <label
+                    className={`p-3 rounded-xl border flex items-start gap-2.5 transition-all ${
+                      currentUser?.canManageGrants && currentUser?.id !== selectedUser?.id
+                        ? 'cursor-pointer hover:border-amber-500/50'
+                        : 'opacity-60 cursor-not-allowed'
+                    } ${
+                      userGrants.includes('auth.manageGrants')
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
+                        : isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={!currentUser?.canManageGrants || currentUser?.id === selectedUser?.id}
+                      checked={userGrants.includes('auth.manageGrants')}
+                      onChange={() => handleToggleGrant('auth.manageGrants')}
+                      className="mt-0.5 w-4 h-4 accent-amber-500 rounded"
+                    />
+                    <div>
+                      <div className="text-xs font-bold">Grant Administrator</div>
+                      <div className="text-[10px] text-slate-400">Berwenang mengelola dan memberikan hak akses khusus kepada pengguna lain</div>
+                      <div className="text-[9px] font-mono text-amber-500/70 mt-1">auth.manageGrants</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
             </div>
 
             {/* Modal Footer */}

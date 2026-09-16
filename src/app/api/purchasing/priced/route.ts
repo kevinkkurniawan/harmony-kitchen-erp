@@ -1,147 +1,95 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { resolveSession } from '@/lib/auth';
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    const authUser = await resolveSession(req);
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
     const where: any = {
-      poid: { not: null }, // Priced means it has a PO
+      isPriced: true,
     };
     if (q) {
       where.OR = [
-        { mrno: { contains: q, mode: 'insensitive' as const } },
-        { pono: { contains: q, mode: 'insensitive' as const } },
-        { suppliername: { contains: q, mode: 'insensitive' as const } },
+        { mrNo: { contains: q, mode: 'insensitive' as const } },
+        { poNo: { contains: q, mode: 'insensitive' as const } },
+        { supplierName: { contains: q, mode: 'insensitive' as const } },
       ];
     }
 
     const [total, receives] = await Promise.all([
-      prisma.t_materialreceiveheader.count({ where }),
-      prisma.t_materialreceiveheader.findMany({
+      prisma.materialReceiveHeader.count({ where }),
+      prisma.materialReceiveHeader.findMany({
         where,
-        include: { t_materialreceivedetail: true },
+        include: { details: true },
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
         take: paginationParams.limit,
       }),
     ]);
 
-    const inventoryIds = Array.from(new Set(
-      receives.flatMap((r: any) => r.t_materialreceivedetail.map((d: any) => d.inventoryid))
-    )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
-    const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
-
-    const mapped = receives.map((mr: any) => {
-      return {
+    const mapped = receives.map((mr) => {
+      const result: any = {
         id: mr.id,
-        mr_no: mr.mrno,
-        mr_date: mr.mrdate,
-        po_no: mr.pono || '-',
-        do_no: mr.dono || '-',
-        supplier_id: mr.supplierid,
-        supplier_name: mr.suppliername,
-        driver_name: mr.drivername || '-',
-        vehicle_no: mr.vehicleno || '-',
-        wh_name: 'Gudang Utama',
+        mr_no: mr.mrNo,
+        mr_date: mr.mrDate.toISOString(),
+        po_no: mr.poNo || '-',
+        do_no: mr.doNo || '-',
+        supplier_id: mr.supplierId,
+        supplier_name: mr.supplierName,
+        driver_name: mr.driverName || '-',
+        vehicle_no: mr.vehicleNo || '-',
+        wh_name: mr.whName || 'Gudang Utama',
         description: mr.description || '-',
-        is_express: false,
-        is_void: mr.isvoid,
-        payment_type: mr.paymenttype || '-',
-        due_date: mr.duedate,
-        down_payment: mr.downpayment || 0,
-        disc_percentage: mr.discpercentage || 0,
-        ppn_percentage: mr.ppnpercentage || 0,
-        subtotal: Number(mr.grandtotal || 0) - Number(mr.ppnvalue || 0),
-        tax: Number(mr.ppnvalue || 0),
-        grand_total: Number(mr.grandtotal || 0),
-        items: mr.t_materialreceivedetail.map((d: any) => {
-          const inv = inventoryMap.get(d.inventoryid);
-          return {
+        is_express: mr.isExpress,
+        is_void: mr.isVoid,
+        is_priced: mr.isPriced,
+        payment_type: mr.paymentType || '-',
+        due_date: mr.dueDate ? mr.dueDate.toISOString() : null,
+        created_at: mr.createdAt.toISOString(),
+        items: mr.details.map((d) => {
+          const itemResult: any = {
             id: d.id,
-            barcode: inv?.barcode || '',
-            inventory_no: inv?.inventoryno || '',
-            inventory_name: inv?.inventoryname || '',
-            qty: Number(d.qty),
-            unit_price: Number(d.price),
-            subtotal: Number(d.subtotal),
+            barcode: d.barcode,
+            inventory_no: d.inventoryNo,
+            inventory_name: d.inventoryName,
+            qty: d.qty,
+            uom_name: d.uomName || 'Pcs',
             description: d.description || '',
           };
+          // Mask unit price and subtotal if user has no HPP permission
+          if (authUser.hasHpp) {
+            itemResult.unit_price = d.unitPrice;
+            itemResult.subtotal = d.subtotal;
+          }
+          return itemResult;
         }),
-        created_at: mr.createddate,
       };
+
+      // Mask financial totals if user has no HPP permission
+      if (authUser.hasHpp) {
+        result.down_payment = mr.downPayment || 0;
+        result.disc_percentage = mr.discPercentage || 0;
+        result.ppn_percentage = mr.ppnPercentage || 0;
+        result.subtotal = mr.subtotal || 0;
+        result.tax = mr.tax || 0;
+        result.grand_total = mr.grandTotal || 0;
+      }
+
+      return result;
     });
 
     return createPaginatedResponse(mapped, total, paginationParams);
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
-}
-
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { mr_no, mr_date, po_no, do_no, supplier_name, driver_name, vehicle_no, description, tax, grand_total, items } = body;
-
-    const supplier = await prisma.supplier.findFirst({ where: { suppliername: supplier_name } });
-    
-    // Find PO
-    const po = po_no ? await prisma.t_purchaseorderheader.findFirst({ where: { pono: po_no } }) : null;
-
-    const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
-
-    const created = await prisma.t_materialreceiveheader.create({
-      data: {
-        mrno: mr_no,
-        mrdate: mr_date ? new Date(mr_date) : new Date(),
-        poid: po ? po.id : null,
-        pono: po_no,
-        dono: do_no,
-        supplierid: supplier ? supplier.id : 1,
-        suppliername: supplier_name,
-        drivername: driver_name,
-        vehicleno: vehicle_no,
-        description,
-        ppnvalue: Number(tax || 0),
-        grandtotal: Number(grand_total || 0),
-        isvoid: false,
-        ispaid: false,
-        createduser: 'system',
-        createddate: new Date(),
-        modifieduser: 'system',
-        modifieddate: new Date(),
-        t_materialreceivedetail: {
-          create: items.map((it: any) => ({
-            inventoryid: String(invMapByNo.get(it.inventory_no || it.inventoryNo) || 1),
-            qty: Number(it.qty) || 0,
-            price: Number(it.unit_price || it.unitPrice || 0),
-            subtotal: Number(it.subtotal || 0),
-            description: it.description || null,
-            isinventory: true,
-            createduser: 'system',
-            createddate: new Date(),
-            modifieduser: 'system',
-            modifieddate: new Date(),
-          })),
-        },
-      },
-    });
-
-    // Update inventory stock
-    for (const it of items) {
-      const invId = invMapByNo.get(it.inventory_no || it.inventoryNo);
-      if (invId) {
-        await prisma.inventory.update({
-          where: { id: invId },
-          data: { stokupdate: { increment: Number(it.qty) || 0 } },
-        });
-      }
-    }
-
-    return NextResponse.json({ success: true, data: created });
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) {
+    console.error('Error in GET /api/purchasing/priced:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }

@@ -10,13 +10,14 @@ export async function GET(req: Request) {
 
     const where: any = {};
     if (q) {
-      where.promoname = { contains: q, mode: 'insensitive' as const };
+      where.promoName = { contains: q, mode: 'insensitive' as const };
     }
 
     const [total, promos] = await Promise.all([
       prisma.promo.count({ where }),
       prisma.promo.findMany({
         where,
+        include: { group: true },
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
         take: paginationParams.limit,
@@ -25,30 +26,30 @@ export async function GET(req: Request) {
 
     const mapped = promos.map((p: any) => ({
       id: String(p.id),
-      promoNo: `PRM-${p.id}`,
-      promo_no: `PRM-${p.id}`,
-      promoName: p.promoname,
-      promo_name: p.promoname,
-      groupId: 1,
-      groupName: 'Promo Utama',
-      group_name: 'Promo Utama',
-      promoBundle: p.promobundle,
-      promoGrosir: p.promogrosir,
-      promoGrosirType: 'PERCENT',
-      qtyMin: p.qtymin || 1,
-      qtyMax: p.qtymax || 9999,
-      isPartial: p.ispartial,
-      isGroup: p.isgroup,
+      promoNo: p.promoNo || `PRM-${p.id}`,
+      promo_no: p.promoNo || `PRM-${p.id}`,
+      promoName: p.promoName,
+      promo_name: p.promoName,
+      groupId: p.groupId,
+      groupName: p.group?.groupName || 'Promo Utama',
+      group_name: p.group?.groupName || 'Promo Utama',
+      promoBundle: p.promoBundle,
+      promoGrosir: p.promoGrosir,
+      promoGrosirType: p.promoGrosirType || 'PERCENT',
+      qtyMin: p.qtyMin || 1,
+      qtyMax: p.qtyMax || 9999,
+      isPartial: p.isPartial,
+      isGroup: p.isGroup,
       description: p.description,
-      discountPct: p.promopercentage ? Number(p.promopercentage) : 0,
-      discount_pct: p.promopercentage ? Number(p.promopercentage) : 0,
-      startDate: p.createddate,
-      start_date: p.createddate,
-      endDate: p.modifieddate,
-      end_date: p.modifieddate,
-      isActive: p.isactive,
-      is_active: p.isactive,
-      createdAt: p.createddate,
+      discountPct: p.discountPct ? Number(p.discountPct) : 0,
+      discount_pct: p.discountPct ? Number(p.discountPct) : 0,
+      startDate: p.startDate,
+      start_date: p.startDate,
+      endDate: p.endDate,
+      end_date: p.endDate,
+      isActive: p.isActive,
+      is_active: p.isActive,
+      createdAt: p.createdAt,
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);
@@ -69,32 +70,33 @@ export async function POST(req: Request) {
     const isGroup = body.isGroup ?? true;
     const description = body.description;
     const isActive = body.isActive ?? body.is_active ?? true;
+    const groupId = body.groupId ? Number(body.groupId) : null;
+    const startDate = body.startDate ? new Date(body.startDate) : new Date();
+    const endDate = body.endDate ? new Date(body.endDate) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
     if (!promoName) {
       return NextResponse.json({ success: false, error: 'Nama Promo wajib diisi' }, { status: 400 });
     }
 
-    const max = await prisma.promo.aggregate({ _max: { promobundle: true, promogrosir: true } });
-    const bundleId = (max._max.promobundle || 0) + 1;
-    const grosirId = (max._max.promogrosir || 0) + 1;
+    const promoNo = body.promoNo || `PRM-${Date.now()}`;
 
     const created = await prisma.promo.create({
       data: {
-        promobundle: bundleId,
-        promogrosir: grosirId,
-        promoname: promoName,
-        promovalue: 0,
-        promopercentage: Number(discountPct || 0),
-        qtymin: Number(qtyMin || 1),
-        qtymax: Number(qtyMax || 9999),
-        ispartial: Boolean(isPartial),
-        isgroup: Boolean(isGroup),
+        promoNo,
+        promoName,
+        groupId,
+        promoBundle: 1,
+        promoGrosir: 0,
+        promoGrosirType: 'PERCENT',
+        discountPct: Number(discountPct || 0),
+        qtyMin: Number(qtyMin || 1),
+        qtyMax: Number(qtyMax || 9999),
+        isPartial: Boolean(isPartial),
+        isGroup: Boolean(isGroup),
         description: description || null,
-        isactive: Boolean(isActive),
-        createduser: 'system',
-        createddate: new Date(),
-        modifieduser: 'system',
-        modifieddate: new Date(),
+        startDate,
+        endDate,
+        isActive: Boolean(isActive),
       },
     });
 
@@ -104,3 +106,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+

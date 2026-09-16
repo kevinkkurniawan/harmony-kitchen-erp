@@ -8,49 +8,41 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const where: any = { memotype: 'RETURN' };
+    const where: any = {};
     if (q) {
       where.OR = [
-        { memocode: { contains: q, mode: 'insensitive' as const } },
-        { remarks: { contains: q, mode: 'insensitive' as const } },
+        { returnNo: { contains: q, mode: 'insensitive' as const } },
+        { mrNo: { contains: q, mode: 'insensitive' as const } },
+        { supplierName: { contains: q, mode: 'insensitive' as const } },
       ];
     }
 
     const [total, returns] = await Promise.all([
-      prisma.t_memoheader.count({ where }),
-      prisma.t_memoheader.findMany({
+      prisma.purchaseReturnHeader.count({ where }),
+      prisma.purchaseReturnHeader.findMany({
         where,
-        include: { t_memodetail: true },
+        include: { details: true },
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
         take: paginationParams.limit,
       }),
     ]);
 
-    const inventoryIds = Array.from(new Set(
-      returns.flatMap((r: any) => r.t_memodetail.map((d: any) => d.inventoryid))
-    )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
-    const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
-
     const mapped = returns.map((r: any) => ({
       id: r.id,
-      return_no: r.memocode,
-      return_date: r.memodate,
-      mr_no: r.memoreason, // Store MR No in memoreason
-      supplier_name: 'Supplier', // Could extract from remarks or MR
-      return_reason: r.remarks || '',
-      created_at: r.createddate,
-      items: r.t_memodetail.map((d: any) => {
-        const inv = inventoryMap.get(d.inventoryid);
-        return {
-          id: d.id,
-          barcode: inv?.barcode || '',
-          inventory_no: inv?.inventoryno || '',
-          inventory_name: inv?.inventoryname || '',
-          qty: Number(d.qty),
-        };
-      }),
+      return_no: r.returnNo,
+      return_date: r.returnDate,
+      mr_no: r.mrNo,
+      supplier_name: r.supplierName,
+      return_reason: r.returnReason || '',
+      created_at: r.createdAt,
+      items: r.details.map((d: any) => ({
+        id: d.id,
+        barcode: d.barcode,
+        inventory_no: d.inventoryNo,
+        inventory_name: d.inventoryName,
+        qty: Number(d.qty),
+      })),
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);
@@ -70,42 +62,38 @@ export async function POST(req: Request) {
     }
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
+    const inventories = await prisma.inventory.findMany({ where: { inventoryNo: { in: inventoryNos } } });
+    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryNo, i]));
 
-    const created = await prisma.t_memoheader.create({
+    const created = await prisma.purchaseReturnHeader.create({
       data: {
-        memocode: return_no,
-        memodate: return_date ? new Date(return_date) : new Date(),
-        memotype: 'RETURN',
-        memoreason: mr_no,
-        remarks: return_reason || `Retur untuk ${supplier_name}`,
-        createduser: 'system',
-        createddate: new Date(),
-        modifieduser: 'system',
-        modifieddate: new Date(),
-        t_memodetail: {
-          create: items.map((it: any) => ({
-            inventoryid: invMapByNo.get(it.inventory_no || it.inventoryNo) || 1,
-            qty: Number(it.qty) || 0,
-            uom: 'Pcs',
-            createduser: 'system',
-            createddate: new Date(),
-            modifieduser: 'system',
-            modifieddate: new Date(),
-          })),
+        returnNo: return_no,
+        returnDate: return_date ? new Date(return_date) : new Date(),
+        mrNo: mr_no,
+        supplierName: supplier_name,
+        returnReason: return_reason || null,
+        details: {
+          create: items.map((it: any) => {
+            const inv = invMapByNo.get(it.inventory_no || it.inventoryNo);
+            return {
+              barcode: inv?.barcode || it.barcode || '',
+              inventoryNo: it.inventory_no || it.inventoryNo || '',
+              inventoryName: inv?.inventoryName || it.inventory_name || it.inventoryName || '',
+              qty: Number(it.qty) || 0,
+            };
+          }),
         },
       },
-      include: { t_memodetail: true },
+      include: { details: true },
     });
 
     // Decrement stock for returned items
     for (const it of items) {
-      const invId = invMapByNo.get(it.inventory_no || it.inventoryNo);
-      if (invId) {
-        await prisma.inventory.updateMany({
-          where: { id: invId },
-          data: { stokupdate: { decrement: Number(it.qty) } },
+      const inv = invMapByNo.get(it.inventory_no || it.inventoryNo);
+      if (inv) {
+        await prisma.inventory.update({
+          where: { id: inv.id },
+          data: { stock: { decrement: Number(it.qty) } },
         }).catch(() => {});
       }
     }
@@ -116,3 +104,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
