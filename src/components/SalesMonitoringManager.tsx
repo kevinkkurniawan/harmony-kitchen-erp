@@ -234,7 +234,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
       {/* 📊 METRICS HEADER & MAIN TOOLBAR */}
       <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
@@ -263,10 +263,10 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
       {/* 📊 KPI SUMMARY METRIC CARDS */}
       <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
             <DollarSign className="w-5 h-5" />
@@ -280,7 +280,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
             <Receipt className="w-5 h-5" />
@@ -294,7 +294,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
             <TrendingUp className="w-5 h-5" />
@@ -308,7 +308,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <QrCode className="w-5 h-5" />
@@ -324,10 +324,10 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
       {/* 💳 PAYMENT METHOD BREAKDOWN CARDS */}
       <div className={`px-4 py-3 border-b grid grid-cols-2 md:grid-cols-5 gap-3 text-xs ${
-        isDark ? 'bg-slate-900/30 border-slate-800' : 'bg-slate-100/70 border-slate-200'
+        isDark ? 'bg-slate-900/30 border-slate-800' : 'bg-slate-100/70 border-slate-300'
       }`}>
         <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-emerald-400" />
@@ -339,7 +339,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="flex items-center gap-2">
             <QrCode className="w-4 h-4 text-blue-400" />
@@ -351,7 +351,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="flex items-center gap-2">
             <Building2 className="w-4 h-4 text-indigo-400" />
@@ -363,7 +363,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="flex items-center gap-2">
             <CreditCard className="w-4 h-4 text-purple-400" />
@@ -375,7 +375,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         </div>
 
         <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-amber-400" />
@@ -389,7 +389,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
       {/* 🔍 FILTER & SEARCH BAR */}
       <div className={`p-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className="flex items-center gap-3 flex-1 flex-wrap min-w-[300px]">
           {/* Live Search Input */}
@@ -401,7 +401,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`w-full border rounded-xl pl-10 pr-4 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900'
+                isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
               }`}
             />
           </div>
@@ -417,7 +417,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                 setActiveDateFilter('all');
               }}
               className={`p-1.5 rounded-xl border text-xs font-bold focus:outline-none ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
               }`}
             />
             <span className="text-slate-400">-</span>
@@ -429,7 +429,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                 setActiveDateFilter('all');
               }}
               className={`p-1.5 rounded-xl border text-xs font-bold focus:outline-none ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
               }`}
             />
           </div>
@@ -483,7 +483,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
       {/* 📄 MAIN TRANSACTION TABLE WORKBENCH */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
@@ -531,7 +531,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   const grandTotal = row.grandTotal ?? row.grand_total ?? 0;
 
                   return (
-                    <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                    <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                       <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
                       <td className="py-3.5 px-4 font-mono text-slate-300">{txDate}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">

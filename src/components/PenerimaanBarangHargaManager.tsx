@@ -383,7 +383,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
 
       {/* 📊 METRICS HEADER & MAIN TOOLBAR */}
       <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
@@ -429,7 +429,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
                 <DollarSign className="w-5 h-5" />
@@ -443,7 +443,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
                 <Package className="w-5 h-5" />
@@ -457,7 +457,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
                 <Receipt className="w-5 h-5" />
@@ -471,7 +471,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
             </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
                 <Building2 className="w-5 h-5" />
@@ -487,7 +487,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
 
           {/* Search & Filter Toolbar */}
           <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -497,7 +497,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 value={listSearch}
                 onChange={(e) => setListSearch(e.target.value)}
                 className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
                 }`}
               />
             </div>
@@ -515,7 +515,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
 
           {/* Main Table Grid of Priced Receipts WORKBENCH */}
           <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
@@ -559,7 +559,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     const grandTotal = row.grandTotal ?? row.totalAmount ?? row.total_amount ?? 0;
 
                     return (
-                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className="py-3.5 px-4 font-mono text-slate-300">{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
@@ -616,7 +616,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* Form Header */}
           <div className={`p-5 border-b shadow-sm ${
-            isDark ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-300'
+            isDark ? 'bg-slate-800/90 border-slate-700' : 'bg-white border-slate-300'
           }`}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-bold">
               <div>
@@ -765,9 +765,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                   if (!val.trim()) setSearchResults([]);
                 }}
                 className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                  isDark
-                    ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400'
-                    : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
+                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
                 }`}
               />
               {isSearchingProduct && (
@@ -784,7 +782,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                       key={prod.id}
                       onClick={() => handleAddProductToItems(prod)}
                       className={`p-3 border-b text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                        isDark ? 'hover:bg-slate-800 border-slate-800' : 'hover:bg-slate-100 border-slate-200'
+                        isDark ? 'hover:bg-slate-800 border-slate-800' : 'hover:bg-slate-100 border-slate-300'
                       }`}
                     >
                       <div>
@@ -827,7 +825,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
           {/* Line Items Table & Financial Calculations */}
           <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
             <div className={`rounded-2xl border overflow-hidden shadow-lg flex-1 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <table className="w-full text-left border-collapse text-xs">
                 <thead className={`font-black uppercase tracking-wider ${
@@ -856,7 +854,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     </tr>
                   ) : (
                     items.map((item, idx) => (
-                      <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                      <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
                         <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
@@ -938,7 +936,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
 
             {/* Financial Footer Card */}
             <div className={`p-5 rounded-2xl border shadow-xl flex flex-wrap items-center justify-between gap-6 ${
-              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-1 text-xs">
                 <div>

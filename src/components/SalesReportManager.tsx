@@ -147,9 +147,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
       {/* 📊 PAGE HEADER (HIDDEN ON PRINT) */}
       <div
         className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all no-print ${
-          isDark
-            ? 'bg-gradient-to-r from-slate-900 via-purple-950/20 to-slate-900 border-slate-800'
-            : 'bg-gradient-to-r from-purple-50/70 via-white to-purple-50/40 border-purple-200'
+          isDark ? 'bg-gradient-to-r from-slate-900 via-purple-950/20 to-slate-900 border-slate-800' : 'bg-gradient-to-r from-purple-50/70 via-white to-purple-50/40 border-purple-200'
         }`}
       >
         <div className="flex items-center gap-4">
@@ -181,9 +179,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           <button
             onClick={loadReportData}
             className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 active:scale-98 cursor-pointer transition-all ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -253,7 +249,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {/* Total Omset Bersih */}
         <div
           className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
           }`}
         >
           <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500 font-bold">
@@ -275,7 +271,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {/* Total Transaksi */}
         <div
           className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
           }`}
         >
           <div className="p-3 rounded-xl bg-amber-500/10 text-amber-500 font-bold">
@@ -297,7 +293,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {/* Total Profit Margin */}
         <div
           className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
           }`}
         >
           <div className="p-3 rounded-xl bg-purple-500/10 text-purple-500 font-bold">
@@ -319,7 +315,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {/* Payment Breakdown (QRIS & Cash) */}
         <div
           className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
           }`}
         >
           <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500 font-bold">
@@ -340,7 +336,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
       {/* 🔍 FILTER & TAB NAVIGATION CONTROLS */}
       <div
         className={`p-4 rounded-2xl border shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
         {/* 4 Report Tabs (1:1 Admin.Frm_Report) */}
@@ -404,7 +400,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             value={paymentMethodFilter}
             onChange={(e) => setPaymentMethodFilter(e.target.value)}
             className={`p-2 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer ${
-              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
             }`}
           >
             <option value="All">Semua Metode Pembayaran</option>
@@ -419,7 +415,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
       {/* 📄 DATA TABLE CONTENT */}
       <div
         className={`rounded-2xl border shadow-lg overflow-hidden transition-all ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
         {/* TAB 1: DAILY SALES REPORT */}
@@ -465,7 +461,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     <tr
                       key={row.date}
                       className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
+                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
                       }`}
                     >
                       <td className="py-3.5 px-4 text-center font-mono font-black text-purple-400">
@@ -530,7 +526,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     <tr
                       key={row.month}
                       className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
+                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
                       }`}
                     >
                       <td className="py-3.5 px-4 text-center font-mono font-black text-purple-400">
@@ -589,7 +585,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     <tr
                       key={idx}
                       className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
+                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
                       }`}
                     >
                       <td className="py-3.5 px-4 font-mono font-semibold text-purple-400">
@@ -625,7 +621,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
               {/* Gross vs Net Revenue */}
               <div
                 className={`p-5 rounded-2xl border ${
-                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-white border-slate-300'
                 }`}
               >
                 <h3 className="text-xs font-black uppercase tracking-wider text-purple-400 mb-4 flex items-center gap-2">
@@ -659,7 +655,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
               {/* Profit & Margin Breakdown */}
               <div
                 className={`p-5 rounded-2xl border ${
-                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-white border-slate-300'
                 }`}
               >
                 <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-4 flex items-center gap-2">

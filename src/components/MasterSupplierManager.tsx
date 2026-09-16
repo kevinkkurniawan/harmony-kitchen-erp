@@ -315,7 +315,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
       {/* 📊 SUMMARY CARDS HEADER */}
       <div className={`px-5 py-3 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
           isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-blue-50/60 border-blue-200/80'
@@ -372,7 +372,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
       {/* 👑 MASTER SUPPLIER TOOLBAR */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         {/* Search Bar Input */}
         <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
@@ -387,9 +387,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`w-full border-2 rounded-xl pl-10 pr-10 py-1.5 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                isDark
-                  ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400'
-                  : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
+                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
               }`}
             />
             {searchQuery && (
@@ -447,9 +445,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
           <button
             onClick={exportToCSV}
             className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50'
-                : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
+              isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
             }`}
           >
             <Download className="w-4 h-4 text-emerald-300" />
@@ -462,9 +458,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               addToast('Data supplier berhasil di-refresh', 'info');
             }}
             className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -476,7 +470,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
       {/* 📄 SUPPLIER DATA TABLE WORKBENCH */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
@@ -541,7 +535,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     className={`transition-colors cursor-pointer ${
                       selectedSupplier?.id === sup.id
                         ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                        : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
+                        : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
                     }`}
                   >
                     <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{sup.id}</td>
@@ -706,7 +700,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.supplierNo || ''}
                     onChange={(e) => setFormData({ ...formData, supplierNo: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
@@ -719,7 +713,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.supplierName || ''}
                     onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -734,7 +728,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.address || ''}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -746,7 +740,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.city || ''}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -761,7 +755,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.phone1 || ''}
                     onChange={(e) => setFormData({ ...formData, phone1: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -773,7 +767,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.phone2 || ''}
                     onChange={(e) => setFormData({ ...formData, phone2: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -785,7 +779,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.fax || ''}
                     onChange={(e) => setFormData({ ...formData, fax: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -800,7 +794,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.contactPerson || ''}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -812,7 +806,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.email || ''}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -827,7 +821,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.taxNo || ''}
                     onChange={(e) => setFormData({ ...formData, taxNo: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
@@ -852,7 +846,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                   value={formData.description || ''}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>

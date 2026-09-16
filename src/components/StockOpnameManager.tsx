@@ -554,7 +554,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       {/* 👑 TOP COMPACT WORKBENCH TOOLBAR */}
       <div
         className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm shrink-0 ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
         {/* Title & Transaction Selector */}
@@ -638,9 +638,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
               opnameItems.length === 0
                 ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
             }`}
             title="Export data opname ke CSV"
           >
@@ -654,9 +652,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
               opnameItems.length === 0
                 ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
             }`}
             title="Cetak Laporan Stok Opname"
           >
@@ -691,10 +687,10 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
       {/* 📊 SUMMARY METRICS CARDS (1:1 with SyncStock) */}
       <div className={`px-5 py-3.5 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm shrink-0 ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <Package className="w-5 h-5" />
@@ -708,7 +704,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
             <CheckCircle className="w-5 h-5" />
@@ -722,7 +718,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400">
             <AlertTriangle className="w-5 h-5" />
@@ -736,7 +732,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <DollarSign className="w-5 h-5" />
@@ -838,11 +834,11 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT (1:1 with SyncStock) */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           {/* Table Toolbar (Tabs & Search) */}
           <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 sticky top-0 z-30 ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
           {/* Filter Tabs */}
           <div className="flex items-center gap-1.5">
@@ -1032,7 +1028,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
         {/* COMPACT WORKBENCH FOOTER STATS BAR */}
         <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-3 shrink-0 ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
         }`}>
           <div className="flex items-center gap-4 text-xs font-bold">
             <span className="text-slate-400">

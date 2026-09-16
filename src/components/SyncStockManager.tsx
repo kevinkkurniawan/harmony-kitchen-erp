@@ -65,7 +65,7 @@ const SyncStockRow = React.memo(function SyncStockRow({
       className={`cursor-pointer transition-colors ${
         row.isChecked
           ? isDark ? 'bg-amber-950/20 hover:bg-amber-900/30' : 'bg-amber-50/80 hover:bg-amber-100/80'
-          : isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'
+          : isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'
       }`}
     >
       <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -327,7 +327,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
 
       {/* 📊 SUMMARY METRICS HEADER */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
@@ -383,10 +383,10 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
 
       {/* 📊 SUMMARY METRICS CARDS */}
       <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
             <Layers className="w-5 h-5" />
@@ -400,7 +400,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
             <Package className="w-5 h-5" />
@@ -414,7 +414,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
             <Store className="w-5 h-5" />
@@ -428,7 +428,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <ArrowRightLeft className="w-5 h-5" />
@@ -444,7 +444,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
 
       {/* 🔍 SEARCH & CHECKBOX SELECTION TOOLBAR */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className="flex items-center gap-3 flex-1 max-w-md">
           <div className="relative flex-1">
@@ -455,7 +455,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900'
+                isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
               }`}
             />
           </div>
@@ -477,7 +477,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
       {/* 📄 MAIN TABLE GRID OF SYNC ITEMS */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
@@ -536,7 +536,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
           {/* 📄 PAGINATION FOOTER */}
           {!isLoading && items.length > 0 && (
             <div className={`px-4 py-2.5 border-t flex items-center justify-between text-xs font-black shrink-0 ${
-              isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+              isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
             }`}>
               <div className="flex items-center gap-3">
                 <span>
@@ -551,7 +551,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
                       setCurrentPage(1);
                     }}
                     className={`border rounded-lg px-2 py-1 text-xs cursor-pointer focus:outline-none font-black ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   >
                     <option value={50}>50</option>
@@ -642,7 +642,7 @@ export default function SyncStockManager({ isDark }: SyncStockManagerProps) {
                     </tr>
                   ) : (
                     historyLogs.map((log) => (
-                      <tr key={log.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                      <tr key={log.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3 px-4 text-center font-mono font-black text-indigo-400">{log.syncNo}</td>
                         <td className="py-3 px-4 font-mono">{log.syncDate}</td>
                         <td className="py-3 px-4 text-center font-bold">{log.totalItems} Items</td>

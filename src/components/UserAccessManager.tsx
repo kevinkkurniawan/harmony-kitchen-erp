@@ -255,9 +255,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
       {/* 🛡️ PAGE HEADER */}
       <div
         className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-          isDark
-            ? 'bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900 border-slate-800'
-            : 'bg-gradient-to-r from-emerald-50/70 via-white to-emerald-50/40 border-emerald-200'
+          isDark ? 'bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900 border-slate-800' : 'bg-gradient-to-r from-emerald-50/70 via-white to-emerald-50/40 border-emerald-200'
         }`}
       >
         <div className="flex items-center gap-4">
@@ -289,9 +287,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           <button
             onClick={loadUsers}
             className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 active:scale-95 cursor-pointer transition-all ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -303,7 +299,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
       {/* 👥 USERS TABLE GRID */}
       <div
         className={`rounded-2xl border shadow-lg overflow-hidden transition-all ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
         <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
@@ -351,7 +347,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                 <tr
                   key={user.id}
                   className={`transition-colors ${
-                    isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
+                    isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
                   }`}
                 >
                   <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">{user.id}</td>
@@ -398,7 +394,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
           <div
             className={`w-full max-w-4xl rounded-3xl border shadow-2xl overflow-hidden my-8 transition-all ${
-              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
             }`}
           >
             {/* Modal Header */}
@@ -460,7 +456,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                       <div
                         key={perm.moduleCode}
                         className={`p-3 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
-                          isDark ? 'bg-slate-950/50 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                          isDark ? 'bg-slate-950/50 border-slate-800/80' : 'bg-white border-slate-300'
                         }`}
                       >
                         <div className="font-bold text-xs">
@@ -565,7 +561,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div
             className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 transition-all ${
-              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
             }`}
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -588,7 +584,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   onChange={(e) => setNewUsername(e.target.value)}
                   placeholder="e.g. kasir2"
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
                   }`}
                 />
               </div>
@@ -602,7 +598,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   onChange={(e) => setNewFullName(e.target.value)}
                   placeholder="e.g. Dewi Sartika"
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
                   }`}
                 />
               </div>
@@ -613,7 +609,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   value={newUserLevel}
                   onChange={(e) => setNewUserLevel(e.target.value)}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-50 text-slate-900 border-slate-300'
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
                   }`}
                 >
                   <option value="Kasir">Kasir POS</option>

@@ -333,7 +333,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
 
       {/* 📊 METRICS HEADER & MAIN TOOLBAR */}
       <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-2xl bg-orange-500/20 text-orange-400 border border-orange-500/30">
@@ -379,7 +379,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-orange-500/20 text-orange-400">
                 <Package className="w-5 h-5" />
@@ -393,7 +393,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
                 <Building2 className="w-5 h-5" />
@@ -407,7 +407,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
                 <Truck className="w-5 h-5" />
@@ -421,7 +421,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
                 <FileText className="w-5 h-5" />
@@ -437,7 +437,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
 
           {/* Search & Filter Toolbar */}
           <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -447,7 +447,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 value={listSearch}
                 onChange={(e) => setListSearch(e.target.value)}
                 className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900'
+                  isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
                 }`}
               />
             </div>
@@ -465,7 +465,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
 
           {/* Main Table Grid of Receipts WORKBENCH */}
           <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
@@ -509,7 +509,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     const qty = row.totalQty ?? row.total_qty ?? (row.items ? row.items.length : 0);
 
                     return (
-                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className="py-3.5 px-4 font-mono text-slate-300">{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
@@ -564,7 +564,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* Form Header */}
           <div className={`p-5 border-b shadow-sm ${
-            isDark ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-300'
+            isDark ? 'bg-slate-800/90 border-slate-700' : 'bg-white border-slate-300'
           }`}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-bold">
               <div>
@@ -686,9 +686,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                   if (!val.trim()) setSearchResults([]);
                 }}
                 className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                  isDark
-                    ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400'
-                    : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
+                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
                 }`}
               />
               {isSearchingProduct && (
@@ -705,7 +703,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                       key={prod.id}
                       onClick={() => handleAddProductToItems(prod)}
                       className={`p-3 border-b text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                        isDark ? 'hover:bg-slate-800 border-slate-800' : 'hover:bg-slate-100 border-slate-200'
+                        isDark ? 'hover:bg-slate-800 border-slate-800' : 'hover:bg-slate-100 border-slate-300'
                       }`}
                     >
                       <div>
@@ -748,7 +746,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
           {/* Line Items Table */}
           <div className="flex-1 overflow-auto p-4">
             <div className={`rounded-2xl border overflow-hidden shadow-lg ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
             }`}>
               <table className="w-full text-left border-collapse text-xs">
                 <thead className={`font-black uppercase tracking-wider ${
@@ -775,7 +773,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     </tr>
                   ) : (
                     items.map((item, idx) => (
-                      <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}>
+                      <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
                         <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
                         <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
@@ -805,7 +803,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                               setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, description: val } : it)));
                             }}
                             className={`w-full p-1.5 rounded-lg border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                              isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                             }`}
                           />
                         </td>
