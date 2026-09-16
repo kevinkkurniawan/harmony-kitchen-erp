@@ -1440,15 +1440,15 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       <th className="p-3 text-right">Total Nilai HPP</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-300 dark:divide-slate-800 font-black text-slate-950 dark:text-slate-100">
+                  <tbody className={`divide-y font-black ${isDark ? "divide-slate-800 text-slate-100" : "divide-slate-300 text-slate-950"}`}>
                     {products.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-200 odd:bg-white even:bg-slate-100">
-                        <td className="p-3 font-mono font-black text-slate-950 dark:text-amber-400">{p.inventoryNo}</td>
-                        <td className="p-3 font-black text-slate-950 dark:text-slate-100">{p.inventoryName}</td>
-                        <td className="p-3 text-center text-slate-950 dark:text-slate-300">{p.stokAwal}</td>
-                        <td className="p-3 text-center font-black text-emerald-950 dark:text-emerald-400">{p.stokAkhir}</td>
-                        <td className="p-3 text-right text-slate-950 dark:text-slate-300">Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
-                        <td className="p-3 text-right font-black text-emerald-950 dark:text-emerald-400">
+                      <tr key={p.id} className={isDark ? "hover:bg-slate-800 odd:bg-slate-900 even:bg-slate-800/50" : "hover:bg-slate-200 odd:bg-white even:bg-slate-100"}>
+                        <td className={`p-3 font-mono font-black ${isDark ? "text-amber-400" : "text-slate-950"}`}>{p.inventoryNo}</td>
+                        <td className={`p-3 font-black ${isDark ? "text-slate-100" : "text-slate-950"}`}>{p.inventoryName}</td>
+                        <td className={`p-3 text-center ${isDark ? "text-slate-300" : "text-slate-950"}`}>{p.stokAwal}</td>
+                        <td className={`p-3 text-center font-black ${isDark ? "text-emerald-400" : "text-emerald-950"}`}>{p.stokAkhir}</td>
+                        <td className={`p-3 text-right ${isDark ? "text-slate-300" : "text-slate-950"}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
+                        <td className={`p-3 text-right font-black ${isDark ? "text-emerald-400" : "text-emerald-950"}`}>
                           Rp {((p.hpp || 0) * (p.stokAkhir || 0)).toLocaleString('id-ID')}
                         </td>
                       </tr>
@@ -1486,8 +1486,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
           }`}>
             <div className="flex items-center justify-between border-b-2 border-slate-300 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <Printer className="w-5 h-5 text-slate-950 dark:text-indigo-400" />
-                <h3 className="font-black text-sm text-slate-950 dark:text-white">Cetak Queue Barcode Label</h3>
+                <Printer className={`w-5 h-5 ${isDark ? "text-indigo-400" : "text-slate-950"}`} />
+                <h3 className={`font-black text-sm ${isDark ? "text-white" : "text-slate-950"}`}>Cetak Queue Barcode Label</h3>
               </div>
               <button onClick={() => setIsBarcodeModalOpen(false)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-950 cursor-pointer transition-colors">
                 <X className="w-4 h-4" />
