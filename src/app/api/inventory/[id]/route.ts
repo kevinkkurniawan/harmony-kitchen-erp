@@ -14,14 +14,50 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params;
     const body = await req.json();
-    const updated = await prisma.inventory.update({ where: { id: Number(id) }, data: { inventoryno: body.inventory_no, inventoryname: body.inventory_name, price: Number(body.price) || 0 } });
+    const data = {
+      inventoryno: body.inventoryNo || body.inventory_no,
+      inventoryname: body.inventoryName || body.inventory_name,
+      barcode: body.barcode || body.inventoryNo || body.inventory_no,
+      inventorybrandid: body.inventoryBrandId ? Number(body.inventoryBrandId) : undefined,
+      inventorycategoryid: body.inventoryCategoryId ? Number(body.inventoryCategoryId) : undefined,
+      inventoryproductid: body.inventoryProductId ? Number(body.inventoryProductId) : undefined,
+      uomid: body.uoMId ? Number(body.uoMId) : undefined,
+      minstock: body.minStock !== undefined ? Number(body.minStock) : undefined,
+      maxstock: body.maxStock !== undefined ? Number(body.maxStock) : undefined,
+      kodeharga: body.kodeHarga,
+      description: body.description,
+      hpp: body.hpp !== undefined ? Number(body.hpp) : undefined,
+      price: body.price !== undefined ? Number(body.price) : undefined,
+      pricebuy: body.priceBuy !== undefined ? Number(body.priceBuy) : undefined,
+      grosir1: body.grosir1 !== undefined ? Number(body.grosir1) : null,
+      grosir2: body.grosir2 !== undefined ? Number(body.grosir2) : null,
+      grosir3: body.grosir3 !== undefined ? Number(body.grosir3) : null,
+      isactive: body.isActive !== undefined ? Boolean(body.isActive) : undefined,
+      stokawal: body.stokAwal !== undefined ? Number(body.stokAwal) : undefined,
+    };
+    
+    // Clean up undefined fields so we don't overwrite with nulls if omitted
+    Object.keys(data).forEach(key => data[key as keyof typeof data] === undefined && delete data[key as keyof typeof data]);
+
+    const updated = await prisma.inventory.update({ where: { id: Number(id) }, data });
     return NextResponse.json({ success: true, data: updated });
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) {
+    console.error('Update error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     await prisma.inventory.delete({ where: { id: Number(id) } });
     return NextResponse.json({ success: true });
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) { 
+    if (error?.code === 'P2003') {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Barang tidak bisa dihapus karena sudah memiliki riwayat transaksi. Silakan ubah status menjadi Non-Aktif.' 
+      }, { status: 400 });
+    }
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 }); 
+  }
 }

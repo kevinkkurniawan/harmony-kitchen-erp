@@ -23,6 +23,8 @@ import {
   ChevronUp,
   ChevronDown,
   Zap,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -73,9 +75,11 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
   
-  // Explicit Filter Checkboxes from Frm_Inventory / Frm_InventoryStock
+  // Explicit Filter State (Replicating DevExpress Column Header Filters)
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
   const [filterMinusStock, setFilterMinusStock] = useState<boolean>(mode === 'stock');
+  const [filterCategoryId, setFilterCategoryId] = useState<number | 'all'>('all');
+  const [filterBrandId, setFilterBrandId] = useState<number | 'all'>('all');
   const [showDetailPane, setShowDetailPane] = useState<boolean>(true);
 
   // Sorting State
@@ -108,19 +112,18 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
   const [activeFormTab, setActiveFormTab] = useState<'general' | 'pricing' | 'stock'>('general');
   const [hppHistory, setHppHistory] = useState<HppHistoryItem[]>([]);
-
-  // Opname Modal State
+  // Opname State
+  const [isSubmittingOpname, setIsSubmittingOpname] = useState(false);
   const [opnameQty, setOpnameQty] = useState<number>(0);
   useEffect(() => {
-    if (selectedProduct) setOpnameQty(selectedProduct.stokAkhir);
+    if (selectedProduct) setOpnameQty(selectedProduct.stokAkhir || 0);
   }, [selectedProduct]);
 
 
   // Stock Report Modal State (Laporan Stok)
   const [isStockReportModalOpen, setIsStockReportModalOpen] = useState(false);
 
-  // Barcode Queue Modal State
-  const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
+  // Barcode Queue State
   const [barcodeQueue, setBarcodeQueue] = useState<{ product: ERPProduct; printQty: number }[]>([]);
 
   // Form Fields State
@@ -305,7 +308,6 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         setExpandedRowId(null);
         setIsCreatingNew(false);
         setIsStockReportModalOpen(false);
-        setIsBarcodeModalOpen(false);
         setContextMenu(null);
       } else if (e.key === '/' && !expandedRowId) {
         e.preventDefault();
@@ -329,17 +331,20 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     }
   };
 
-  // Processed & Sorted Products
-  const sortedProducts = [...products].sort((a, b) => {
-    const valA = a[sortField] ?? '';
-    const valB = b[sortField] ?? '';
-    if (typeof valA === 'number' && typeof valB === 'number') {
-      return sortOrder === 'asc' ? valA - valB : valB - valA;
-    }
-    return sortOrder === 'asc'
-      ? String(valA).localeCompare(String(valB))
-      : String(valB).localeCompare(String(valA));
-  });
+  // Processed & Filtered & Sorted Products
+  const sortedProducts = [...products]
+    .filter(p => filterCategoryId === 'all' || p.inventoryCategoryId === filterCategoryId)
+    .filter(p => filterBrandId === 'all' || p.inventoryBrandId === filterBrandId)
+    .sort((a, b) => {
+      const valA = a[sortField] ?? '';
+      const valB = b[sortField] ?? '';
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortOrder === 'asc' ? valA - valB : valB - valA;
+      }
+      return sortOrder === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
 
   // Paginated Products
   const totalPages = Math.ceil(sortedProducts.length / pageSize) || 1;
@@ -474,11 +479,31 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     }
   };
 
-
+  // Quick Toggle Status
+  const handleToggleStatus = async (product: ERPProduct) => {
+    try {
+      const res = await fetch(`/api/inventory/${product.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...product, isActive: !product.isActive }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        addToast(`Status "${product.inventoryName}" berhasil diubah`, 'success');
+        fetchProducts();
+      } else {
+        addToast(`Gagal merubah status: ${json.error}`, 'error');
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Error: ${message}`, 'error');
+    }
+  };
 
   // Submit Opname
-  const handleSaveOpname = async () => {
-    if (!selectedProduct) return;
+  const handleSaveOpname = async (mode: 'add' | 'set') => {
+    if (!selectedProduct || isSubmittingOpname) return;
+    setIsSubmittingOpname(true);
     try {
       const res = await fetch(`/api/inventory/opname`, {
         method: 'POST',
@@ -486,11 +511,12 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         body: JSON.stringify({
           inventoryId: selectedProduct.id,
           qtyOpname: opnameQty,
+          mode: mode,
         }),
       });
       const json = await res.json();
       if (json.success) {
-        addToast(`Stok Opname "${selectedProduct.inventoryName}" berhasil diperbarui menjadi ${opnameQty}`, 'success');
+        addToast(`Stok "${selectedProduct.inventoryName}" berhasil di${mode === 'add' ? 'tambah' : 'set'} sejumlah ${opnameQty}`, 'success');
         fetchProducts();
       } else {
         addToast(`Gagal opname: ${json.error}`, 'error');
@@ -498,6 +524,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       addToast(`Error: ${message}`, 'error');
+    } finally {
+      setIsSubmittingOpname(false);
     }
   };
 
@@ -511,7 +539,6 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       return [...prev, { product, printQty: 1 }];
     });
     addToast(`"${product.inventoryName}" ditambahkan ke queue barcode`, 'info');
-    setIsBarcodeModalOpen(true);
   };
 
   // Close context menu on outside click
@@ -611,6 +638,17 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       required
                       value={formData.inventoryName || ''}
                       onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black focus:ring-2 focus:ring-slate-500 outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block mb-1">Keterangan / Deskripsi</label>
+                    <input
+                      type="text"
+                      value={formData.description || ''}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       className={`w-full border-2 rounded-xl px-2 py-1 font-black focus:ring-2 focus:ring-slate-500 outline-none ${
                         isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
                       }`}
@@ -720,13 +758,24 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                     />
                   </div>
                   <div>
+                    <label className="block mb-1 text-emerald-950 dark:text-emerald-400">Harga Beli</label>
+                    <input
+                      type="number"
+                      value={formData.priceBuy ?? 0}
+                      onChange={(e) => setFormData({ ...formData, priceBuy: parseFloat(e.target.value) || 0 })}
+                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                        isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
+                      }`}
+                    />
+                  </div>
+                  <div>
                     <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
                     <input
                       type="number"
                       value={formData.hpp ?? 0}
                       onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
                       className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
-                        isDark ? 'bg-slate-950 border-emerald-900/50 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
+                        isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
                       }`}
                     />
                   </div>
@@ -945,18 +994,45 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <span>Refresh</span>
           </button>
 
-          <button
-            onClick={() => setIsBarcodeModalOpen(true)}
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border-indigo-500/50' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-900 border-indigo-300 shadow-sm'
-            }`}
-          >
-            <Tag className="w-4 h-4 text-indigo-200" />
-            <span>List Barcode</span>
-            <span className="px-1.5 py-0.5 rounded-full font-mono text-[10px] bg-slate-950 text-white font-black">
-              {barcodeQueue.reduce((a, b) => a + b.printQty, 0)}
+          <div className={`flex items-center gap-1 p-1 rounded-xl border ${isDark ? 'border-indigo-500/50 bg-indigo-950/20' : 'border-indigo-300 bg-indigo-50/50'}`}>
+            <span className="px-2 font-black text-[10px] uppercase text-indigo-500 dark:text-indigo-400">
+              Antrian: {barcodeQueue.reduce((a, b) => a + b.printQty, 0)}
             </span>
-          </button>
+            <button
+              onClick={() => {
+                if (barcodeQueue.length === 0) return addToast('Antrian kosong!', 'error');
+                addToast(`Mengirim ${barcodeQueue.reduce((a, b) => a + b.printQty, 0)} label dengan harga ke printer...`, 'info');
+                setBarcodeQueue([]);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                isDark ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
+              }`}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Cetak dgn Harga</span>
+            </button>
+            <button
+              onClick={() => {
+                if (barcodeQueue.length === 0) return addToast('Antrian kosong!', 'error');
+                addToast(`Mengirim ${barcodeQueue.reduce((a, b) => a + b.printQty, 0)} label tanpa harga ke printer...`, 'info');
+                setBarcodeQueue([]);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-200' : 'bg-white hover:bg-slate-100 text-indigo-900 border border-indigo-200'
+              }`}
+            >
+              <Printer className="w-3.5 h-3.5 opacity-70" />
+              <span>Cetak tanpa Harga</span>
+            </button>
+            {barcodeQueue.length > 0 && (
+              <button
+                onClick={() => setBarcodeQueue([])}
+                className="px-2 py-1 mx-1 rounded-lg text-[10px] font-black text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-colors cursor-pointer"
+              >
+                Kosongkan
+              </button>
+            )}
+          </div>
 
           <button
             onClick={exportToCSV}
@@ -968,9 +1044,35 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <span>Export Data</span>
           </button>
 
-          {/* Filter Checkboxes */}
-          <div className={`flex items-center gap-3 border-l-2 pl-3 ml-1 ${isDark ? 'border-slate-800' : 'border-slate-400'}`}>
-            <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-black transition-colors ${
+          {/* Filter UI (Replicating Native DevExpress Capabilities) */}
+          <div className={`flex items-center gap-2 border-l-2 pl-2 ml-1 ${isDark ? 'border-slate-800' : 'border-slate-400'}`}>
+            <select
+              value={filterCategoryId}
+              onChange={(e) => setFilterCategoryId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+              className={`text-xs font-black rounded-lg px-2 py-1.5 cursor-pointer outline-none border ${
+                isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'
+              }`}
+            >
+              <option value="all">Semua Kategori</option>
+              {lookups.categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.categoryName}</option>
+              ))}
+            </select>
+
+            <select
+              value={filterBrandId}
+              onChange={(e) => setFilterBrandId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+              className={`text-xs font-black rounded-lg px-2 py-1.5 cursor-pointer outline-none border ${
+                isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'
+              }`}
+            >
+              <option value="all">Semua Brand</option>
+              {lookups.brands.map((b) => (
+                <option key={b.id} value={b.id}>{b.brandName}</option>
+              ))}
+            </select>
+
+            <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-black transition-colors px-1 ${
               isDark ? 'text-slate-300 hover:text-white' : 'text-slate-950 hover:text-black'
             }`}>
               <input
@@ -979,10 +1081,10 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 onChange={(e) => setFilterOnlyActive(e.target.checked)}
                 className="w-4 h-4 rounded border-slate-500 bg-white text-slate-950 focus:ring-0 cursor-pointer accent-slate-950"
               />
-              <span>Barang Aktif</span>
+              <span>Aktif</span>
             </label>
 
-            <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-black transition-colors ${
+            <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-black transition-colors px-1 ${
               isDark ? 'text-slate-300 hover:text-white' : 'text-slate-950 hover:text-black'
             }`}>
               <input
@@ -991,8 +1093,28 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 onChange={(e) => setFilterMinusStock(e.target.checked)}
                 className="w-4 h-4 rounded border-slate-500 bg-white text-rose-700 focus:ring-0 cursor-pointer accent-rose-700"
               />
-              <span className={filterMinusStock ? 'text-rose-800 font-black' : ''}>Stok Minus</span>
+              <span className={filterMinusStock ? 'text-rose-800 font-black' : ''}>Minus</span>
             </label>
+
+            {(filterCategoryId !== 'all' || filterBrandId !== 'all' || !filterOnlyActive || filterMinusStock || searchQuery) && (
+              <button
+                onClick={() => {
+                  setFilterCategoryId('all');
+                  setFilterBrandId('all');
+                  setFilterOnlyActive(true);
+                  setFilterMinusStock(false);
+                  setSearchQuery('');
+                  if (searchInputRef.current) searchInputRef.current.value = '';
+                }}
+                className={`px-2 py-1 rounded-lg text-[10px] font-black border transition-colors cursor-pointer flex items-center gap-1 ${
+                  isDark ? 'bg-slate-800 border-slate-600 text-rose-400 hover:bg-slate-700' : 'bg-white border-slate-300 text-rose-700 hover:bg-slate-100'
+                }`}
+                title="Reset All Filters"
+              >
+                <X className="w-3 h-3" />
+                Reset Filter
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1032,16 +1154,22 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
               <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Kategori / Brand</div>
-              <div className="font-black text-sm text-slate-950 dark:text-white">{selectedProduct.brandName || 'Maspion'}</div>
-              <div className="text-slate-950 dark:text-slate-300 text-xs font-bold">{selectedProduct.categoryName || 'Kitchenware'} ({selectedProduct.uomName || 'PCS'})</div>
+              <div className="font-black text-sm text-slate-950 dark:text-white">{selectedProduct.brandName || 'General'}</div>
+              <div className="text-slate-950 dark:text-slate-300 text-xs font-bold">{selectedProduct.categoryName || 'General'} ({selectedProduct.uomName || 'Pcs'})</div>
+              {selectedProduct.description && (
+                <div className="pt-2 mt-2 border-t-2 border-slate-300 dark:border-slate-800 text-[11px] font-medium italic text-slate-600 dark:text-slate-400">
+                  "{selectedProduct.description}"
+                </div>
+              )}
             </div>
 
             {/* Box 3: Retail Price & HPP Modal */}
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Harga Retail & HPP</div>
+              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Harga Retail, Beli & HPP</div>
               <div className="font-black text-sm text-slate-950 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
+              <div className="text-[11px] font-black text-emerald-950 dark:text-emerald-400">Harga Beli: Rp {(selectedProduct.priceBuy || 0).toLocaleString('id-ID')}</div>
               <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
             </div>
 
@@ -1070,6 +1198,48 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 </span>
               </div>
               <div className="text-slate-950 dark:text-slate-400 text-[11px] font-black">Safety: {selectedProduct.minStock} - {selectedProduct.maxStock}</div>
+            </div>
+
+            {/* Box 6: Stok Opname / Adjust */}
+            <div className={`p-3 rounded-xl border-2 space-y-1 ${
+              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
+            }`}>
+              <div className="flex justify-between items-center mb-1.5">
+                <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Stok Opname / Adjust</div>
+                {isSubmittingOpname && <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="input-opname"
+                  type="number"
+                  value={opnameQty}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setOpnameQty(isNaN(val) ? 0 : val);
+                  }}
+                  disabled={isSubmittingOpname}
+                  className={`w-full max-w-[80px] border-2 rounded px-2 py-1 text-center font-black outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    isDark ? 'bg-slate-950 border-slate-700 text-emerald-400 disabled:opacity-50' : 'bg-white border-slate-300 text-slate-950 disabled:opacity-50'
+                  }`}
+                  placeholder="Qty"
+                />
+                <button
+                  onClick={() => handleSaveOpname('add')}
+                  disabled={isSubmittingOpname}
+                  className="p-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded transition-all active:scale-95 disabled:opacity-50"
+                  title="Tambah Stok"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => handleSaveOpname('set')}
+                  disabled={isSubmittingOpname}
+                  className="p-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded transition-all active:scale-95 disabled:opacity-50"
+                  title="Set/Reset Stok"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1122,6 +1292,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
                     </div>
                   </th>
+                  <th className="py-1.5 px-2">Keterangan</th>
                   <th className="py-1.5 px-2 text-right">Grosir 1</th>
                   <th className="py-1.5 px-2 text-right">Grosir 2</th>
                   <th className="py-1.5 px-2 text-right">Grosir 3</th>
@@ -1197,6 +1368,9 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
                       <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
                       <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>
+                      <td className={`py-1 px-2 text-[11px] font-medium max-w-[150px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={item.description || '-'}>
+                        {item.description || '-'}
+                      </td>
                       <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir1 || 0).toLocaleString('id-ID')}</td>
                       <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir2 || 0).toLocaleString('id-ID')}</td>
                       <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir3 || 0).toLocaleString('id-ID')}</td>
@@ -1240,6 +1414,23 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                               title="Edit Detail Barang"
                             >
                               <Edit className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {mode !== 'stock' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setContextMenu(null);
+                                setSelectedProduct(item);
+                                setShowDetailPane(true);
+                                setTimeout(() => document.getElementById('input-opname')?.focus(), 100);
+                              }}
+                              className={`p-1 rounded transition-colors cursor-pointer ${
+                                isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-emerald-300' : 'hover:bg-slate-300 text-slate-700 hover:text-emerald-700'
+                              }`}
+                              title="Stok Opname"
+                            >
+                              <Package className="w-3.5 h-3.5" />
                             </button>
                           )}
                           {mode !== 'stock' && (
@@ -1336,16 +1527,38 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
           }`}
         >
           {mode !== 'stock' && (
-            <button
-              onClick={() => {
-                handleToggleExpand(contextMenu.item);
-                setContextMenu(null);
-              }}
-              className="w-full px-2.5 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
-            >
-              <Edit className="w-3.5 h-3.5" />
-              <span>Detail / Edit Barang</span>
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  handleToggleExpand(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="w-full px-2.5 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <Edit className="w-3.5 h-3.5" />
+                <span>Detail / Edit Barang</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  // Duplicate flow: copy fields but clear SKU/Barcode/ID, then open Create form
+                  const { id, inventoryNo, barcode, stokAwal, stokAkhir, ...rest } = contextMenu.item;
+                  setFormData({
+                    ...rest,
+                    inventoryNo: '',
+                    barcode: '',
+                  });
+                  setExpandedRowId(null);
+                  setIsCreatingNew(true);
+                  setContextMenu(null);
+                  addToast(`Menduplikasi "${contextMenu.item.inventoryName}". Silakan isi SKU baru.`, 'info');
+                }}
+                className="w-full px-2.5 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Duplikat Barang</span>
+              </button>
+            </>
           )}
 
           <button
@@ -1356,10 +1569,23 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             className="w-full px-3 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Cetak Barcode</span>
+            <span>Tambah ke Antrian Cetak</span>
           </button>
           {mode !== 'stock' && (
             <>
+              <div className="h-px bg-slate-300 dark:bg-slate-800 my-1" />
+              <button
+                onClick={() => {
+                  setSelectedProduct(contextMenu.item);
+                  setShowDetailPane(true);
+                  setContextMenu(null);
+                  setTimeout(() => document.getElementById('input-opname')?.focus(), 100);
+                }}
+                className="w-full px-2.5 py-1.5 text-left hover:bg-emerald-600 hover:text-white font-black text-emerald-800 flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <Package className="w-3.5 h-3.5" />
+                <span>Stok Opname / Adjust</span>
+              </button>
               <div className="h-px bg-slate-300 dark:bg-slate-800 my-1" />
               <button
                 onClick={() => {
@@ -1370,6 +1596,19 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Hapus Barang</span>
+              </button>
+              <div className="h-px bg-slate-300 dark:bg-slate-700 my-1" />
+              <button
+                onClick={() => {
+                  handleToggleStatus(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className={`w-full px-2.5 py-1.5 text-left hover:bg-slate-600 hover:text-white font-black flex items-center gap-2 cursor-pointer transition-colors ${
+                  contextMenu.item.isActive ? 'text-rose-600' : 'text-emerald-600'
+                }`}
+              >
+                {contextMenu.item.isActive ? <X className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                <span>Set {contextMenu.item.isActive ? 'Non-Aktif' : 'Aktif'}</span>
               </button>
             </>
           )}
@@ -1478,71 +1717,6 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         </div>
       )}
 
-      {/* 🏷️ MODAL 4: BARCODE PRINT QUEUE DIALOG */}
-      {isBarcodeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full max-w-xl rounded-2xl border-2 shadow-2xl p-6 space-y-4 ${
-            isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-500 text-slate-950'
-          }`}>
-            <div className="flex items-center justify-between border-b-2 border-slate-300 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Printer className={`w-5 h-5 ${isDark ? "text-indigo-400" : "text-slate-950"}`} />
-                <h3 className={`font-black text-sm ${isDark ? "text-white" : "text-slate-950"}`}>Cetak Queue Barcode Label</h3>
-              </div>
-              <button onClick={() => setIsBarcodeModalOpen(false)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-950 cursor-pointer transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs font-black max-h-60 overflow-y-auto">
-              {barcodeQueue.length === 0 ? (
-                <div className="text-center p-6 text-slate-950 font-black">Daftar cetak barcode masih kosong. Klik kanan barang lalu pilih Cetak Barcode.</div>
-              ) : (
-                barcodeQueue.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-3 rounded-xl border-2 border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-950">
-                    <div>
-                      <div className="font-black text-slate-950 dark:text-white">{item.product.inventoryName}</div>
-                      <div className="font-mono text-slate-950 dark:text-slate-400 text-[11px] font-black">{item.product.barcode}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-slate-950 dark:text-slate-300 font-black">Jumlah Label:</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.printQty}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 1;
-                          setBarcodeQueue((prev) => prev.map((b, i) => (i === idx ? { ...b, printQty: val } : b)));
-                        }}
-                        className={`w-16 border-2 rounded-lg px-2 py-1 text-center font-black outline-none ${
-                          isDark ? 'bg-slate-900 border-slate-700 text-indigo-400' : 'bg-white border-slate-400 text-slate-950'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex justify-between items-center pt-2">
-              <button onClick={() => setBarcodeQueue([])} className="text-rose-800 hover:underline text-xs font-black cursor-pointer transition-colors">
-                Kosongkan Queue
-              </button>
-              <div className="flex gap-2">
-                <button onClick={() => setIsBarcodeModalOpen(false)} className="px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                  Tutup
-                </button>
-                <button
-                  onClick={() => addToast(`Mengirim ${barcodeQueue.reduce((a, b) => a + b.printQty, 0)} label barcode ke printer...`, 'info')}
-                  className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs shadow-md cursor-pointer transition-all"
-                >
-                  Cetak Barcode Label
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
