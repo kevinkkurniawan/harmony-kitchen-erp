@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Store,
   Package,
@@ -44,20 +44,31 @@ interface ERPDashboardProps {
   onLogout: () => Promise<void>;
 }
 
-export default function ERPDashboard({ currentUser, userPermissions, onLogout }: ERPDashboardProps) {
-
-  const [activeTab, setActiveTab] = useState<
+type TabKey = 
     | 'master-barang'
     | 'inventory-stok'
-    | 'stok-opname'
     | 'master-promo'
     | 'master-supplier'
     | 'penerimaan-barang'
     | 'penerimaan-barang-harga'
+    | 'stok-opname'
     | 'sales-monitoring'
     | 'laporan-penjualan'
-    | 'user-management'
-  >('master-barang');
+    | 'user-management';
+
+export default function ERPDashboard({ currentUser, userPermissions, onLogout }: ERPDashboardProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>('master-barang');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('erp_active_tab');
+    if (saved) {
+      setActiveTab(saved as TabKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('erp_active_tab', activeTab);
+  }, [activeTab]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
