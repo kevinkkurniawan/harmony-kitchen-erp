@@ -1262,7 +1262,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
           }`}>
             <table className="w-full text-left text-xs border-separate border-spacing-0">
               <thead className="sticky top-0 z-20">
-                <tr className={`uppercase text-[11px] font-black tracking-wider border-b-2 ${
+                <tr className={`h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 ${
                   isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}>
                   <th className="py-1.5 px-2 w-8 text-center"></th>
