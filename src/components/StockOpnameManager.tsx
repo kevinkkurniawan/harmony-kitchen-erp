@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   PackageCheck,
   Plus,
@@ -61,6 +61,13 @@ export interface InventoryLookupItem {
   stokUpdate?: number;
   stokAkhir?: number;
   stock?: number;
+  totalValue?: number;
+}
+
+interface Warehouse {
+  id: number;
+  whCode: number;
+  location: string;
 }
 
 interface StockOpnameManagerProps {
@@ -75,7 +82,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
   // Form States
   const [noTransaction, setNoTransaction] = useState<string>('');
-  const [warehouse, setWarehouse] = useState<string>('Gudang Utama Harmoni');
+  const [warehouse, setWarehouse] = useState<string>('');
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [opnameItems, setOpnameItems] = useState<OpnameEntry[]>([]);
 
   // Input Form Fields
@@ -89,9 +97,15 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'variance' | 'matched'>('all');
 
   // Status States
+  const [isBlindCount, setIsBlindCount] = useState<boolean>(false);
+  const [auditorName, setAuditorName] = useState<string>('Super Administrator');
+  const [isReconciling, setIsReconciling] = useState<boolean>(false);
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToastMessage({ text, type });
@@ -107,10 +121,29 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     return `OPN/${yyyy}/${mm}/${rnd}`;
   }, []);
 
+  // Fetch Warehouses Lookup
+  const fetchWarehouses = useCallback(async () => {
+    try {
+      const res = await fetch('/api/inventory/lookups');
+      const json = await res.json();
+      if (json.success && json.data.warehouses) {
+        setWarehouses(json.data.warehouses);
+        if (json.data.warehouses.length > 0 && !warehouse) {
+          setWarehouse(json.data.warehouses[0].location);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch warehouses', e);
+    }
+  }, [warehouse]);
+
   // Fetch Inventory Lookups & Opname History
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
+      // 0. Fetch Warehouses
+      await fetchWarehouses();
+
       // 1. Fetch Inventory Items for Opname Input
       const invRes = await fetch('/api/inventory?limit=2000');
       const invJson = await invRes.json();
@@ -151,7 +184,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [generateNewTxNo]);
+  }, [generateNewTxNo, fetchWarehouses]);
 
   useEffect(() => {
     loadInitialData();
@@ -166,6 +199,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput('');
     setQtyInput(1);
     setDescInput('');
+    setIsBlindCount(false);
     showToast('Form Stok Opname Baru Siap Diisi', 'info');
   };
 
@@ -275,6 +309,11 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput('');
     setQtyInput(1);
     setDescInput('');
+    
+    // Auto-focus back to barcode scanner for rapid entry muscle memory
+    if (barcodeInputRef.current) {
+      barcodeInputRef.current.focus();
+    }
   };
 
   // Export Opname List to CSV
@@ -375,13 +414,17 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
   };
 
-  // Submit Opname Transaction to Server
-  const handleSubmitOpname = async () => {
+  // Open Reconciliation Preview
+  const handleOpenReconciliation = () => {
     if (opnameItems.length === 0) {
       showToast('Tidak ada item opname yang dimasukkan!', 'error');
       return;
     }
+    setIsReconciling(true);
+  };
 
+  // Submit Opname Transaction to Server
+  const handleSubmitOpname = async () => {
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/inventory/opname', {
@@ -394,14 +437,15 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           wh_name: warehouse,
           warehouse,
           items: opnameItems,
-          createdBy: 'SA',
-          remarks: `Stok Opname ${noTransaction}`,
+          createdBy: auditorName,
+          remarks: `Stok Opname ${noTransaction} (Auditor: ${auditorName})`,
         }),
       });
 
       const json = await res.json();
       if (json.success) {
         showToast(json.message || 'Transaksi Stok Opname berhasil disimpan!', 'success');
+        setIsReconciling(false);
         loadInitialData();
         handleNewOpname();
       } else {
@@ -412,6 +456,43 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       showToast('Terjadi kesalahan saat menyimpan opname', 'error');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Draft Management (Local Storage)
+  const handleSaveDraft = () => {
+    if (opnameItems.length === 0) {
+      showToast('Tidak ada data untuk disimpan sebagai draft', 'error');
+      return;
+    }
+    const draftData = {
+      noTransaction,
+      warehouse,
+      auditorName,
+      isBlindCount,
+      opnameItems,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem('opname_draft', JSON.stringify(draftData));
+    showToast('Draft stok opname berhasil disimpan ke browser', 'success');
+  };
+
+  const handleLoadDraft = () => {
+    const draftStr = localStorage.getItem('opname_draft');
+    if (!draftStr) {
+      showToast('Tidak ada draft yang tersimpan', 'info');
+      return;
+    }
+    try {
+      const draft = JSON.parse(draftStr);
+      setNoTransaction(draft.noTransaction);
+      setWarehouse(draft.warehouse);
+      setAuditorName(draft.auditorName || 'Super Administrator');
+      setIsBlindCount(draft.isBlindCount || false);
+      setOpnameItems(draft.opnameItems || []);
+      showToast(`Draft dimuat (Tersimpan pada: ${new Date(draft.savedAt).toLocaleString()})`, 'info');
+    } catch (e) {
+      showToast('Gagal memuat draft (Data corrupt)', 'error');
     }
   };
 
@@ -604,12 +685,38 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                 isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
               }`}
             >
-              <option value="Gudang Utama Harmoni">Gudang Utama Harmoni</option>
-              <option value="Gudang Display Showroom">Gudang Display Showroom</option>
-              <option value="Bar Kopi Rungkut">Bar Kopi Rungkut</option>
-              <option value="Gudang Pastry">Gudang Pastry</option>
-              <option value="Gudang Elektronik">Gudang Elektronik</option>
+              <option value="" disabled>Pilih Gudang / Lokasi</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.location}>
+                  {w.location}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="h-6 w-px bg-slate-300 dark:bg-slate-800 hidden sm:block" />
+
+          {/* Session Setup Filters */}
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={auditorName}
+              onChange={(e) => setAuditorName(e.target.value)}
+              placeholder="Nama Auditor..."
+              className={`w-32 p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
+              }`}
+              title="Auditor Assignee"
+            />
+            <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isBlindCount}
+                onChange={(e) => setIsBlindCount(e.target.checked)}
+                className="w-3.5 h-3.5 rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
+              />
+              <span className={isDark ? "text-slate-300" : "text-slate-700"}>Blind Count</span>
+            </label>
           </div>
         </div>
 
@@ -620,7 +727,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Opname Baru</span>
+            <span>Baru</span>
           </button>
 
           <button
@@ -629,7 +736,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             title="Muat seluruh barang master inventori ke tabel opname"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Load Master Barang ({inventoryList.length})</span>
+            <span>Load Data ({inventoryList.length})</span>
           </button>
 
           <button
@@ -671,7 +778,32 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           </button>
 
           <button
-            onClick={handleSubmitOpname}
+            onClick={handleSaveDraft}
+            disabled={opnameItems.length === 0}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
+              opnameItems.length === 0
+                ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
+                : isDark ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border-indigo-500/30' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200'
+            }`}
+            title="Simpan sementara ke browser"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>Draft</span>
+          </button>
+
+          <button
+            onClick={handleLoadDraft}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+            }`}
+            title="Muat draft dari browser"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Load</span>
+          </button>
+
+          <button
+            onClick={handleOpenReconciliation}
             disabled={isSubmitting || opnameItems.length === 0}
             className={`px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer ${
               opnameItems.length === 0
@@ -680,7 +812,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             }`}
           >
             <Save className="w-3.5 h-3.5" />
-            <span>{isSubmitting ? 'Menyimpan...' : 'Simpan Opname'}</span>
+            <span>{isSubmitting ? 'Menyimpan...' : 'Simpan'}</span>
           </button>
         </div>
       </div>
@@ -754,12 +886,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       >
         <div className="flex items-center gap-1.5 text-xs font-black uppercase text-amber-500 shrink-0">
           <BarcodeIcon className="w-4 h-4" />
-          <span>Quick Scan / Tambah:</span>
+          <span>Scan Barcode:</span>
         </div>
 
         {/* Scan Barcode / SKU */}
         <div className="w-44">
           <input
+            ref={barcodeInputRef}
             type="text"
             value={barcodeInput}
             onChange={(e) => handleBarcodeChange(e.target.value)}
@@ -901,12 +1034,12 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                   isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}
               >
-                <th className="py-2.5 px-4 w-12 text-center">#No</th>
-                <th className="py-2.5 px-4">SKU / Barcode</th>
+                <th className="py-2.5 px-4 w-12 text-center">No.</th>
+                <th className="py-2.5 px-4">Kode Barang</th>
                 <th className="py-2.5 px-4">Nama Barang</th>
-                <th className="py-2.5 px-4 text-center">Stok Sistem</th>
-                <th className="py-2.5 px-4 text-center min-w-[150px]">Qty Fisik Counted</th>
-                <th className="py-2.5 px-4 text-center">Status Selisih</th>
+                {!isBlindCount && <th className="py-2.5 px-4 text-center">Qty Sistem</th>}
+                <th className="py-2.5 px-4 text-center min-w-[150px]">Qty Fisik</th>
+                {!isBlindCount && <th className="py-2.5 px-4 text-center">Selisih</th>}
                 <th className="py-2.5 px-4">Keterangan</th>
                 <th className="py-2.5 px-4 text-center w-16">Aksi</th>
               </tr>
@@ -952,9 +1085,11 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                       </td>
 
                       {/* System Stock */}
-                      <td className={`py-2.5 px-4 text-center font-mono font-bold text-sm ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                        {sysQty}
-                      </td>
+                      {!isBlindCount && (
+                        <td className={`py-2.5 px-4 text-center font-mono font-bold text-sm ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                          {sysQty}
+                        </td>
+                      )}
 
                       {/* Physical Stock - INLINE STEPPER EDIT */}
                       <td className="py-2.5 px-4 text-center">
@@ -991,22 +1126,24 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         </div>
                       </td>
 
-                      {/* REALTIME VARIANCE BADGE */}
-                      <td className="py-2.5 px-4 text-center">
-                        {diff === 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                            <Check className="w-3 h-3" /> Klop (0)
-                          </span>
-                        ) : diff > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            <ArrowUpRight className="w-3 h-3" /> +{diff} (Surplus)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
-                            <ArrowDownRight className="w-3 h-3" /> {diff} (Defisit)
-                          </span>
-                        )}
-                      </td>
+                      {/* Variance Status Badge */}
+                      {!isBlindCount && (
+                        <td className="py-2.5 px-4 text-center">
+                          {diff === 0 ? (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-wider">
+                              <CheckCircle className="w-3 h-3" /> Klop
+                            </div>
+                          ) : diff > 0 ? (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-500 text-[10px] font-black uppercase tracking-wider">
+                              <ArrowUpRight className="w-3 h-3" /> Surplus (+{diff})
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[10px] font-black uppercase tracking-wider">
+                              <ArrowDownRight className="w-3 h-3" /> Defisit ({diff})
+                            </div>
+                          )}
+                        </td>
+                      )}
 
                       <td className={`py-2.5 px-4 italic ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.description}</td>
 
@@ -1069,6 +1206,110 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           <div className="text-[10px] text-slate-500">Kepala Logistik & Gudang</div>
         </div>
       </div>
+      {/* 🔮 RECONCILIATION PREVIEW MODAL */}
+      {isReconciling && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className={`w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${
+            isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+          }`}>
+            {/* Modal Header */}
+            <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className={`text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    Reconciliation Preview
+                  </h2>
+                  <p className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Konfirmasi Penyesuaian Stok Gudang
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsReconciling(false)}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body: Variance List */}
+            <div className={`flex-1 overflow-auto p-6 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+              <div className={`p-4 rounded-2xl mb-6 flex items-center justify-between border ${isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
+                <div>
+                  <h3 className={`font-bold ${isDark ? 'text-white' : 'text-amber-900'}`}>Peringatan Opname!</h3>
+                  <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-amber-700'}`}>
+                    Tindakan ini akan <strong>menimpa data stok sistem secara permanen</strong> dengan qty fisik yang Anda masukkan. 
+                    Barang dengan <strong>selisih (variance)</strong> akan disesuaikan secara otomatis.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className={`text-2xl font-black ${stats.varianceCount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {stats.varianceCount} Selisih
+                  </div>
+                  <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+                    Dari Total {stats.totalItems} Item
+                  </div>
+                </div>
+              </div>
+
+              {stats.varianceCount > 0 && (
+                <table className="w-full text-left border-separate border-spacing-0 border rounded-xl overflow-hidden">
+                  <thead className={isDark ? 'bg-slate-800' : 'bg-slate-200'}>
+                    <tr className="text-[11px] font-black uppercase text-slate-500">
+                      <th className="px-4 py-2">Nama Barang</th>
+                      <th className="px-4 py-2 text-center">Stok Sistem</th>
+                      <th className="px-4 py-2 text-center">Stok Fisik</th>
+                      <th className="px-4 py-2 text-center">Selisih</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
+                    {opnameItems.filter((i) => i.qty - (i.systemQty ?? i.qty) !== 0).map((item) => {
+                      const sys = item.systemQty ?? item.qty;
+                      const diff = item.qty - sys;
+                      return (
+                        <tr key={item.inventoryId} className={isDark ? 'bg-slate-900' : 'bg-white'}>
+                          <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>
+                          <td className="px-4 py-2 text-center font-mono">{sys}</td>
+                          <td className="px-4 py-2 text-center font-mono">{item.qty}</td>
+                          <td className="px-4 py-2 text-center">
+                            {diff > 0 ? (
+                              <span className="text-indigo-400 font-bold">+{diff} Surplus</span>
+                            ) : (
+                              <span className="text-rose-500 font-bold">{diff} Defisit</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <button
+                onClick={() => setIsReconciling(false)}
+                className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+              >
+                Batal & Cek Ulang
+              </button>
+              <button
+                onClick={handleSubmitOpname}
+                disabled={isSubmitting}
+                className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-amber-500/20"
+              >
+                <Save className="w-4 h-4" />
+                {isSubmitting ? 'Memproses...' : 'Confirm Post Adjustment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   </div>
 );

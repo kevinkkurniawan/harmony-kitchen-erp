@@ -638,21 +638,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
                 }`}>
                   <th className="py-3 px-3.5 text-center w-12">ID</th>
-                  <th className="py-3 px-4">Kode Promo</th>
-                  <th
-                    onClick={() => {
-                      if (sortFieldRule === 'promoName') setSortOrderRule(sortOrderRule === 'asc' ? 'desc' : 'asc');
-                      else { setSortFieldRule('promoName'); setSortOrderRule('asc'); }
-                    }}
-                    className="py-3 px-4 cursor-pointer hover:text-amber-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Nama Promo</span>
-                      {sortFieldRule === 'promoName' && (sortOrderRule === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
-                    </div>
-                  </th>
-                  <th className="py-3 px-4">Kelompok Group</th>
-                  <th className="py-3 px-3 text-right">Diskon %</th>
+                  <th className="py-3 px-4">Nama Promo</th>
+                  <th className="py-3 px-3 text-right">Promo Bundle</th>
+                  <th className="py-3 px-3 text-right">Promo Grosir (Rp)</th>
+                  <th className="py-3 px-3 text-right">Diskon (%)</th>
+                  <th className="py-3 px-3 text-right">Qty Min</th>
+                  <th className="py-3 px-3 text-right">Qty Max</th>
+                  <th className="py-3 px-3 text-center">Group</th>
                   <th className="py-3 px-3 text-center">Status</th>
                   <th className="py-3 px-3 text-center">Aksi</th>
                 </tr>
@@ -701,11 +693,20 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         }`}
                       >
                         <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{rule.id}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-amber-500">{code}</td>
                         <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
-                        <td className={`py-3 px-4 font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{group}</td>
-                        <td className="py-3 px-3 text-right font-mono font-black text-emerald-400">
-                          {pct > 0 ? `${pct}%` : '-'}
+                        <td className="py-3 px-3 text-right font-mono text-slate-600 dark:text-slate-400">{rule.promoBundle || 0}</td>
+                        <td className="py-3 px-3 text-right font-mono font-bold text-emerald-500">{rule.promoGrosir ? `Rp ${rule.promoGrosir.toLocaleString('id-ID')}` : '-'}</td>
+                        <td className="py-3 px-3 text-right font-mono font-black text-amber-500">{pct > 0 ? `${pct}%` : '-'}</td>
+                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-500">{rule.qtyMin || 0}</td>
+                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-500">{rule.qtyMax || 0}</td>
+                        <td className="py-3 px-3 text-center">
+                          {rule.isGroup ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-500/20 text-slate-400 border border-slate-500/40">GLOBAL</span>
+                          ) : (
+                            <span className="font-bold text-slate-700 dark:text-slate-300">
+                              {rule.groupName || rule.group_name || '-'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
@@ -1039,6 +1040,16 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
+                    checked={ruleFormData.isGroup}
+                    onChange={(e) => setRuleFormData({ ...ruleFormData, isGroup: e.target.checked })}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                  />
+                  <span>Berlaku Untuk Grup (isGroup)</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
                     checked={ruleFormData.isPartial}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, isPartial: e.target.checked })}
                     className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
@@ -1056,6 +1067,27 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   <span className="text-emerald-400">Status Promo Aktif</span>
                 </label>
               </div>
+
+              {!ruleFormData.isGroup && (
+                <div>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Pilih Kelompok Promo *</label>
+                  <select
+                    value={ruleFormData.groupName || ''}
+                    onChange={(e) => setRuleFormData({ ...ruleFormData, groupName: e.target.value })}
+                    required={!ruleFormData.isGroup}
+                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  >
+                    <option value="" disabled>Pilih Kelompok Promo</option>
+                    {promoGroups.map(g => (
+                      <option key={g.id} value={g.groupName || g.group_name || ''}>
+                        {g.groupName || g.group_name || 'Kelompok Promo'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Modal Footer Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700/50">
