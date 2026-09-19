@@ -3,10 +3,11 @@ import { prisma } from '@/lib/db';
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const inventoryId = parseInt(params.id, 10);
+    const p = await params;
+    const inventoryId = parseInt(p.id, 10);
     if (isNaN(inventoryId)) {
       return NextResponse.json({ success: false, error: 'Invalid inventory ID' }, { status: 400 });
     }
