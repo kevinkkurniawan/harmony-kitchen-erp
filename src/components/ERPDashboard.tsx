@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Store,
   Package,
@@ -22,7 +22,8 @@ import {
   LogOut,
 } from 'lucide-react';
 import { MOCK_ERP_USERS, ERPUser } from '@/types/user';
-import LoginModal from '@/components/LoginModal';
+import type { AuthenticatedUser } from '@/components/LoginModal';
+import type { ERPClientPermission } from '@/components/AuthGuard';
 import MasterBarangManager from '@/components/MasterBarangManager';
 import MasterPromoManager from '@/components/MasterPromoManager';
 import MasterSupplierManager from '@/components/MasterSupplierManager';
@@ -34,16 +35,15 @@ import SalesMonitoringManager from '@/components/SalesMonitoringManager';
 import StockOpnameManager from '@/components/StockOpnameManager';
 import SalesReportManager from '@/components/SalesReportManager';
 import UserAccessManager from '@/components/UserAccessManager';
+import TableColumnResizer from '@/components/TableColumnResizer';
 
-export default function ERPDashboard() {
-  const [currentUser, setCurrentUser] = useState<any>({
-    id: 1,
-    username: 'admin',
-    fullName: 'Super Administrator ERP',
-    userLevel: 'Admin',
-  });
-  const [userPermissions, setUserPermissions] = useState<any[]>([]);
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
+interface ERPDashboardProps {
+  currentUser: AuthenticatedUser;
+  userPermissions: ERPClientPermission[];
+  onLogout: () => Promise<void>;
+}
+
+export default function ERPDashboard({ currentUser, userPermissions, onLogout }: ERPDashboardProps) {
 
   const [activeTab, setActiveTab] = useState<
     | 'master-barang'
@@ -63,23 +63,6 @@ export default function ERPDashboard() {
 
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
-  // Load User Permissions when logged in user changes
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    const fetchPerms = async () => {
-      try {
-        const res = await fetch(`/api/users/permissions?userId=${currentUser.id}`);
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          setUserPermissions(json.data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch user permissions:', err);
-      }
-    };
-    fetchPerms();
-  }, [currentUser]);
-
   // Permission Check Helper Function (1:1 with Module Manager Isi_NavBarMenu)
   const canView = (moduleCode: string) => {
     if (currentUser?.userLevel === 'Admin') return true; // Super Admin has access to all
@@ -90,6 +73,7 @@ export default function ERPDashboard() {
 
   const isDark = theme === 'dark';
   const isAdmin = currentUser?.userLevel === 'Admin';
+  const canViewHpp = isAdmin || userPermissions.find((permission) => permission.moduleCode === 'view-hpp')?.canView === true;
 
   return (
     <div
@@ -97,6 +81,7 @@ export default function ERPDashboard() {
         isDark ? 'dark bg-[#070b14] text-slate-100' : 'bg-slate-100 text-slate-900'
       }`}
     >
+      <TableColumnResizer />
       {/* 🚀 ERP TOP HEADER WITH PREMIUM UI/UX */}
       <header
         className={`h-14 border-b px-6 flex items-center justify-between shrink-0 z-30 shadow-md ${
@@ -124,9 +109,7 @@ export default function ERPDashboard() {
           >
             <UserIcon className="w-3.5 h-3.5" />
             <span>
-              {currentUser
-                ? `Current user: ${currentUser.fullName || currentUser.username} (${(currentUser.userLevel || 'User').toUpperCase()})`
-                : 'Login ERP'}
+              {`Current user: ${currentUser.fullName || currentUser.username} (${(currentUser.userLevel || 'User').toUpperCase()})`}
             </span>
           </div>
 
@@ -144,9 +127,8 @@ export default function ERPDashboard() {
 
           {/* Logout Button */}
           <button
-            onClick={() => {
-              sessionStorage.removeItem('isLoggedIn');
-              window.location.reload();
+            onClick={async () => {
+              await onLogout();
             }}
             className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-sm ${
               isDark ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200'
@@ -398,8 +380,8 @@ export default function ERPDashboard() {
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-y-auto min-h-0">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" />}
-          {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewHpp={canViewHpp} />}
+          {activeTab === 'inventory-stok' && <MasterBarangManager isDark={isDark} mode="stock" canViewHpp={canViewHpp} />}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
           {(activeTab === 'sync-stok' || activeTab === 'memo-sync-stok' || activeTab === 'sales-sync-stok') && (
             <SyncStockManager isDark={isDark} />
@@ -420,16 +402,6 @@ export default function ERPDashboard() {
         </main>
       </div>
 
-      {/* Login Modal */}
-      <LoginModal
-        isOpen={isLoginOpen}
-        onClose={() => setIsLoginOpen(false)}
-        onLoginSuccess={(user, perms) => {
-          setCurrentUser(user);
-          setUserPermissions(perms);
-          setIsLoginOpen(false);
-        }}
-      />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { canViewHpp } from '@/lib/erp-permissions';
+import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
 
 export async function GET(req: Request) {
   try {
@@ -13,6 +15,7 @@ export async function GET(req: Request) {
     const onlyActive = searchParams.get('onlyActive') === 'true';
 
     const where: any = {};
+    const mayViewHpp = await canViewHpp();
     if (query) {
       where.OR = [
         { inventoryname: { contains: query, mode: 'insensitive' } },
@@ -65,7 +68,7 @@ export async function GET(req: Request) {
       maxStock: Number(i.maxstock || 0),
       kodeHarga: i.kodeharga || '',
       description: i.description || '',
-      hpp: Number(i.hpp || 0),
+      ...(mayViewHpp ? { hpp: Number(i.hpp || 0) } : {}),
       price: i.price,
       grosir1: i.grosir1,
       grosir2: i.grosir2,
@@ -84,9 +87,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const nameError = validateInventoryName(body.inventoryName || body.inventory_name);
+    if (nameError) return NextResponse.json({ success: false, error: nameError }, { status: 400 });
+    const mayViewHpp = await canViewHpp();
+    if (!mayViewHpp && body.hpp !== undefined) {
+      return NextResponse.json({ success: false, error: 'Anda tidak memiliki hak akses untuk mengubah HPP.' }, { status: 403 });
+    }
     const data = {
       inventoryno: body.inventoryNo || body.inventory_no || '',
-      inventoryname: body.inventoryName || body.inventory_name || '',
+      inventoryname: normalizeInventoryName(body.inventoryName || body.inventory_name),
       barcode: body.barcode || body.inventoryNo || body.inventory_no || '',
       inventorybrandid: body.inventoryBrandId ? Number(body.inventoryBrandId) : 1,
       inventorycategoryid: body.inventoryCategoryId ? Number(body.inventoryCategoryId) : 1,
@@ -96,7 +105,7 @@ export async function POST(req: Request) {
       maxstock: Number(body.maxStock) || 0,
       kodeharga: body.kodeHarga || 'STD',
       description: body.description || '',
-      hpp: Number(body.hpp) || 0,
+      hpp: mayViewHpp ? Number(body.hpp) || 0 : 0,
       price: Number(body.price) || 0,
       pricebuy: Number(body.priceBuy) || 0,
       grosir1: body.grosir1 ? Number(body.grosir1) : null,

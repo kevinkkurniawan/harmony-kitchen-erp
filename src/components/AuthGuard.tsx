@@ -2,10 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { Store, Lock, User as UserIcon, LogIn, AlertCircle } from 'lucide-react';
+import type { AuthenticatedUser } from '@/components/LoginModal';
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+export interface ERPClientPermission {
+  moduleCode: string;
+  canView: boolean;
+}
+
+interface AuthGuardProps {
+  children: (auth: { user: AuthenticatedUser; permissions: ERPClientPermission[]; logout: () => Promise<void> }) => React.ReactNode;
+}
+
+export default function AuthGuard({ children }: AuthGuardProps) {
+  const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [permissions, setPermissions] = useState<ERPClientPermission[]>([]);
   const [isChecking, setIsChecking] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Login form state
   const [username, setUsername] = useState('');
@@ -13,25 +25,52 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Memeriksa status login di sessionStorage saat mount
-    const status = sessionStorage.getItem('isLoggedIn');
-    if (status === 'true') {
-      setIsLoggedIn(true);
-    }
-    setIsChecking(false);
+    const restoreSession = async () => {
+      try {
+        const response = await fetch('/api/auth/session');
+        const json = await response.json() as { success: boolean; user?: AuthenticatedUser; permissions?: ERPClientPermission[] };
+        if (json.success && json.user) {
+          setUser(json.user);
+          setPermissions(json.permissions || []);
+        }
+      } finally {
+        setIsChecking(false);
+      }
+    };
+    restoreSession();
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    // Hardcoded credential check for now
-    if (username === 'admin' && password === '123') {
-      sessionStorage.setItem('isLoggedIn', 'true');
-      setIsLoggedIn(true);
-    } else {
-      setError('Username atau Password salah!');
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const json = await response.json() as { success: boolean; user?: AuthenticatedUser; permissions?: ERPClientPermission[]; error?: string };
+      if (!json.success || !json.user) {
+        setError(json.error || 'Username atau password salah.');
+        return;
+      }
+      setUser(json.user);
+      setPermissions(json.permissions || []);
+      setPassword('');
+    } catch {
+      setError('Terjadi kesalahan saat menghubungi server autentikasi.');
+    } finally {
+      setIsSubmitting(false);
     }
+  };
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setUser(null);
+    setPermissions([]);
+    setUsername('');
+    setPassword('');
   };
 
   // Jangan render apa-apa selama pengecekan status awal agar tidak berkedip
@@ -40,8 +79,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Jika sudah login, tampilkan aplikasi utama
-  if (isLoggedIn) {
-    return <>{children}</>;
+  if (user) {
+    return <>{children({ user, permissions, logout })}</>;
   }
 
   // Jika belum login, tampilkan form login dengan style POS
@@ -77,7 +116,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 ml-1">
               <UserIcon className="w-3.5 h-3.5 text-indigo-500" />
-              Username Admin
+              Username
             </label>
             <input
               type="text"
@@ -106,10 +145,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
           <button
             type="submit"
+            disabled={isSubmitting}
             className="cursor-pointer w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-500 hover:from-indigo-500 hover:to-sky-400 text-white font-black text-base shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-4"
           >
             <LogIn className="w-5 h-5" />
-            Login ke ERP
+            {isSubmitting ? 'Memproses...' : 'Login ke ERP'}
           </button>
         </form>
       </div>

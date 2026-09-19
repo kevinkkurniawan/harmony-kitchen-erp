@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
+import { normalizeInventoryName } from '@/lib/inventory-name';
 
 interface LookupItem {
   id: number;
@@ -66,9 +67,10 @@ interface ToastMessage {
 interface MasterBarangManagerProps {
   isDark: boolean;
   mode?: 'master' | 'stock';
+  canViewHpp?: boolean;
 }
 
-export default function MasterBarangManager({ isDark, mode = 'master' }: MasterBarangManagerProps) {
+export default function MasterBarangManager({ isDark, mode = 'master', canViewHpp = false }: MasterBarangManagerProps) {
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -83,7 +85,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const [showDetailPane, setShowDetailPane] = useState<boolean>(true);
 
   // Sorting State
-  const [sortField, setSortField] = useState<keyof ERPProduct>('id');
+  const [sortField, setSortField] = useState<keyof ERPProduct | null>(null);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Pagination State
@@ -323,10 +325,13 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
   // Sort Handler
   const handleSort = (field: keyof ERPProduct) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
+    if (sortField !== field) {
       setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField(null);
       setSortOrder('asc');
     }
   };
@@ -335,7 +340,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
   const sortedProducts = [...products]
     .filter(p => filterCategoryId === 'all' || p.inventoryCategoryId === filterCategoryId)
     .filter(p => filterBrandId === 'all' || p.inventoryBrandId === filterBrandId)
-    .sort((a, b) => {
+  const orderedProducts = sortField ? sortedProducts.sort((a, b) => {
       const valA = a[sortField] ?? '';
       const valB = b[sortField] ?? '';
       if (typeof valA === 'number' && typeof valB === 'number') {
@@ -344,15 +349,14 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       return sortOrder === 'asc'
         ? String(valA).localeCompare(String(valB))
         : String(valB).localeCompare(String(valA));
-    });
+    }) : sortedProducts;
 
   // Paginated Products
-  const totalPages = Math.ceil(sortedProducts.length / pageSize) || 1;
-  const paginatedProducts = sortedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalPages = Math.ceil(orderedProducts.length / pageSize) || 1;
+  const paginatedProducts = orderedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  // Export CSV Functionality
-  const exportToCSV = () => {
-    if (products.length === 0) {
+  const exportToExcel = async () => {
+    if (orderedProducts.length === 0) {
       addToast('Tidak ada data barang untuk diexport', 'warning');
       return;
     }
@@ -367,7 +371,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       'Product Type',
       'Satuan (UoM)',
       'Harga Retail',
-      'HPP (Modal)',
+      ...(canViewHpp ? ['HPP (Modal)'] : []),
       'Grosir 1',
       'Grosir 2',
       'Grosir 3',
@@ -378,20 +382,17 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
       'Status Aktif',
     ];
 
-    const csvRows = [headers.join(',')];
-
-    sortedProducts.forEach((p) => {
-      const row = [
+    const rows = orderedProducts.map((p) => [
         p.id,
-        `"${p.inventoryNo || ''}"`,
-        `"${p.barcode || ''}"`,
-        `"${(p.inventoryName || '').replace(/"/g, '""')}"`,
-        `"${p.brandName || ''}"`,
-        `"${p.categoryName || ''}"`,
-        `"${p.productName || ''}"`,
-        `"${p.uomName || 'PCS'}"`,
+        p.inventoryNo || '',
+        p.barcode || '',
+        p.inventoryName || '',
+        p.brandName || '',
+        p.categoryName || '',
+        p.productName || '',
+        p.uomName || 'PCS',
         p.price || 0,
-        p.hpp || 0,
+        ...(canViewHpp ? [p.hpp || 0] : []),
         p.grosir1 || 0,
         p.grosir2 || 0,
         p.grosir3 || 0,
@@ -400,20 +401,23 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
         p.stokAwal || 0,
         p.stokAkhir || 0,
         p.isActive ? 'AKTIF' : 'NON-AKTIF',
-      ];
-      csvRows.push(row.join(','));
-    });
+      ]);
 
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Master_Barang_Export_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const XLSX = await import('xlsx');
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      worksheet['!cols'] = headers.map((header, index) => ({
+        wch: Math.min(40, Math.max(header.length + 2, ...rows.map((row) => String(row[index] ?? '').length + 2))),
+      }));
+      worksheet['!freeze'] = { ySplit: 1 };
 
-    addToast(`Berhasil mengexport ${products.length} data barang ke CSV`, 'success');
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Master Barang');
+      XLSX.writeFile(workbook, `Master_Barang_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      addToast(`Berhasil mengexport ${orderedProducts.length} data barang ke Excel`, 'success');
+    } catch {
+      addToast('Gagal membuat file Excel.', 'error');
+    }
   };
 
   // Open Edit Inline
@@ -589,7 +593,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               >
                 Harga & Grosir
               </button>
-              {!isCreatingNew && (
+              {!isCreatingNew && canViewHpp && (
                 <button
                   type="button"
                   onClick={() => setActiveFormTab('stock')}
@@ -638,6 +642,8 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       required
                       value={formData.inventoryName || ''}
                       onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
+                      onBlur={(e) => setFormData({ ...formData, inventoryName: normalizeInventoryName(e.target.value) })}
+                      title="Nama akan dirapikan: spasi di awal, akhir, dan berulang dihapus."
                       className={`w-full border-2 rounded-xl px-2 py-1 font-black focus:ring-2 focus:ring-slate-500 outline-none ${
                         isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
                       }`}
@@ -768,7 +774,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       }`}
                     />
                   </div>
-                  <div>
+                  {canViewHpp && <div>
                     <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
                     <input
                       type="number"
@@ -778,7 +784,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                         isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
                       }`}
                     />
-                  </div>
+                  </div>}
                   <div>
                     <label className="block mb-1">Harga Grosir Tier 1</label>
                     <input
@@ -826,7 +832,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                 </div>
               )}
 
-              {activeFormTab === 'stock' && (
+              {activeFormTab === 'stock' && canViewHpp && (
                 <div className="space-y-3 text-xs font-black">
                   <h4 className="font-black text-slate-950 dark:text-slate-200">Riwayat HPP & Penerimaan Barang</h4>
                   <div className="rounded-xl border-2 border-slate-400 dark:border-slate-800 overflow-hidden">
@@ -1035,13 +1041,13 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
           </div>
 
           <button
-            onClick={exportToCSV}
+            onClick={exportToExcel}
             className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
             }`}
           >
             <Download className="w-4 h-4 text-emerald-200" />
-            <span>Export Data</span>
+            <span>Export Excel</span>
           </button>
 
           {/* Filter UI (Replicating Native DevExpress Capabilities) */}
@@ -1158,7 +1164,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
               <div className="text-slate-950 dark:text-slate-300 text-xs font-bold">{selectedProduct.categoryName || 'General'} ({selectedProduct.uomName || 'Pcs'})</div>
               {selectedProduct.description && (
                 <div className="pt-2 mt-2 border-t-2 border-slate-300 dark:border-slate-800 text-[11px] font-medium italic text-slate-600 dark:text-slate-400">
-                  "{selectedProduct.description}"
+                  &quot;{selectedProduct.description}&quot;
                 </div>
               )}
             </div>
@@ -1167,10 +1173,12 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Harga Retail, Beli & HPP</div>
+              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">{canViewHpp ? 'Harga Retail, Beli & HPP' : 'Harga Retail'}</div>
               <div className="font-black text-sm text-slate-950 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
-              <div className="text-[11px] font-black text-emerald-950 dark:text-emerald-400">Harga Beli: Rp {(selectedProduct.priceBuy || 0).toLocaleString('id-ID')}</div>
-              <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
+              {canViewHpp && <>
+                <div className="text-[11px] font-black text-emerald-950 dark:text-emerald-400">Harga Beli: Rp {(selectedProduct.priceBuy || 0).toLocaleString('id-ID')}</div>
+                <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
+              </>}
             </div>
 
             {/* Box 4: Grosir Tiers */}
@@ -1286,12 +1294,12 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       {sortField === 'price' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('hpp')} className="py-1.5 px-2 text-right cursor-pointer hover:text-emerald-400 transition-colors">
+                  {canViewHpp && <th onClick={() => handleSort('hpp')} className="py-1.5 px-2 text-right cursor-pointer hover:text-emerald-400 transition-colors">
                     <div className="flex items-center justify-end gap-1">
                       <span>HPP (Modal)</span>
                       {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
                     </div>
-                  </th>
+                  </th>}
                   <th className="py-1.5 px-2">Keterangan</th>
                   <th className="py-1.5 px-2 text-right">Grosir 1</th>
                   <th className="py-1.5 px-2 text-right">Grosir 2</th>
@@ -1361,13 +1369,13 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       </td>
                       <td className={`py-1 px-2 font-mono text-[11px] font-black ${isDark ? 'text-amber-300' : 'text-slate-800'}`}>{item.inventoryNo}</td>
                       <td className={`py-1 px-2 font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.barcode}</td>
-                      <td className={`py-1 px-2 font-black max-w-[200px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
+                      <td title={item.inventoryName} className={`py-1 px-2 font-black max-w-[280px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.brandName || '-'}</td>
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.categoryName || '-'}</td>
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.productName || '-'}</td>
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
                       <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
-                      <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>
+                      {canViewHpp && <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>}
                       <td className={`py-1 px-2 text-[11px] font-medium max-w-[150px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={item.description || '-'}>
                         {item.description || '-'}
                       </td>
@@ -1471,7 +1479,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
           isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
         }`}>
           <div className="flex items-center gap-3">
-            <span>Menampilkan {paginatedProducts.length} dari total {sortedProducts.length} barang</span>
+            <span>Menampilkan {paginatedProducts.length} dari total {orderedProducts.length} barang</span>
             <div className="flex items-center gap-1.5">
               <span>Rows:</span>
               <select
@@ -1617,7 +1625,6 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
 
       
 
-      {/* 📈 MODAL 3: LAPORAN MUTASI STOK DIALOG - PITCH BLACK TEXT & CRISP BORDER CARDS */}
       {isStockReportModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className={`w-full max-w-4xl rounded-2xl border-2 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
@@ -1645,15 +1652,14 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                   <div className="font-black text-2xl mt-1 text-purple-950 dark:text-purple-300">{products.length} Barang</div>
                 </div>
 
-                {/* Total Nilai HPP Card */}
-                <div className={`p-4 rounded-xl border-2 ${
+                {canViewHpp && <div className={`p-4 rounded-xl border-2 ${
                   isDark ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-emerald-200 border-emerald-400 text-emerald-950 shadow-sm'
                 }`}>
                   <div className="text-[11px] font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300">Total Nilai Persediaan (HPP)</div>
                   <div className="font-black text-xl mt-1 text-emerald-950 dark:text-emerald-300">
                     Rp {products.reduce((acc, p) => acc + (p.hpp || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
                   </div>
-                </div>
+                </div>}
 
                 {/* Total Nilai Retail Card */}
                 <div className={`p-4 rounded-xl border-2 ${
@@ -1675,8 +1681,7 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       <th className="p-3">Nama Barang</th>
                       <th className="p-3 text-center">Stok Awal</th>
                       <th className="p-3 text-center">Stok Akhir</th>
-                      <th className="p-3 text-right">HPP Unit</th>
-                      <th className="p-3 text-right">Total Nilai HPP</th>
+                      {canViewHpp && <><th className="p-3 text-right">HPP Unit</th><th className="p-3 text-right">Total Nilai HPP</th></>}
                     </tr>
                   </thead>
                   <tbody className={`divide-y font-black ${isDark ? "divide-slate-800 text-slate-100" : "divide-slate-300 text-slate-950"}`}>
@@ -1686,10 +1691,10 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                         <td className={`p-3 font-black ${isDark ? "text-slate-100" : "text-slate-950"}`}>{p.inventoryName}</td>
                         <td className={`p-3 text-center ${isDark ? "text-slate-300" : "text-slate-950"}`}>{p.stokAwal}</td>
                         <td className={`p-3 text-center font-black ${isDark ? "text-emerald-400" : "text-emerald-950"}`}>{p.stokAkhir}</td>
-                        <td className={`p-3 text-right ${isDark ? "text-slate-300" : "text-slate-950"}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
+                        {canViewHpp && <><td className={`p-3 text-right ${isDark ? "text-slate-300" : "text-slate-950"}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
                         <td className={`p-3 text-right font-black ${isDark ? "text-emerald-400" : "text-emerald-950"}`}>
                           Rp {((p.hpp || 0) * (p.stokAkhir || 0)).toLocaleString('id-ID')}
-                        </td>
+                        </td></>}
                       </tr>
                     ))}
                   </tbody>
