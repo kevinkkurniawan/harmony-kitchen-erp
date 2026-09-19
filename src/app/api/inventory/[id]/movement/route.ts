@@ -18,7 +18,7 @@ export async function GET(
       select: { id: true, invoicecode: true, invoicetype: true, stockdate: true, qty: true, price: true }
     });
 
-    const flowIds = flowParents.map(f => f.id);
+    const flowIds = flowParents.map(f => Number(f.id));
 
     // 2. Fetch all corresponding details (qtyin, qtyout)
     const flowDetails = await prisma.s_flowdetailinventory.findMany({
@@ -28,7 +28,7 @@ export async function GET(
 
     // We merge the parent and detail records to form the ledger
     const ledger = flowDetails.map(detail => {
-      const parent = flowParents.find(p => p.id === detail.flowinventoryid);
+      const parent = flowParents.find(p => Number(p.id) === detail.flowinventoryid);
       
       return {
         id: detail.id,

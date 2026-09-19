@@ -26,12 +26,12 @@ export async function GET(req: Request) {
     ]);
 
     const supplierIds = Array.from(new Set(payments.map(p => p.supplierid).filter(Boolean)));
-    const suppliers = await prisma.supplier.findMany({ where: { id: { in: supplierIds } } });
+    const suppliers = await prisma.m_supplier.findMany({ where: { id: { in: supplierIds } } });
     const supplierMap = new Map(suppliers.map(s => [s.id, s.suppliername]));
 
     const ppids = payments.map(p => p.id);
     const allDetails = await prisma.t_purchasepaymentdetail.findMany({
-      where: { ppid: { in: ppids } }
+      where: { ppid: { in: ppids.map(id => Number(id)) } }
     });
 
     const mapped = payments.map((p: any) => {
@@ -62,14 +62,14 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { payment_no, payment_date, supplier_name, bank_name, reference_no, grand_total, items } = body;
 
-    const supplier = await prisma.supplier.findFirst({ where: { suppliername: supplier_name } });
+    const supplier = await prisma.m_supplier.findFirst({ where: { suppliername: supplier_name } });
     const supplierid = supplier ? supplier.id : 1;
 
     const header = await prisma.t_purchasepaymentheader.create({
       data: {
         ppno: payment_no,
         ppdate: payment_date ? new Date(payment_date) : new Date(),
-        supplierid,
+        supplierid: Number(supplierid),
         grandtotal: Number(grand_total || 0),
         description: reference_no || '',
         createduser: 'system',
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     if (items && Array.isArray(items)) {
       await prisma.t_purchasepaymentdetail.createMany({
         data: items.map((it: any) => ({
-          ppid: header.id,
+          ppid: Number(header.id),
           mrid: 0, // Fallback since MR isn't fully resolved
           mrno: it.invoice_no || it.inventoryNo || it.invoiceNo || '-',
           balance: 0,
@@ -104,11 +104,11 @@ export async function PUT(req: Request) {
     const body = await req.json();
     const { id, payment_no, payment_date, supplier_name, bank_name, reference_no, grand_total, items } = body;
 
-    const supplier = await prisma.supplier.findFirst({ where: { suppliername: supplier_name } });
+    const supplier = await prisma.m_supplier.findFirst({ where: { suppliername: supplier_name } });
     const supplierid = supplier ? supplier.id : 1;
 
     const updated = await prisma.t_purchasepaymentheader.update({
-      where: { ppno_supplierid: { ppno: payment_no, supplierid } },
+      where: { ppno_supplierid: { ppno: payment_no, supplierid: Number(supplierid) } },
       data: {
         ppdate: payment_date ? new Date(payment_date) : undefined,
         grandtotal: Number(grand_total || 0),
@@ -116,11 +116,10 @@ export async function PUT(req: Request) {
       }
     });
 
-    await prisma.t_purchasepaymentdetail.deleteMany({ where: { ppid: updated.id } });
+    await prisma.t_purchasepaymentdetail.deleteMany({ where: { ppid: Number(updated.id) } });
     if (items && Array.isArray(items)) {
       await prisma.t_purchasepaymentdetail.createMany({
-        data: items.map((it: any) => ({
-          ppid: updated.id,
+        data: items.map((it: any) => ({ ppid: Number(updated.id),
           mrid: 0,
           mrno: it.invoice_no || it.inventoryNo || it.invoiceNo || '-',
           balance: 0,
@@ -142,7 +141,7 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get('id'));
     await prisma.t_purchasepaymentdetail.deleteMany({ where: { ppid: id } });
-    // Since we don't know supplierid, we can just delete it if id is unique but it's not the PK.
+    // Since we don't know supplierid: Number(supplierid), we can just delete it if id is unique but it's not the PK.
     // We can query the header to find ppno and supplierid
     const header = await prisma.t_purchasepaymentheader.findFirst({ where: { id } });
     if (header) {

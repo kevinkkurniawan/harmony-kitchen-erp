@@ -16,7 +16,7 @@ export async function GET(req: Request) {
       where.OR = [
         { supplierno: { contains: q, mode: 'insensitive' } },
         { suppliername: { contains: q, mode: 'insensitive' } },
-        { contactPerson: { contains: q, mode: 'insensitive' } },
+        { contact_person: { contains: q, mode: 'insensitive' } },
       ];
     }
     if (type) {
@@ -28,12 +28,12 @@ export async function GET(req: Request) {
     // OnlyActive isn't natively in this DB model as 'isactive', but if there is one we'd use it. For now omit if not in DB.
 
     const [total, items] = await Promise.all([
-      prisma.supplier.count({ where }),
-      prisma.supplier.findMany({ where, orderBy: { id: 'asc' }, skip: paginationParams.skip, take: paginationParams.limit }),
+      prisma.m_supplier.count({ where }),
+      prisma.m_supplier.findMany({ where, orderBy: { id: 'asc' }, skip: paginationParams.skip, take: paginationParams.limit }),
     ]);
 
     const mapped = items.map((s) => ({
-      id: s.id,
+      id: Number(s.id),
       supplierNo: s.supplierno,
       supplierName: s.suppliername || '',
       supplierType: s.suppliertypeid === 2 ? 'Import' : 'Lokal',
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
       phone2: s.phone2 || '',
       fax: s.fax || '',
       email: s.email || '',
-      contactPerson: s.contactPerson || '',
+      contactPerson: s.contact_person || '',
       contactPersonAddress: s.contact_person_address || '',
       contactPersonPhone1: s.contact_person_phone1 || '',
       contactPersonPhone2: s.contact_person_phone2 || '',
@@ -66,7 +66,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const created = await prisma.supplier.create({
+    const created = await prisma.m_supplier.create({
       data: {
         supplierno: body.supplierNo,
         suppliername: body.supplierName,
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
         phone2: body.phone2,
         fax: body.fax,
         email: body.email,
-        contactPerson: body.contactPerson,
+        contact_person: body.contactPerson,
         contact_person_address: body.contactPersonAddress,
         contact_person_phone1: body.contactPersonPhone1,
         contact_person_phone2: body.contactPersonPhone2,
@@ -112,7 +112,7 @@ export async function PUT(req: Request) {
     if (body.phone2 !== undefined) updateData.phone2 = body.phone2;
     if (body.fax !== undefined) updateData.fax = body.fax;
     if (body.email !== undefined) updateData.email = body.email;
-    if (body.contactPerson !== undefined) updateData.contactPerson = body.contactPerson;
+    if (body.contactPerson !== undefined) updateData.contact_person = body.contactPerson;
     if (body.contactPersonAddress !== undefined) updateData.contact_person_address = body.contactPersonAddress;
     if (body.contactPersonPhone1 !== undefined) updateData.contact_person_phone1 = body.contactPersonPhone1;
     if (body.contactPersonPhone2 !== undefined) updateData.contact_person_phone2 = body.contactPersonPhone2;
@@ -124,7 +124,7 @@ export async function PUT(req: Request) {
     if (body.onBehalfOf !== undefined) updateData.onbehalfof = body.onBehalfOf;
     if (body.creditLimit !== undefined) updateData.credit_limit = body.creditLimit ? Number(body.creditLimit) : 0;
 
-    const updated = await prisma.supplier.update({
+    const updated = await prisma.m_supplier.update({
       where: { id: Number(body.id) },
       data: updateData
     });
@@ -140,7 +140,7 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = Number(searchParams.get('id'));
     if (!id) throw new Error("Missing ID");
-    await prisma.supplier.delete({ where: { id } });
+    await prisma.m_supplier.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("DELETE Supplier error:", error);

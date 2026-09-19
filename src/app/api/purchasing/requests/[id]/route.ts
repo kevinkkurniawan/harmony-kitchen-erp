@@ -11,7 +11,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (!pr) return NextResponse.json({ success: false }, { status: 404 });
 
     const inventoryIds = pr.t_purchaserequisitiondetail.map((d: any) => d.inventoryid).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } } });
     const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
 
     const mapped = {

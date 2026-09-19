@@ -19,7 +19,7 @@ export async function GET(req: Request) {
       }
 
       const inventoryIds = details.map((d: any) => d.inventoryid).filter(Boolean);
-      const inventories = await prisma.inventory.findMany({
+      const inventories = await prisma.m_inventory.findMany({
         where: { id: { in: inventoryIds } },
         select: { id: true, barcode: true, inventoryno: true, inventoryname: true, price: true, stokupdate: true },
       });
@@ -118,7 +118,7 @@ export async function POST(req: Request) {
 
     // Support single-item payload
     if (!items && body.inventoryId !== undefined) {
-      const inv = await prisma.inventory.findUnique({ where: { id: Number(body.inventoryId) } });
+      const inv = await prisma.m_inventory.findUnique({ where: { id: Number(body.inventoryId) } });
       if (inv) {
         no_tx = no_tx || `OPN-SINGLE-${Date.now()}`;
         const physQty = Number(body.qtyOpname ?? body.qty ?? body.physicalQty ?? inv.stokupdate);
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
     // Resolve inventories
     const inventoryIds = items.map((it: any) => Number(it.inventoryId)).filter(Boolean);
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({
+    const inventories = await prisma.m_inventory.findMany({
       where: {
         OR: [
           ...(inventoryIds.length > 0 ? [{ id: { in: inventoryIds } }] : []),
@@ -184,7 +184,7 @@ export async function POST(req: Request) {
       // Adjust stock (since physQty is now the final absolute stock for both modes)
       for (const it of toCreate) {
         if (it.inventoryid) {
-          await tx.inventory.updateMany({
+          await tx.m_inventory.updateMany({
             where: { id: it.inventoryid },
             data: { stokupdate: it.qty },
           });

@@ -14,8 +14,8 @@ export async function GET(req: Request) {
     }
 
     const [total, promos] = await Promise.all([
-      prisma.promo.count({ where }),
-      prisma.promo.findMany({
+      prisma.m_promo.count({ where }),
+      prisma.m_promo.findMany({
         where,
         orderBy: { id: 'desc' },
         skip: paginationParams.skip,
@@ -74,11 +74,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Nama Promo wajib diisi' }, { status: 400 });
     }
 
-    const max = await prisma.promo.aggregate({ _max: { promobundle: true, promogrosir: true } });
+    const max = await prisma.m_promo.aggregate({ _max: { promobundle: true, promogrosir: true } });
     const bundleId = (max._max.promobundle || 0) + 1;
     const grosirId = (max._max.promogrosir || 0) + 1;
 
-    const created = await prisma.promo.create({
+    const created = await prisma.m_promo.create({
       data: {
         promobundle: bundleId,
         promogrosir: grosirId,

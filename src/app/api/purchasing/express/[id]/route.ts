@@ -11,7 +11,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (!mr) return NextResponse.json({ success: false }, { status: 404 });
 
     const inventoryIds = mr.t_materialreceivedetail.map((d: any) => Number(d.inventoryid)).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } } });
     const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
     const totalQty = mr.t_materialreceivedetail.reduce((sum: number, d: any) => sum + Number(d.qty), 0);
 

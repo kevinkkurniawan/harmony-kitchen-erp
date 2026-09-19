@@ -623,7 +623,44 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                                 const res = await fetch(`/api/purchasing/priced/${row.id}`);
                                 const json = await res.json();
                                 if (json.success) {
-                                  setPrintData(json.data);
+                                  setPrintData({
+                                    header: {
+                                      id: String(json.data.id),
+                                      mrNo: json.data.mr_no,
+                                      mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
+                                      supplierId: '0',
+                                      supplierName: json.data.supplier_name,
+                                      doNo: json.data.do_no,
+                                      poNo: json.data.po_no,
+                                      driverName: json.data.driver_name,
+                                      vehicleNo: json.data.vehicle_no,
+                                      wh_name: json.data.wh_name,
+                                      paymentType: json.data.payment_type || '-',
+                                      dueDate: json.data.due_date || '-',
+                                      downPayment: json.data.down_payment || 0,
+                                      discPercentage: json.data.disc_percentage || 0,
+                                      discValue: json.data.disc_value || 0,
+                                      ppnPercentage: json.data.ppn_percentage || 0,
+                                      ppnValue: json.data.tax || 0,
+                                      grandTotal: json.data.grand_total || 0,
+                                      transporter: json.data.transporter || '-',
+                                      description: json.data.description || '-',
+                                      isExpress: false,
+                                      isVoid: false,
+                                    },
+                                    items: json.data.items.map((it: any) => ({
+                                      inventoryId: it.id,
+                                      inventoryNo: it.inventory_no,
+                                      inventoryName: it.inventory_name,
+                                      uomName: '-',
+                                      qty: it.qty,
+                                      price: it.price || 0,
+                                      discPercentage: it.disc_percentage || 0,
+                                      subtotal: it.subtotal || 0,
+                                      barcode: it.barcode,
+                                      description: it.description
+                                    })),
+                                  });
                                   setIsPrintModalOpen(true);
                                 }
                               } catch (err) {

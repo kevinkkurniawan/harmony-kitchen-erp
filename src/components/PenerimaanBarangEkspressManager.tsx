@@ -590,15 +590,19 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                                 if (json.success) {
                                   setPrintData({
                                     header: {
-                                      id: json.data.id,
+                                      id: String(json.data.id),
                                       mrNo: json.data.mr_no,
                                       mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
-                                      supplierId: 0,
+                                      supplierId: '0',
                                       supplierName: json.data.supplier_name,
                                       doNo: json.data.do_no,
                                       driverName: json.data.driver_name,
                                       vehicleNo: json.data.vehicle_no,
                                       wh_name: json.data.wh_name,
+                                      transporter: json.data.transporter || '-',
+                                      description: json.data.description || '-',
+                                      isExpress: true,
+                                      isVoid: false,
                                     },
                                     items: json.data.items.map((it: any) => ({
                                       inventoryId: it.id,
