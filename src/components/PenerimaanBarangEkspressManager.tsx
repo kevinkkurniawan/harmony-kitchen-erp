@@ -19,6 +19,8 @@ import {
   Plus,
   ArrowLeft,
   Eye,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { ERPProduct, Supplier } from '@/types/erp';
@@ -63,6 +65,21 @@ interface PenerimaanBarangEkspressManagerProps {
 }
 
 export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBarangEkspressManagerProps) {
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
+
   // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
 
@@ -489,17 +506,15 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
-                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}>
-                  <th className="py-3.5 px-4 text-center">No MR</th>
-                  <th className="py-3.5 px-4">Tanggal MR</th>
-                  <th className="py-3.5 px-4">Supplier Pemasok</th>
-                  <th className="py-3.5 px-4">No. Surat Jalan (DO)</th>
-                  <th className="py-3.5 px-4">Sopir / Vehicle</th>
-                  <th className="py-3.5 px-4 text-center">Total Qty Item</th>
-                  <th className="py-3.5 px-4 text-center">Status</th>
-                  <th className="py-3.5 px-4 text-center w-28">Aksi</th>
+                <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                  <th onClick={() => handleSort('mrNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>No MR</span>{sortField === 'mrNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('mrDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal MR</span>{sortField === 'mrDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Supplier Pemasok</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('poNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>No. Surat Jalan (DO)</span>{sortField === 'poNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('driverName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Sopir / Vehicle</span>{sortField === 'driverName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalQty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Qty Item</span>{sortField === 'totalQty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('status')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Status</span>{sortField === 'status' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th className="py-1.5 px-2 text-center w-28">Aksi</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -520,7 +535,25 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     </td>
                   </tr>
                 ) : (
-                  receiptsList.map((row: any) => {
+                  [...receiptsList].sort((a: any, b: any) => {
+                    if (!sortField) return 0;
+                    let valA, valB;
+                    if (sortField === 'mrNo') { valA = a.mrNo || a.mr_no || ''; valB = b.mrNo || b.mr_no || ''; }
+                    else if (sortField === 'mrDate') { valA = a.mrDate || a.mr_date || ''; valB = b.mrDate || b.mr_date || ''; }
+                    else if (sortField === 'supplierName') { valA = a.supplierName || a.supplier_name || ''; valB = b.supplierName || b.supplier_name || ''; }
+                    else if (sortField === 'poNo') { valA = a.poNo || a.po_no || ''; valB = b.poNo || b.po_no || ''; }
+                    else if (sortField === 'driverName') { valA = a.driverName ? `${a.driverName} (${a.vehicleNo || ''})` : ''; valB = b.driverName ? `${b.driverName} (${b.vehicleNo || ''})` : ''; }
+                    else if (sortField === 'totalQty') { valA = a.totalQty ?? a.total_qty ?? (a.items ? a.items.length : 0); valB = b.totalQty ?? b.total_qty ?? (b.items ? b.items.length : 0); }
+                    else if (sortField === 'status') { valA = a.isVoid ? 1 : 0; valB = b.isVoid ? 1 : 0; }
+                    else return 0;
+
+                    if (typeof valA === 'string' && typeof valB === 'string') {
+                      return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                    }
+                    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+                    return 0;
+                  }).map((row: any) => {
                     const mrNo = row.mrNo || row.mr_no || '-';
                     const mrDate = row.mrDate || row.mr_date || '-';
                     const supplier = row.supplierName || row.supplier_name || 'Supplier General';
@@ -529,7 +562,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     const qty = row.totalQty ?? row.total_qty ?? (row.items ? row.items.length : 0);
 
                     return (
-                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
+                      <tr key={row.id} className={isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>

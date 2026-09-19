@@ -22,6 +22,8 @@ import {
   Zap,
   TrendingUp,
   User,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 
 export interface PosItemDetail {
@@ -79,6 +81,8 @@ interface SalesMonitoringManagerProps {
 }
 
 export default function SalesMonitoringManager({ isDark }: SalesMonitoringManagerProps) {
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [transactions, setTransactions] = useState<PosHeader[]>([]);
   const [summary, setSummary] = useState<SalesSummary>({
     grossSales: 0,
@@ -100,6 +104,18 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   // Print Modal
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [printData, setPrintData] = useState<{ header: PosHeader; items: PosItemDetail[] } | null>(null);
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
 
   const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = Date.now().toString();
@@ -488,19 +504,17 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
-              <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-              }`}>
-                <th className="py-3.5 px-4 text-center">No. Struk</th>
-                <th className="py-3.5 px-4">Tanggal & Jam</th>
-                <th className="py-3.5 px-4">Kasir / Officer</th>
-                <th className="py-3.5 px-4">Customer / Meja</th>
-                <th className="py-3.5 px-4">Tipe Pembayaran</th>
-                <th className="py-3.5 px-4 text-right">Subtotal</th>
-                <th className="py-3.5 px-4 text-right">Diskon Promo</th>
-                <th className="py-3.5 px-4 text-right">Grand Total (Rp)</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-center w-28">Aksi</th>
+              <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                <th onClick={() => handleSort('invoiceNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>No. Struk</span>{sortField === 'invoiceNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('invoiceDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal & Jam</span>{sortField === 'invoiceDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('cashierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Kasir / Officer</span>{sortField === 'cashierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('customerName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Customer / Meja</span>{sortField === 'customerName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('paymentType')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tipe Pembayaran</span>{sortField === 'paymentType' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('subtotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Subtotal</span>{sortField === 'subtotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('discValue')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Diskon Promo</span>{sortField === 'discValue' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('grandTotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Grand Total (Rp)</span>{sortField === 'grandTotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('status')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Status</span>{sortField === 'status' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th className="py-1.5 px-2 text-center w-28">Aksi</th>
               </tr>
             </thead>
             <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -521,7 +535,26 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   </td>
                 </tr>
               ) : (
-                transactions.map((row: any) => {
+                [...transactions].sort((a: any, b: any) => {
+                  if (!sortField) return 0;
+                  
+                  let valA = a[sortField];
+                  let valB = b[sortField];
+                  
+                  if (sortField === 'invoiceNo') { valA = a.invoiceNo || a.salesPOSNo || a.sales_pos_no || '-'; valB = b.invoiceNo || b.salesPOSNo || b.sales_pos_no || '-'; }
+                  if (sortField === 'invoiceDate') { valA = a.invoiceDate || a.transactionDate || a.salesPOSDate || a.sales_pos_date || '-'; valB = b.invoiceDate || b.transactionDate || b.salesPOSDate || b.sales_pos_date || '-'; }
+                  if (sortField === 'cashierName') { valA = a.cashierName || a.cashier_name || ''; valB = b.cashierName || b.cashier_name || ''; }
+                  if (sortField === 'customerName') { valA = a.customerName || a.customer_name || ''; valB = b.customerName || b.customer_name || ''; }
+                  if (sortField === 'paymentType') { valA = a.paymentType || a.paymentMethod || ''; valB = b.paymentType || b.paymentMethod || ''; }
+                  if (sortField === 'subtotal') { valA = a.subtotal ?? a.totalAmount ?? a.total_amount ?? 0; valB = b.subtotal ?? b.totalAmount ?? b.total_amount ?? 0; }
+                  if (sortField === 'discValue') { valA = a.discValue ?? a.discount ?? a.discountAmount ?? a.discount_amount ?? 0; valB = b.discValue ?? b.discount ?? b.discountAmount ?? b.discount_amount ?? 0; }
+                  if (sortField === 'grandTotal') { valA = a.grandTotal ?? a.grand_total ?? 0; valB = b.grandTotal ?? b.grand_total ?? 0; }
+                  if (sortField === 'status') { valA = 'LUNAS'; valB = 'LUNAS'; }
+
+                  if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+                  if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+                  return 0;
+                }).map((row: any) => {
                   const invoice = row.invoiceNo || row.salesPOSNo || row.sales_pos_no || '-';
                   const txDate = row.invoiceDate || row.transactionDate || row.salesPOSDate || row.sales_pos_date || '-';
                   const cashier = row.cashierName || row.cashier_name || 'Kasir Utama';
@@ -532,7 +565,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   const grandTotal = row.grandTotal ?? row.grand_total ?? 0;
 
                   return (
-                    <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
+                    <tr key={row.id} className={isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}>
                       <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
                       <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{txDate}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">

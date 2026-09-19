@@ -43,16 +43,26 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
   const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
   const [filterOnlyTaxable, setFilterOnlyTaxable] = useState<boolean>(false);
-  const [filterSupplierType, setFilterSupplierType] = useState<string>('All');
-  const [banks, setBanks] = useState<{id: number, bankno: string, bankname: string}[]>([]);
 
   // Selection & Context Menu
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; supplier: Supplier } | null>(null);
 
   // Sorting
-  const [sortField, setSortField] = useState<keyof Supplier>('id');
+  const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -62,25 +72,17 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   const [formData, setFormData] = useState<Partial<Supplier>>({
     supplierNo: '',
     supplierName: '',
-    supplierType: 'Lokal',
     address: '',
     city: '',
     phone1: '',
     phone2: '',
     fax: '',
     contactPerson: '',
-    contactPersonAddress: '',
-    contactPersonPhone1: '',
-    contactPersonPhone2: '',
     email: '',
     taxNo: '',
     isTaxable: false,
     description: '',
     isActive: true,
-    bankId: '',
-    bankAccount: '',
-    onBehalfOf: '',
-    creditLimit: 0,
   });
 
   // Toasts
@@ -102,7 +104,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
       let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
       if (filterOnlyActive) url += `&onlyActive=true`;
       if (filterOnlyTaxable) url += `&onlyTaxable=true`;
-      if (filterSupplierType !== 'All') url += `&type=${filterSupplierType}`;
       const res = await fetch(url);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
@@ -114,16 +115,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearchQuery, filterOnlyActive, filterOnlyTaxable, filterSupplierType, addToast]);
-
-  useEffect(() => {
-    fetch('/api/banks')
-      .then(r => r.json())
-      .then(json => {
-        if(json.success && json.data) setBanks(json.data);
-      })
-      .catch(console.error);
-  }, []);
+  }, [debouncedSearchQuery, filterOnlyActive, filterOnlyTaxable, addToast]);
 
   useEffect(() => {
     let isMounted = true;
@@ -133,7 +125,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
         let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
         if (filterOnlyActive) url += `&onlyActive=true`;
         if (filterOnlyTaxable) url += `&onlyTaxable=true`;
-        if (filterSupplierType !== 'All') url += `&type=${filterSupplierType}`;
         const res = await fetch(url);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
@@ -155,25 +146,17 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
     setFormData({
       supplierNo: `S${(suppliers.length + 1).toString().padStart(5, '0')}`,
       supplierName: '',
-      supplierType: 'Lokal',
       address: '',
       city: '',
       phone1: '',
       phone2: '',
       fax: '',
       contactPerson: '',
-      contactPersonAddress: '',
-      contactPersonPhone1: '',
-      contactPersonPhone2: '',
       email: '',
       taxNo: '',
       isTaxable: false,
       description: '',
       isActive: true,
-      bankId: '',
-      bankAccount: '',
-      onBehalfOf: '',
-      creditLimit: 0,
     });
     setIsModalOpen(true);
   }, [suppliers.length]);
@@ -265,26 +248,24 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   // Export CSV
   const exportToCSV = () => {
     if (suppliers.length === 0) return addToast('Tidak ada data supplier untuk diexport', 'warning');
-    const headers = ['ID', 'Kode Supplier', 'Tipe Supplier', 'Nama Supplier', 'Alamat', 'Kota', 'Phone 1', 'Phone 2', 'Fax', 'Contact Person', 'Email', 'Bank Account', 'NPWP Tax No', 'Is Taxable', 'Status Active', 'Keterangan'];
+    const headers = ['ID', 'Kode Supplier', 'Nama Supplier', 'Alamat', 'Kota', 'Phone 1', 'Phone 2', 'Fax', 'Contact Person', 'Email', 'NPWP Tax No', 'Is Taxable', 'Status Active', 'Keterangan'];
     const csvRows = [headers.join(',')];
     suppliers.forEach((s) => {
       csvRows.push([
         s.id,
         `"${s.supplierNo || ''}"`,
-        `"${s.supplierType || ''}"`,
         `"${s.supplierName.replace(/"/g, '""')}"`,
         `"${(s.address || '').replace(/"/g, '""')}"`,
         `"${s.city || ''}"`,
         `"${s.phone1 || ''}"`,
         `"${s.phone2 || ''}"`,
         `"${s.fax || ''}"`,
-        `"${s.contactPerson || ''}"`,
+        `"${(s.contactPerson || '').replace(/"/g, '""')}"`,
         `"${s.email || ''}"`,
-        `"${s.bankAccount || ''}"`,
         `"${s.taxNo || ''}"`,
-        s.isTaxable ? 'Y' : 'N',
+        s.isTaxable ? 'PKP' : 'NON-PKP',
         s.isActive !== false ? 'AKTIF' : 'NON-AKTIF',
-        `"${(s.description || '').replace(/"/g, '""')}"`
+        `"${(s.description || '').replace(/"/g, '""')}"`,
       ].join(','));
     });
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -305,8 +286,9 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
   // Sorted Suppliers
   const sortedSuppliers = [...suppliers].sort((a, b) => {
-    const valA = a[sortField] ?? '';
-    const valB = b[sortField] ?? '';
+    if (!sortField) return 0;
+    const valA = a[sortField as keyof Supplier] ?? '';
+    const valB = b[sortField as keyof Supplier] ?? '';
     if (typeof valA === 'number' && typeof valB === 'number') {
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     }
@@ -434,18 +416,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={filterSupplierType}
-            onChange={(e) => setFilterSupplierType(e.target.value)}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-              isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
-            }`}
-          >
-            <option value="All">Semua Tipe</option>
-            <option value="Lokal">Lokal</option>
-            <option value="Import">Import</option>
-          </select>
-
           {/* Filter Checkbox Aktif */}
           <label className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
             filterOnlyActive
@@ -517,31 +487,16 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
-              <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-              }`}>
-                <th className="py-3 px-3.5 text-center w-12">ID</th>
-                <th className="py-3 px-4 w-28 text-left">Kode Supplier</th>
-                <th className="py-3 px-4 w-24 text-left">Tipe</th>
-                <th
-                  onClick={() => {
-                    if (sortField === 'supplierName') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                    else { setSortField('supplierName'); setSortOrder('asc'); }
-                  }}
-                  className="py-3 px-4 cursor-pointer hover:text-amber-300 transition-colors"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Nama Supplier / Perusahaan</span>
-                    {sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
-                  </div>
-                </th>
-                <th className="py-3 px-4">Alamat & Kota</th>
-                <th className="py-3 px-4">Telepon & Fax</th>
-                <th className="py-3 px-4 text-left">Contact Person</th>
-                <th className="py-3 px-4 text-left">Bank Info</th>
-                <th className="py-3 px-3 text-center">Tax Status</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-3 text-center">Aksi</th>
+              <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center w-12"><div className="flex items-center justify-center gap-1"><span>ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('supplierNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors w-28"><div className="flex items-center gap-1"><span>Kode Supplier</span>{sortField === 'supplierNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Supplier / Perusahaan</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('address')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Alamat & Kota</span>{sortField === 'address' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('phone1')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Telepon & Fax</span>{sortField === 'phone1' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('contactPerson')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Contact Person (PIC)</span>{sortField === 'contactPerson' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('isTaxable')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status PKP</span>{sortField === 'isTaxable' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th className="py-1.5 px-2 text-center"><div className="flex items-center justify-center gap-1"><span>Aksi</span></div></th>
               </tr>
             </thead>
             <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -580,20 +535,11 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     className={`transition-colors cursor-pointer ${
                       selectedSupplier?.id === sup.id
                         ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                        : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
+                        : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
                     }`}
                   >
                     <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{sup.id}</td>
                     <td className="py-3 px-4 font-mono font-black text-amber-400">{sup.supplierNo || '-'}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                        sup.supplierType === 'Import'
-                          ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40'
-                          : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                      }`}>
-                        {sup.supplierType || 'Lokal'}
-                      </span>
-                    </td>
                     <td className="py-3 px-4 font-black">
                       <div>{sup.supplierName}</div>
                       {sup.email && <div className="text-[11px] font-normal text-indigo-400 flex items-center gap-1 mt-0.5"><Mail className="w-3 h-3" />{sup.email}</div>}
@@ -616,21 +562,17 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                         <span className="text-slate-500 font-normal">-</span>
                       )}
                     </td>
-                    <td className={`py-3 px-4 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {sup.bankAccount ? (
-                        <div className="flex flex-col">
-                          <span className="font-bold text-amber-400 text-xs flex items-center gap-1"><Building2 className="w-3.5 h-3.5"/>{banks.find(b => b.id.toString() === sup.bankId?.toString())?.bankname || 'Bank'}</span>
-                          <span className="font-mono text-[11px]">{sup.bankAccount}</span>
-                        </div>
-                      ) : <span className="text-slate-500">-</span>}
-                    </td>
                     <td className="py-3 px-3 text-center">
                       {sup.isTaxable ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
+                          isDark ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-amber-100 text-amber-700 border-amber-300'
+                        }`}>
                           PKP
                         </span>
                       ) : (
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 border border-slate-700 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                          isDark ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-200 border-slate-300 text-slate-600'
+                        }`}>
                           Non-PKP
                         </span>
                       )}
@@ -638,8 +580,8 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     <td className="py-3 px-3 text-center">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
                         sup.isActive !== false
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                          ? (isDark ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-emerald-100 text-emerald-700 border border-emerald-300')
+                          : (isDark ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-rose-100 text-rose-700 border border-rose-300')
                       }`}>
                         {sup.isActive !== false ? 'AKTIF' : 'NON-AKTIF'}
                       </span>
@@ -766,7 +708,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     }`}
                   />
                 </div>
-                <div className="col-span-1">
+                <div className="col-span-2">
                   <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Supplier / Perusahaan *</label>
                   <input
                     type="text"
@@ -778,19 +720,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                       isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
-                </div>
-                <div className="col-span-1">
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Tipe Supplier *</label>
-                  <select
-                    value={formData.supplierType || 'Lokal'}
-                    onChange={(e) => setFormData({ ...formData, supplierType: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="Lokal">Lokal</option>
-                    <option value="Import">Import</option>
-                  </select>
                 </div>
               </div>
 
@@ -860,156 +789,56 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
-                <h4 className="font-bold text-amber-500 mb-3 flex items-center gap-1.5"><Users className="w-4 h-4"/> Data Contact Person (PIC)</h4>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama PIC</label>
-                    <input
-                      type="text"
-                      placeholder="Bpk. Budi Santoso"
-                      value={formData.contactPerson || ''}
-                      onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Email Resmi</label>
-                    <input
-                      type="email"
-                      placeholder="sales@supplier.com"
-                      value={formData.email || ''}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Contact Person (PIC Sales)</label>
+                  <input
+                    type="text"
+                    placeholder="Bpk. Budi Santoso"
+                    value={formData.contactPerson || ''}
+                    onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
+                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="col-span-1">
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Telepon PIC 1</label>
-                    <input
-                      type="text"
-                      placeholder="08123456789"
-                      value={formData.contactPersonPhone1 || ''}
-                      onChange={(e) => setFormData({ ...formData, contactPersonPhone1: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Telepon PIC 2</label>
-                    <input
-                      type="text"
-                      placeholder="08987654321"
-                      value={formData.contactPersonPhone2 || ''}
-                      onChange={(e) => setFormData({ ...formData, contactPersonPhone2: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alamat PIC</label>
-                    <input
-                      type="text"
-                      placeholder="Alamat khusus PIC"
-                      value={formData.contactPersonAddress || ''}
-                      onChange={(e) => setFormData({ ...formData, contactPersonAddress: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
+                <div>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Email Resmi</label>
+                  <input
+                    type="email"
+                    placeholder="sales@supplier.com"
+                    value={formData.email || ''}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                    }`}
+                  />
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-dashed border-indigo-500/30 bg-indigo-500/5">
-                <h4 className="font-bold text-indigo-400 mb-3 flex items-center gap-1.5"><Building2 className="w-4 h-4"/> Data Finansial & Bank</h4>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nomor NPWP Pajak</label>
-                    <input
-                      type="text"
-                      placeholder="01.234.567.8-012.000"
-                      value={formData.taxNo || ''}
-                      onChange={(e) => setFormData({ ...formData, taxNo: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-mono font-bold text-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
-                      }`}
-                    />
-                  </div>
-                  <div className="flex items-end pb-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.isTaxable || false}
-                        onChange={(e) => setFormData({ ...formData, isTaxable: e.target.checked })}
-                        className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
-                      />
-                      <span className="text-indigo-400">Pengusaha Kena Pajak (Status PKP)</span>
-                    </label>
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nomor NPWP Pajak</label>
+                  <input
+                    type="text"
+                    placeholder="01.234.567.8-012.000"
+                    value={formData.taxNo || ''}
+                    onChange={(e) => setFormData({ ...formData, taxNo: e.target.value })}
+                    className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
+                    }`}
+                  />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Bank Pembayaran</label>
-                    <select
-                      value={formData.bankId || ''}
-                      onChange={(e) => setFormData({ ...formData, bankId: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      <option value="">-- Pilih Bank --</option>
-                      {banks.map(b => (
-                        <option key={b.id} value={b.id}>{b.bankname}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nomor Rekening</label>
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
                     <input
-                      type="text"
-                      placeholder="1234567890"
-                      value={formData.bankAccount || ''}
-                      onChange={(e) => setFormData({ ...formData, bankAccount: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
+                      type="checkbox"
+                      checked={formData.isTaxable || false}
+                      onChange={(e) => setFormData({ ...formData, isTaxable: e.target.checked })}
+                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
                     />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Atas Nama (A/N)</label>
-                    <input
-                      type="text"
-                      placeholder="PT. Rekening Utama"
-                      value={formData.onBehalfOf || ''}
-                      onChange={(e) => setFormData({ ...formData, onBehalfOf: e.target.value })}
-                      className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Credit Limit</label>
-                    <input
-                      type="number"
-                      placeholder="0"
-                      value={formData.creditLimit || ''}
-                      onChange={(e) => setFormData({ ...formData, creditLimit: Number(e.target.value) })}
-                      className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                      }`}
-                    />
-                  </div>
+                    <span className="text-amber-400">Pengusaha Kena Pajak (Status PKP)</span>
+                  </label>
                 </div>
               </div>
 

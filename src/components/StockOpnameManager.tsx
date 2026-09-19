@@ -24,6 +24,8 @@ import {
   Package,
   Printer,
   Download,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 
 export interface OpnameEntry {
@@ -95,6 +97,20 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   // Table Filter & Search States
   const [tableSearch, setTableSearch] = useState<string>('');
   const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'variance' | 'matched'>('all');
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
 
   // Status States
   const [isBlindCount, setIsBlindCount] = useState<boolean>(false);
@@ -519,9 +535,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     return { totalItems, totalPhysicalQty, matchedCount, varianceCount, totalValue };
   }, [opnameItems]);
 
-  // Filtered Table Items
+  // Filtered and Sorted Table Items
   const filteredTableItems = useMemo(() => {
-    return opnameItems.filter((item) => {
+    let filtered = opnameItems.filter((item) => {
       // Search Query Filter
       const matchQuery =
         !tableSearch ||
@@ -539,7 +555,47 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       if (activeFilterTab === 'matched') return diff === 0;
       return true;
     });
-  }, [opnameItems, tableSearch, activeFilterTab]);
+
+    if (sortField) {
+      filtered = [...filtered].sort((a, b) => {
+        let aVal: any = a[sortField as keyof OpnameEntry];
+        let bVal: any = b[sortField as keyof OpnameEntry];
+
+        if (sortField === 'inventoryNo') {
+          aVal = a.inventoryNo;
+          bVal = b.inventoryNo;
+        } else if (sortField === 'inventoryName') {
+          aVal = a.inventoryName;
+          bVal = b.inventoryName;
+        } else if (sortField === 'systemQty') {
+          aVal = a.systemQty !== undefined ? a.systemQty : a.qty;
+          bVal = b.systemQty !== undefined ? b.systemQty : b.qty;
+        } else if (sortField === 'qty') {
+          aVal = a.qty;
+          bVal = b.qty;
+        } else if (sortField === 'diff') {
+          const aSys = a.systemQty !== undefined ? a.systemQty : a.qty;
+          const bSys = b.systemQty !== undefined ? b.systemQty : b.qty;
+          aVal = a.qty - aSys;
+          bVal = b.qty - bSys;
+        } else if (sortField === 'description') {
+          aVal = a.description;
+          bVal = b.description;
+        }
+
+        if (typeof aVal === 'string') {
+          aVal = aVal.toLowerCase();
+          bVal = (bVal as string).toLowerCase();
+        }
+
+        if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [opnameItems, tableSearch, activeFilterTab, sortField, sortOrder]);
 
   return (
     <div id="printable-opname-report" className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
@@ -1030,17 +1086,49 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         <table className="w-full text-left border-separate border-spacing-0">
             <thead className="sticky top-0 z-20">
               <tr
-                className={`text-[11px] font-black uppercase tracking-wider border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}
+                className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
               >
                 <th className="py-2.5 px-4 w-12 text-center">No.</th>
-                <th className="py-2.5 px-4">Kode Barang</th>
-                <th className="py-2.5 px-4">Nama Barang</th>
-                {!isBlindCount && <th className="py-2.5 px-4 text-center">Qty Sistem</th>}
-                <th className="py-2.5 px-4 text-center min-w-[150px]">Qty Fisik</th>
-                {!isBlindCount && <th className="py-2.5 px-4 text-center">Selisih</th>}
-                <th className="py-2.5 px-4">Keterangan</th>
+                <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                  <div className="flex items-center gap-1">
+                    <span>Kode Barang</span>
+                    {sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                  </div>
+                </th>
+                <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                  <div className="flex items-center gap-1">
+                    <span>Nama Barang</span>
+                    {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                  </div>
+                </th>
+                {!isBlindCount && (
+                  <th onClick={() => handleSort('systemQty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Qty Sistem</span>
+                      {sortField === 'systemQty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                )}
+                <th onClick={() => handleSort('qty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors min-w-[150px]">
+                  <div className="flex items-center justify-center gap-1">
+                    <span>Qty Fisik</span>
+                    {sortField === 'qty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                  </div>
+                </th>
+                {!isBlindCount && (
+                  <th onClick={() => handleSort('diff')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Selisih</span>
+                      {sortField === 'diff' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                )}
+                <th onClick={() => handleSort('description')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                  <div className="flex items-center gap-1">
+                    <span>Keterangan</span>
+                    {sortField === 'description' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                  </div>
+                </th>
                 <th className="py-2.5 px-4 text-center w-16">Aksi</th>
               </tr>
             </thead>
@@ -1071,9 +1159,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                   return (
                     <tr
                       key={item.inventoryId}
-                      className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/60 text-slate-200' : 'hover:bg-amber-50/50 text-slate-800'
-                      }`}
+                      className={"transition-colors " + (isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800')}
                     >
                       <td className={`py-2.5 px-4 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
                       <td className="py-2.5 px-4 font-mono">

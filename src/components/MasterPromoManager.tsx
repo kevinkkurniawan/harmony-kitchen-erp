@@ -86,8 +86,20 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: PromoRuleItem | PromoGroupItem; type: 'rule' | 'group' } | null>(null);
 
   // Sorting
-  const [sortFieldRule, setSortFieldRule] = useState<keyof PromoRuleItem>('id');
-  const [sortOrderRule, setSortOrderRule] = useState<'asc' | 'desc'>('asc');
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
 
   // Modals
   const [isRuleModalOpen, setIsRuleModalOpen] = useState<boolean>(false);
@@ -419,12 +431,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
 
   // Sorted Promo Rules
   const sortedRules = [...promoRules].sort((a, b) => {
-    const valA = a[sortFieldRule] ?? '';
-    const valB = b[sortFieldRule] ?? '';
+    if (!sortField) return 0;
+    const valA = a[sortField as keyof PromoRuleItem] ?? '';
+    const valB = b[sortField as keyof PromoRuleItem] ?? '';
     if (typeof valA === 'number' && typeof valB === 'number') {
-      return sortOrderRule === 'asc' ? valA - valB : valB - valA;
+      return sortOrder === 'asc' ? valA - valB : valB - valA;
     }
-    return sortOrderRule === 'asc'
+    return sortOrder === 'asc'
       ? String(valA).localeCompare(String(valB))
       : String(valB).localeCompare(String(valA));
   });
@@ -634,19 +647,17 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
-                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}>
-                  <th className="py-3 px-3.5 text-center w-12">ID</th>
-                  <th className="py-3 px-4">Nama Promo</th>
-                  <th className="py-3 px-3 text-right">Promo Bundle</th>
-                  <th className="py-3 px-3 text-right">Promo Grosir (Rp)</th>
-                  <th className="py-3 px-3 text-right">Diskon (%)</th>
-                  <th className="py-3 px-3 text-right">Qty Min</th>
-                  <th className="py-3 px-3 text-right">Qty Max</th>
-                  <th className="py-3 px-3 text-center">Group</th>
-                  <th className="py-3 px-3 text-center">Status</th>
-                  <th className="py-3 px-3 text-center">Aksi</th>
+                <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                  <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('promoName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Promo</span>{sortField === 'promoName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('promoBundle')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Promo Bundle</span>{sortField === 'promoBundle' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('promoGrosir')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Promo Grosir (Rp)</span>{sortField === 'promoGrosir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('discountPct')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Diskon (%)</span>{sortField === 'discountPct' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('qtyMin')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Qty Min</span>{sortField === 'qtyMin' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('qtyMax')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Qty Max</span>{sortField === 'qtyMax' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('groupName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Group</span>{sortField === 'groupName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th className="py-1.5 px-2 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -664,7 +675,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                     </td>
                   </tr>
                 ) : (
-                  promoRules.map((rule) => {
+                  sortedRules.map((rule) => {
                     const code = rule.promoNo || rule.promo_no || `PRM-${rule.id}`;
                     const name = rule.promoName || rule.promo_name || 'Promo Item';
                     const group = rule.groupName || rule.group_name || 'Promo Utama';
@@ -689,7 +700,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         className={`transition-colors cursor-pointer ${
                           selectedRule?.id === rule.id
                             ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
+                            : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
                         }`}
                       >
                         <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{rule.id}</td>

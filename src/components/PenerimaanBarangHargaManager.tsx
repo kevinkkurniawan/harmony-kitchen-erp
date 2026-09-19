@@ -19,6 +19,8 @@ import {
   Plus,
   ArrowLeft,
   Eye,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { ERPProduct, Supplier } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -46,8 +48,7 @@ export interface PricedReceiptHeader {
   doNo: string;
   driverName: string;
   vehicleNo: string;
-  transporter: string;
-  wh_name?: string;
+  whName: string;
   paymentType: string;
   dueDate: string;
   downPayment: number;
@@ -71,12 +72,27 @@ interface ToastMessage {
 
 interface PenerimaanBarangHargaManagerProps {
   isDark: boolean;
-  canViewPrice?: boolean;
 }
 
-export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = true }: PenerimaanBarangHargaManagerProps) {
+export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBarangHargaManagerProps) {
   // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
+
+  // Sorting States
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
 
   // List View States
   const [receiptsList, setReceiptsList] = useState<PricedReceiptHeader[]>([]);
@@ -85,7 +101,7 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
   const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
 
   // Form Header States
-  const [mrNo, setMrNo] = useState<string>('');
+  const [mrNo, setMrNo] = useState<string>(() => 'MR-RCV-' + Math.floor(100000 + Math.random() * 900000));
   const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
   const [selectedSupplierName, setSelectedSupplierName] = useState<string>('');
@@ -93,9 +109,7 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
   const [doNo, setDoNo] = useState<string>('');
   const [driverName, setDriverName] = useState<string>('');
   const [vehicleNo, setVehicleNo] = useState<string>('');
-  const [transporter, setTransporter] = useState<string>('');
-  const [warehouses, setWarehouses] = useState<{id: number, whCode: string, location: string}[]>([]);
-  const [whId, setWhId] = useState<string>('');
+  const [whName, setWhName] = useState<string>('Gudang Utama Dapur');
   const [paymentType, setPaymentType] = useState<string>('TEMPO');
   const [dueDate, setDueDate] = useState<string>(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
   const [downPayment, setDownPayment] = useState<number>(0);
@@ -164,38 +178,25 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
     }
   };
 
-  // Fetch Suppliers and Lookups for dropdowns
+  // Fetch Suppliers for dropdown
   useEffect(() => {
     let isMounted = true;
-    async function loadData() {
+    async function loadSuppliers() {
       try {
-        const [supRes, lookupRes] = await Promise.all([
-          fetch('/api/suppliers?onlyActive=true&all=true'),
-          fetch('/api/inventory/lookups')
-        ]);
-        const supJson = await supRes.json();
-        const lookupJson = await lookupRes.json();
-        
-        if (isMounted) {
-          if (supJson.success && Array.isArray(supJson.data)) {
-            setSuppliersList(supJson.data);
-            if (supJson.data.length > 0) {
-              setSelectedSupplierId(supJson.data[0].id.toString());
-              setSelectedSupplierName(supJson.data[0].supplierName);
-            }
-          }
-          if (lookupJson.success && lookupJson.data?.warehouses) {
-            setWarehouses(lookupJson.data.warehouses);
-            if (lookupJson.data.warehouses.length > 0) {
-              setWhId(lookupJson.data.warehouses[0].id.toString());
-            }
+        const res = await fetch('/api/suppliers?onlyActive=true&all=true');
+        const json = await res.json();
+        if (isMounted && json.success && Array.isArray(json.data)) {
+          setSuppliersList(json.data);
+          if (json.data.length > 0) {
+            setSelectedSupplierId(json.data[0].id);
+            setSelectedSupplierName(json.data[0].supplierName);
           }
         }
       } catch (err) {
-        console.error('Error fetching data:', err);
+        console.error('Error fetching suppliers:', err);
       }
     }
-    loadData();
+    loadSuppliers();
     return () => { isMounted = false; };
   }, []);
 
@@ -291,21 +292,19 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
     setIsSubmitting(true);
     try {
       const payload = {
-        mr_no: mrNo,
-        supplier_id: selectedSupplierId,
-        supplier_name: selectedSupplierName,
-        po_no: poNo,
-        do_no: doNo,
-        driver_name: driverName,
-        vehicle_no: vehicleNo,
-        transporter: transporter,
-        wh_id: whId,
-        payment_type: paymentType,
-        due_date: dueDate,
-        down_payment: downPayment,
-        disc_percentage: discPercentage,
-        tax: ppnValue,
-        grand_total: grandTotal,
+        mrNo,
+        supplierId: selectedSupplierId,
+        supplierName: selectedSupplierName,
+        poNo,
+        doNo,
+        driverName,
+        vehicleNo,
+        whName,
+        paymentType,
+        dueDate,
+        downPayment,
+        discPercentage,
+        ppnPercentage,
         description: headerDesc,
         items,
       };
@@ -332,8 +331,7 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
             doNo,
             driverName,
             vehicleNo,
-            transporter,
-            wh_name: warehouses.find(w => w.id.toString() === whId)?.location || '-',
+            whName,
             paymentType,
             dueDate,
             downPayment,
@@ -350,17 +348,13 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
         });
 
         // Reset form & return to list mode
-        setMrNo('');
+        setMrNo('MR-RCV-' + Math.floor(100000 + Math.random() * 900000));
         setPoNo('');
         setDoNo('');
         setDriverName('');
         setVehicleNo('');
-        setTransporter('');
-        setPaymentType('TEMPO');
-        setDueDate(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
         setDownPayment(0);
         setDiscPercentage(0);
-        setPpnPercentage(11);
         setHeaderDesc('');
         setItems([]);
         setIsPrintModalOpen(true);
@@ -452,21 +446,19 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
         <div className="flex-1 overflow-hidden flex flex-col p-4 gap-4">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-            {canViewPrice && (
-              <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-                isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-              }`}>
-                <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <DollarSign className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Tagihan Penerimaan</div>
-                  <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-                    Rp {totalSumGrandTotal.toLocaleString('id-ID')}
-                  </div>
+            <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
+            }`}>
+              <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Tagihan Penerimaan</div>
+                <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
+                  Rp {totalSumGrandTotal.toLocaleString('id-ID')}
                 </div>
               </div>
-            )}
+            </div>
 
             <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
               isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
@@ -545,23 +537,21 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
-                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}>
-                  <th className="py-3.5 px-4 text-center">No MR</th>
-                  <th className="py-3.5 px-4">Tanggal MR</th>
-                  <th className="py-3.5 px-4">Supplier Pemasok</th>
-                  <th className="py-3.5 px-4">No. PO</th>
-                  <th className="py-3.5 px-4">Termin / Due Date</th>
-                  {canViewPrice && <th className="py-3.5 px-4 text-right">Grand Total</th>}
-                  <th className="py-3.5 px-4 text-center">Status</th>
-                  <th className="py-3.5 px-4 text-center w-28">Aksi</th>
+                <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                  <th onClick={() => handleSort('mrNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>No MR</span>{sortField === 'mrNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('mrDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal MR</span>{sortField === 'mrDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Supplier Pemasok</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('poNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>No. PO</span>{sortField === 'poNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('dueDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Termin / Due Date</span>{sortField === 'dueDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('grandTotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-end gap-1"><span>Grand Total</span>{sortField === 'grandTotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('isVoid')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isVoid' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th className="py-1.5 px-2 text-center w-28">Aksi</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoadingList ? (
                   <tr>
-                    <td colSpan={canViewPrice ? 8 : 7} className="py-24">
+                    <td colSpan={8} className="py-24">
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
@@ -571,12 +561,32 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                   </tr>
                 ) : receiptsList.length === 0 ? (
                   <tr>
-                    <td colSpan={canViewPrice ? 8 : 7} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada faktur penerimaan barang dengan harga. Klik tombol <strong>&quot;+ Input Penerimaan Baru&quot;</strong> di atas.
                     </td>
                   </tr>
                 ) : (
-                  receiptsList.map((row: any) => {
+                  [...receiptsList].sort((a: any, b: any) => {
+                    if (!sortField) return 0;
+                    
+                    let valA = a[sortField];
+                    let valB = b[sortField];
+                    
+                    if (sortField === 'mrNo') { valA = a.mrNo || a.mr_no || ''; valB = b.mrNo || b.mr_no || ''; }
+                    else if (sortField === 'mrDate') { valA = a.mrDate || a.mr_date || ''; valB = b.mrDate || b.mr_date || ''; }
+                    else if (sortField === 'supplierName') { valA = a.supplierName || a.supplier_name || ''; valB = b.supplierName || b.supplier_name || ''; }
+                    else if (sortField === 'poNo') { valA = a.poNo || a.po_no || ''; valB = b.poNo || b.po_no || ''; }
+                    else if (sortField === 'dueDate') { valA = a.paymentType || ''; valB = b.paymentType || ''; }
+                    else if (sortField === 'grandTotal') { valA = a.grandTotal ?? a.totalAmount ?? a.total_amount ?? 0; valB = b.grandTotal ?? b.totalAmount ?? b.total_amount ?? 0; }
+                    else if (sortField === 'isVoid') { valA = a.isVoid ? 1 : 0; valB = b.isVoid ? 1 : 0; }
+
+                    if (typeof valA === 'string') valA = valA.toLowerCase();
+                    if (typeof valB === 'string') valB = valB.toLowerCase();
+                    
+                    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+                    return 0;
+                  }).map((row: any) => {
                     const mrNo = row.mrNo || row.mr_no || '-';
                     const mrDate = row.mrDate || row.mr_date || '-';
                     const supplier = row.supplierName || row.supplier_name || 'Supplier General';
@@ -585,17 +595,15 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                     const grandTotal = row.grandTotal ?? row.totalAmount ?? row.total_amount ?? 0;
 
                     return (
-                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
+                      <tr key={row.id} className={isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
                         <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
                         <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{payType}</td>
-                        {canViewPrice && (
-                          <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
-                            Rp {Number(grandTotal).toLocaleString('id-ID')}
-                          </td>
-                        )}
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
+                          Rp {Number(grandTotal).toLocaleString('id-ID')}
+                        </td>
                         <td className="py-3.5 px-4 text-center">
                           {row.isVoid ? (
                             <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
@@ -690,9 +698,8 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                   type="text"
                   readOnly
                   value={mrNo}
-                  placeholder="[AUTO GENERATE]"
-                  className={`w-full p-2.5 rounded-xl border font-mono font-black text-amber-400 focus:outline-none placeholder-amber-400/50 ${
-                    isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'
+                  className={`w-full p-2.5 rounded-xl border font-mono font-black text-amber-400 focus:outline-none ${
+                    isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
                   }`}
                 />
               </div>
@@ -787,19 +794,14 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
 
               <div>
                 <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Tujuan</label>
-                <select
-                  value={whId}
-                  onChange={(e) => setWhId(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
+                <input
+                  type="text"
+                  value={whName}
+                  onChange={(e) => setWhName(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                     isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
-                >
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.location}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div>
@@ -810,32 +812,6 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                   value={vehicleNo}
                   onChange={(e) => setVehicleNo(e.target.value)}
                   className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Transporter / Ekspedisi</label>
-                <input
-                  type="text"
-                  placeholder="JTR / Dakota"
-                  value={transporter}
-                  onChange={(e) => setTransporter(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="col-span-1 md:col-span-2">
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Catatan Penerimaan</label>
-                <input
-                  type="text"
-                  placeholder="Catatan fisik..."
-                  value={headerDesc}
-                  onChange={(e) => setHeaderDesc(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                     isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
@@ -884,9 +860,7 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                     >
                       <div>
                         <div className="font-black text-amber-400">{prod.inventoryName}</div>
-                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                          SKU: {prod.inventoryNo} {canViewPrice && `| Harga Beli: Rp ${(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}`}
-                        </div>
+                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo} | Harga Beli: Rp {(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}</div>
                       </div>
                       <div className="text-right">
                         <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[10px]">
@@ -937,16 +911,16 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                     <th className="py-3 px-4">Nama Barang</th>
                     <th className="py-3 px-3 text-center">Satuan</th>
                     <th className="py-3 px-3 text-center w-24">Qty Masuk *</th>
-                    {canViewPrice && <th className="py-3 px-4 text-right w-36">Harga Beli (Rp) *</th>}
+                    <th className="py-3 px-4 text-right w-36">Harga Beli (Rp) *</th>
                     <th className="py-3 px-3 text-center w-24">Diskon %</th>
-                    {canViewPrice && <th className="py-3 px-4 text-right w-36">Subtotal</th>}
+                    <th className="py-3 px-4 text-right w-36">Subtotal</th>
                     <th className="py-3 px-3 text-center w-16">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={canViewPrice ? 10 : 8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                      <td colSpan={10} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         <ScanLine className="w-8 h-8 mx-auto mb-2 text-slate-500 animate-pulse" />
                         Belum ada barang diinput. Gunakan pencarian barcode di atas untuk menambah barang dengan harga beli.
                       </td>
@@ -977,26 +951,24 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                             }`}
                           />
                         </td>
-                        {canViewPrice && (
-                          <td className="py-3 px-4 text-right">
-                            <input
-                              type="number"
-                              min={0}
-                              value={item.price}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                setItems((prev) => prev.map((it, i) => {
-                                  if (i !== idx) return it;
-                                  const sub = it.qty * val * (1 - it.discPercentage / 100);
-                                  return { ...it, price: val, subtotal: sub };
-                                }));
-                              }}
-                              className={`w-28 p-1.5 rounded-lg border font-mono font-black text-right focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                                isDark ? 'bg-slate-800 border-slate-700 text-amber-300' : 'bg-slate-100 border-slate-300 text-amber-700'
-                              }`}
-                            />
-                          </td>
-                        )}
+                        <td className="py-3 px-4 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.price}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setItems((prev) => prev.map((it, i) => {
+                                if (i !== idx) return it;
+                                const sub = it.qty * val * (1 - it.discPercentage / 100);
+                                return { ...it, price: val, subtotal: sub };
+                              }));
+                            }}
+                            className={`w-28 p-1.5 rounded-lg border font-mono font-black text-right focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                              isDark ? 'bg-slate-800 border-slate-700 text-amber-300' : 'bg-slate-100 border-slate-300 text-amber-700'
+                            }`}
+                          />
+                        </td>
                         <td className="py-3 px-3 text-center">
                           <input
                             type="number"
@@ -1016,11 +988,9 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                             }`}
                           />
                         </td>
-                        {canViewPrice && (
-                          <td className="py-3 px-4 text-right font-mono font-black text-emerald-400">
-                            Rp {item.subtotal.toLocaleString('id-ID')}
-                          </td>
-                        )}
+                        <td className="py-3 px-4 text-right font-mono font-black text-emerald-400">
+                          Rp {item.subtotal.toLocaleString('id-ID')}
+                        </td>
                         <td className="py-3 px-3 text-center">
                           <button
                             onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
@@ -1038,59 +1008,57 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
             </div>
 
             {/* Financial Footer Card */}
-            {canViewPrice && (
-              <div className={`p-5 rounded-2xl border shadow-xl flex flex-wrap items-center justify-between gap-6 ${
-                isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-              }`}>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-1 text-xs">
-                  <div>
-                    <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Subtotal Item Barang:</div>
-                    <div className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"}`}>Rp {rawSubtotal.toLocaleString('id-ID')}</div>
-                  </div>
+            <div className={`p-5 rounded-2xl border shadow-xl flex flex-wrap items-center justify-between gap-6 ${
+              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
+            }`}>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-1 text-xs">
+                <div>
+                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Subtotal Item Barang:</div>
+                  <div className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"}`}>Rp {rawSubtotal.toLocaleString('id-ID')}</div>
+                </div>
 
-                  <div>
-                    <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon Faktur (%):</div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={discPercentage}
-                        onChange={(e) => setDiscPercentage(parseFloat(e.target.value) || 0)}
-                        className={`w-16 p-1 rounded-lg border font-mono font-black text-center focus:outline-none ${
-                          isDark ? 'bg-slate-800 border-slate-700 text-amber-400' : 'bg-slate-100 border-slate-300'
-                        }`}
-                      />
-                      <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(- Rp {discValue.toLocaleString('id-ID')})</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>PPn Pajak (%):</div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={ppnPercentage}
-                        onChange={(e) => setPpnPercentage(parseFloat(e.target.value) || 0)}
-                        className={`w-16 p-1 rounded-lg border font-mono font-black text-center focus:outline-none ${
-                          isDark ? 'bg-slate-800 border-slate-700 text-purple-400' : 'bg-slate-100 border-slate-300'
-                        }`}
-                      />
-                      <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(+ Rp {ppnValue.toLocaleString('id-ID')})</span>
-                    </div>
+                <div>
+                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon Faktur (%):</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={discPercentage}
+                      onChange={(e) => setDiscPercentage(parseFloat(e.target.value) || 0)}
+                      className={`w-16 p-1 rounded-lg border font-mono font-black text-center focus:outline-none ${
+                        isDark ? 'bg-slate-800 border-slate-700 text-amber-400' : 'bg-slate-100 border-slate-300'
+                      }`}
+                    />
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(- Rp {discValue.toLocaleString('id-ID')})</span>
                   </div>
                 </div>
 
-                <div className="text-right border-l pl-6 border-slate-700">
-                  <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Grand Total Tagihan:</div>
-                  <div className="text-2xl font-black text-emerald-400 font-mono">
-                    Rp {grandTotal.toLocaleString('id-ID')}
+                <div>
+                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>PPn Pajak (%):</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={ppnPercentage}
+                      onChange={(e) => setPpnPercentage(parseFloat(e.target.value) || 0)}
+                      className={`w-16 p-1 rounded-lg border font-mono font-black text-center focus:outline-none ${
+                        isDark ? 'bg-slate-800 border-slate-700 text-purple-400' : 'bg-slate-100 border-slate-300'
+                      }`}
+                    />
+                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(+ Rp {ppnValue.toLocaleString('id-ID')})</span>
                   </div>
                 </div>
               </div>
-            )}
+
+              <div className="text-right border-l pl-6 border-slate-700">
+                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Grand Total Tagihan:</div>
+                <div className="text-2xl font-black text-emerald-400 font-mono">
+                  Rp {grandTotal.toLocaleString('id-ID')}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1172,7 +1140,7 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                 <div>
                   <div className="text-[10px] uppercase font-bold text-slate-500">Ketentuan Pembayaran:</div>
                   <div className="font-bold text-slate-800">Tipe: {printData.header.paymentType} | Jatuh Tempo: {printData.header.dueDate || '-'}</div>
-                  <div className="font-bold text-slate-800">Gudang: {printData.header.wh_name}</div>
+                  <div className="font-bold text-slate-800">Gudang: {printData.header.whName}</div>
                 </div>
               </div>
 

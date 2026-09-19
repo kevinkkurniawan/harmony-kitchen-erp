@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { canViewHpp } from '@/lib/erp-permissions';
+import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const mayViewHpp = await canViewHpp();
     const i = await prisma.m_inventory.findUnique({ where: { id: Number(id) } });
     if (!i) return NextResponse.json({ success: false }, { status: 404 });
-    const mapped = { id: i.id, barcode: i.barcode, inventory_no: i.inventoryno, inventory_name: i.inventoryname, category_id: null, brand_id: null, uom_id: null, hpp: 0, price: i.price, grosir1: i.grosir1, grosir2: i.grosir2, grosir3: i.grosir3, stock: 0, is_active: true };
+    const mapped = { id: i.id, barcode: i.barcode, inventory_no: i.inventoryno, inventory_name: i.inventoryname, category_id: null, brand_id: null, uom_id: null, ...(mayViewHpp ? { hpp: Number(i.hpp || 0) } : {}), price: i.price, grosir1: i.grosir1, grosir2: i.grosir2, grosir3: i.grosir3, stock: 0, is_active: true };
     return NextResponse.json({ success: true, data: mapped });
   } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
@@ -14,9 +17,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params;
     const body = await req.json();
+    const mayViewHpp = await canViewHpp();
+    if (!mayViewHpp && body.hpp !== undefined) return NextResponse.json({ success: false, error: 'Anda tidak memiliki hak akses untuk mengubah HPP.' }, { status: 403 });
+    const incomingName = body.inventoryName ?? body.inventory_name;
+    if (incomingName !== undefined) {
+      const nameError = validateInventoryName(incomingName);
+      if (nameError) return NextResponse.json({ success: false, error: nameError }, { status: 400 });
+    }
     const data = {
       inventoryno: body.inventoryNo || body.inventory_no,
-      inventoryname: body.inventoryName || body.inventory_name,
+      inventoryname: incomingName !== undefined ? normalizeInventoryName(incomingName) : undefined,
       barcode: body.barcode || body.inventoryNo || body.inventory_no,
       inventorybrandid: body.inventoryBrandId ? Number(body.inventoryBrandId) : undefined,
       inventorycategoryid: body.inventoryCategoryId ? Number(body.inventoryCategoryId) : undefined,
@@ -26,7 +36,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       maxstock: body.maxStock !== undefined ? Number(body.maxStock) : undefined,
       kodeharga: body.kodeHarga,
       description: body.description,
-      hpp: body.hpp !== undefined ? Number(body.hpp) : undefined,
+      hpp: mayViewHpp && body.hpp !== undefined ? Number(body.hpp) : undefined,
       price: body.price !== undefined ? Number(body.price) : undefined,
       pricebuy: body.priceBuy !== undefined ? Number(body.priceBuy) : undefined,
       grosir1: body.grosir1 !== undefined ? Number(body.grosir1) : null,
