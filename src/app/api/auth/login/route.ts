@@ -12,5 +12,8 @@ export async function POST(request: Request) {
     await createSession(sessionUser);
     const permissions = await getPermissionsForUser(sessionUser);
     return NextResponse.json({ success: true, user: { ...sessionUser, fullName: user.username || 'User', isActive: true }, permissions });
-  } catch { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) {
+    console.error('Login error:', error);
+    return NextResponse.json({ success: false, error: 'Terjadi kesalahan server (mungkin koneksi database). Silakan coba lagi.' }, { status: 500 });
+  }
 }

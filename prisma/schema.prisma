@@ -1334,3 +1334,16 @@ model temp_barcodelist {
 
   @@ignore
 }
+
+model erp_user_permission {
+  user_id     BigInt
+  module_code String
+  can_view    Boolean  @default(false)
+  can_add     Boolean  @default(false)
+  can_edit    Boolean  @default(false)
+  can_delete  Boolean  @default(false)
+  can_print   Boolean  @default(false)
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([user_id, module_code])
+}
