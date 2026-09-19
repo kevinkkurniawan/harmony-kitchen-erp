@@ -915,42 +915,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
         isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
-        {/* Search Bar Input */}
-        <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
-          <div className="relative flex-1 group">
-            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-              isDark ? 'text-slate-400 group-focus-within:text-amber-400' : 'text-slate-700 group-focus-within:text-slate-950'
-            }`} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Cari Barang (SKU / Barcode / Nama)... [/]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full border-2 rounded-xl pl-10 pr-16 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
-              }`}
-            />
-            {searchQuery ? (
-              <button
-                onClick={() => setSearchQuery('')}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full transition-colors cursor-pointer ${
-                  isDark ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-                }`}
-                title="Bersihkan pencarian"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <kbd className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-black px-1.5 py-0.5 rounded border ${
-                isDark ? 'bg-slate-700 border-slate-600 text-slate-300' : 'bg-slate-200 border-slate-400 text-slate-800'
-              }`}>
-                /
-              </kbd>
-            )}
-          </div>
-        </div>
-
         {/* 🔘 TOOLBAR ACTION BUTTONS */}
         <div className="flex items-center gap-2 flex-wrap">
           {mode !== 'stock' && (
@@ -1123,7 +1087,43 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
             )}
           </div>
         </div>
-      </div>
+{/* Search Bar Input */}
+        <div className="flex items-center gap-3 flex-1 min-w-[280px] w-full">
+          <div className="relative flex-1 group">
+            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
+              isDark ? 'text-slate-400 group-focus-within:text-amber-400' : 'text-slate-700 group-focus-within:text-slate-950'
+            }`} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Cari Barang (SKU / Barcode / Nama)... [/]"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`w-full border-2 rounded-xl pl-10 pr-16 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
+                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
+              }`}
+            />
+            {searchQuery ? (
+              <button
+                onClick={() => setSearchQuery('')}
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full transition-colors cursor-pointer ${
+                  isDark ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                }`}
+                title="Bersihkan pencarian"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <kbd className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-black px-1.5 py-0.5 rounded border ${
+                isDark ? 'bg-slate-700 border-slate-600 text-slate-300' : 'bg-slate-200 border-slate-400 text-slate-800'
+              }`}>
+                /
+              </kbd>
+            )}
+          </div>
+        </div>
+
+              </div>
 
       {/* 🔍 SHOW DETAIL TOP BANNER - SOLID PITCH BLACK TEXT ON CRISP WHITE CARDS */}
       {showDetailPane && selectedProduct && (
