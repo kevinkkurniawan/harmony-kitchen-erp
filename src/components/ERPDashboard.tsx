@@ -60,14 +60,14 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
   const [activeTab, setActiveTab] = useState<TabKey>('master-barang');
 
   useEffect(() => {
-    const saved = localStorage.getItem('erp_active_tab');
+    const saved = sessionStorage.getItem('erp_active_tab');
     if (saved) {
       setActiveTab(saved as TabKey);
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('erp_active_tab', activeTab);
+    sessionStorage.setItem('erp_active_tab', activeTab);
   }, [activeTab]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
