@@ -53,10 +53,13 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
+    if (sortField !== field) {
       setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
       setSortOrder('asc');
     }
   };

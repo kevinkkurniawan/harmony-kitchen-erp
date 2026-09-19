@@ -106,10 +106,13 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   const [printData, setPrintData] = useState<{ header: PosHeader; items: PosItemDetail[] } | null>(null);
 
   const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
+    if (sortField !== field) {
       setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
       setSortOrder('asc');
     }
   };

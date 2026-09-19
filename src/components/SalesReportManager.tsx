@@ -92,10 +92,13 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
+    if (sortField !== field) {
       setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
       setSortOrder('asc');
     }
   };
