@@ -76,6 +76,7 @@ interface ToastMessage {
 }
 
 interface SalesMonitoringManagerProps {
+  canViewPrice?: boolean;
   isDark: boolean;
 }
 

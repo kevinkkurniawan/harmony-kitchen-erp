@@ -660,14 +660,14 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className={`py-12 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    <td colSpan={10} className={`py-12 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       <RefreshCw className="w-5 h-5 text-amber-400 animate-spin mx-auto mb-2" />
                       Memuat aturan promo dari database...
                     </td>
                   </tr>
                 ) : promoRules.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
+                    <td colSpan={10} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
                       Tidak ada aturan promo ditemukan.
                     </td>
                   </tr>

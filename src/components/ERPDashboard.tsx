@@ -69,6 +69,13 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
     return perm ? perm.canView : true;
   };
 
+  const hasPermission = (moduleCode: string, field: string) => {
+    if (currentUser?.userLevel === 'Admin') return true;
+    if (!userPermissions || userPermissions.length === 0) return true;
+    const perm = userPermissions.find((p) => p.moduleCode === moduleCode);
+    return perm ? !!(perm as any)[field] : true;
+  };
+
   const isDark = theme === 'dark';
   const isAdmin = currentUser?.userLevel === 'Admin';
   const canViewHpp = isAdmin || userPermissions.find((permission) => permission.moduleCode === 'view-hpp')?.canView === true;
@@ -350,20 +357,20 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewHpp={canViewHpp} />}
-          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewHpp={canViewHpp} canViewPrice={hasPermission('master-barang', 'canViewPrice')} />}
+          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={hasPermission('inventory-stok', 'canViewPrice')} />}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}
 
           {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
-          {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} />}
-          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
+          {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} canViewPrice={hasPermission('penerimaan-barang', 'canViewPrice')} />}
+          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} canViewPrice={hasPermission('penerimaan-barang-harga', 'canViewPrice')} />}
 
-          {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} />}
+          {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} canViewPrice={hasPermission('sales-monitoring', 'canViewPrice')} />}
 
-          {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} />}
+          {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} canViewPrice={hasPermission('laporan-penjualan', 'canViewPrice')} />}
 
           {activeTab === 'user-management' && <UserAccessManager isDark={isDark} />}
         </main>

@@ -67,10 +67,10 @@ interface ToastMessage {
 interface MasterBarangManagerProps {
   isDark: boolean;
   mode?: 'master' | 'stock';
-  canViewHpp?: boolean;
+  canViewPrice?: boolean;
 }
 
-export default function MasterBarangManager({ isDark, mode = 'master', canViewHpp = false }: MasterBarangManagerProps) {
+export default function MasterBarangManager({ isDark, mode = 'master', canViewPrice = false }: MasterBarangManagerProps) {
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -371,7 +371,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
       'Product Type',
       'Satuan (UoM)',
       'Harga Retail',
-      ...(canViewHpp ? ['HPP (Modal)'] : []),
+      ...(canViewPrice ? ['HPP (Modal)'] : []),
       'Grosir 1',
       'Grosir 2',
       'Grosir 3',
@@ -392,7 +392,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
         p.productName || '',
         p.uomName || 'PCS',
         p.price || 0,
-        ...(canViewHpp ? [p.hpp || 0] : []),
+        ...(canViewPrice ? [p.hpp || 0] : []),
         p.grosir1 || 0,
         p.grosir2 || 0,
         p.grosir3 || 0,
@@ -593,7 +593,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
               >
                 Harga & Grosir
               </button>
-              {!isCreatingNew && canViewHpp && (
+              {!isCreatingNew && canViewPrice && (
                 <button
                   type="button"
                   onClick={() => setActiveFormTab('stock')}
@@ -774,7 +774,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                       }`}
                     />
                   </div>
-                  {canViewHpp && <div>
+                  {canViewPrice && <div>
                     <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
                     <input
                       type="number"
@@ -832,7 +832,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                 </div>
               )}
 
-              {activeFormTab === 'stock' && canViewHpp && (
+              {activeFormTab === 'stock' && canViewPrice && (
                 <div className="space-y-3 text-xs font-black">
                   <h4 className="font-black text-slate-950 dark:text-slate-200">Riwayat HPP & Penerimaan Barang</h4>
                   <div className="rounded-xl border-2 border-slate-400 dark:border-slate-800 overflow-hidden">
@@ -1173,9 +1173,9 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">{canViewHpp ? 'Harga Retail, Beli & HPP' : 'Harga Retail'}</div>
+              <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">{canViewPrice ? 'Harga Retail, Beli & HPP' : 'Harga Retail'}</div>
               <div className="font-black text-sm text-slate-950 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
-              {canViewHpp && <>
+              {canViewPrice && <>
                 <div className="text-[11px] font-black text-emerald-950 dark:text-emerald-400">Harga Beli: Rp {(selectedProduct.priceBuy || 0).toLocaleString('id-ID')}</div>
                 <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
               </>}
@@ -1314,7 +1314,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                       {sortField === 'price' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  {canViewHpp && <th onClick={() => handleSort('hpp')} className="py-1.5 px-2 text-right cursor-pointer hover:text-emerald-400 transition-colors">
+                  {canViewPrice && <th onClick={() => handleSort('hpp')} className="py-1.5 px-2 text-right cursor-pointer hover:text-emerald-400 transition-colors">
                     <div className="flex items-center justify-end gap-1">
                       <span>HPP (Modal)</span>
                       {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
@@ -1420,7 +1420,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.productName || '-'}</td>
                       <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
                       <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
-                      {canViewHpp && <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>}
+                      {canViewPrice && <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>}
                       <td className={`py-1 px-2 text-[11px] font-medium max-w-[150px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={item.description || '-'}>
                         {item.description || '-'}
                       </td>
@@ -1697,7 +1697,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                   <div className="font-black text-2xl mt-1 text-purple-950 dark:text-purple-300">{products.length} Barang</div>
                 </div>
 
-                {canViewHpp && <div className={`p-4 rounded-xl border-2 ${
+                {canViewPrice && <div className={`p-4 rounded-xl border-2 ${
                   isDark ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-emerald-200 border-emerald-400 text-emerald-950 shadow-sm'
                 }`}>
                   <div className="text-[11px] font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300">Total Nilai Persediaan (HPP)</div>
@@ -1726,7 +1726,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                       <th className="p-3">Nama Barang</th>
                       <th className="p-3 text-center">Stok Awal</th>
                       <th className="p-3 text-center">Stok Akhir</th>
-                      {canViewHpp && <><th className="p-3 text-right">HPP Unit</th><th className="p-3 text-right">Total Nilai HPP</th></>}
+                      {canViewPrice && <><th className="p-3 text-right">HPP Unit</th><th className="p-3 text-right">Total Nilai HPP</th></>}
                     </tr>
                   </thead>
                   <tbody className={`divide-y font-black ${isDark ? "divide-slate-800 text-slate-100" : "divide-slate-300 text-slate-950"}`}>
@@ -1736,7 +1736,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                         <td className={`p-3 font-black ${isDark ? "text-slate-100" : "text-slate-950"}`}>{p.inventoryName}</td>
                         <td className={`p-3 text-center ${isDark ? "text-slate-300" : "text-slate-950"}`}>{p.stokAwal}</td>
                         <td className={`p-3 text-center font-black ${isDark ? "text-emerald-400" : "text-emerald-950"}`}>{p.stokAkhir}</td>
-                        {canViewHpp && <><td className={`p-3 text-right ${isDark ? "text-slate-300" : "text-slate-950"}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
+                        {canViewPrice && <><td className={`p-3 text-right ${isDark ? "text-slate-300" : "text-slate-950"}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
                         <td className={`p-3 text-right font-black ${isDark ? "text-emerald-400" : "text-emerald-950"}`}>
                           Rp {((p.hpp || 0) * (p.stokAkhir || 0)).toLocaleString('id-ID')}
                         </td></>}

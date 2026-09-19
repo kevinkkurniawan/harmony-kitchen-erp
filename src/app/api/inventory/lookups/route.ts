@@ -8,7 +8,7 @@ export async function GET(request: Request) {
       prisma.category.findMany({ select: { id: true, categoryname: true }, orderBy: { categoryname: 'asc' } }),
       prisma.uoM.findMany({ select: { id: true, uomname: true }, orderBy: { uomname: 'asc' } }),
       prisma.m_product.findMany({ select: { id: true, productname: true }, orderBy: { productname: 'asc' } }),
-      prisma.m_warehouse.findMany({ select: { id: true, whcode: true, shipmentlocation: true } }),
+      prisma.m_warehouse.findMany({ select: { id: true, whno: true, whname: true } }),
     ]);
 
     return NextResponse.json({ 
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
         categories: categories.map(c => ({ id: c.id, categoryName: c.categoryname })),
         uoms: uoms.map(u => ({ id: u.id, uomName: u.uomname })),
         productTypes: productTypes.map(p => ({ id: p.id, productName: p.productname })),
-        warehouses: warehouses.map(w => ({ id: w.id, whCode: w.whcode, location: w.shipmentlocation || `Gudang ${w.whcode}` }))
+        warehouses: warehouses.map(w => ({ id: w.id, whCode: w.whno, location: w.whname || `Gudang ${w.whno}` }))
       } 
     });
   } catch (error: any) {
