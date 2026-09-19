@@ -564,11 +564,15 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     </td>
                     <td className="py-3 px-3 text-center">
                       {sup.isTaxable ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
+                          isDark ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-amber-100 text-amber-700 border-amber-300'
+                        }`}>
                           PKP
                         </span>
                       ) : (
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 border border-slate-700 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                          isDark ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-200 border-slate-300 text-slate-600'
+                        }`}>
                           Non-PKP
                         </span>
                       )}
@@ -576,8 +580,8 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     <td className="py-3 px-3 text-center">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
                         sup.isActive !== false
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                          ? (isDark ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-emerald-100 text-emerald-700 border border-emerald-300')
+                          : (isDark ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-rose-100 text-rose-700 border border-rose-300')
                       }`}>
                         {sup.isActive !== false ? 'AKTIF' : 'NON-AKTIF'}
                       </span>
