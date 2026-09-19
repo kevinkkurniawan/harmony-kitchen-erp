@@ -59,6 +59,7 @@ interface MovementLedger {
 }
 
 interface InventoryStockManagerProps {
+  canViewPrice?: boolean;
   isDark: boolean;
 }
 

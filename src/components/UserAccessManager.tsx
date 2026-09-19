@@ -41,6 +41,7 @@ export interface ModulePermission {
   canEdit: boolean;
   canDelete: boolean;
   canPrint: boolean;
+  canViewPrice: boolean;
 }
 
 export const MODULE_LABEL_MAP: Record<string, { label: string; group: string }> = {
@@ -129,7 +130,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
   };
 
   // Toggle single permission checkbox
-  const handleTogglePerm = (moduleCode: string, field: 'canView' | 'canAdd' | 'canEdit' | 'canDelete' | 'canPrint') => {
+  const handleTogglePerm = (moduleCode: string, field: 'canView' | 'canAdd' | 'canEdit' | 'canDelete' | 'canPrint' | 'canViewPrice') => {
     setUserPermissions((prev) =>
       prev.map((item) => {
         if (item.moduleCode === moduleCode) {
@@ -150,6 +151,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         canEdit: value,
         canDelete: value,
         canPrint: value,
+        canViewPrice: value,
       }))
     );
   };
@@ -523,6 +525,18 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             />
                             <span className={perm.canPrint ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
                               Cetak
+                            </span>
+                          </label>
+
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={perm.canViewPrice}
+                              onChange={() => handleTogglePerm(perm.moduleCode, 'canViewPrice')}
+                              className="w-4 h-4 accent-amber-500 cursor-pointer rounded"
+                            />
+                            <span className={perm.canViewPrice ? 'text-amber-400 font-bold' : 'text-slate-500'}>
+                              Lihat Harga (HPP)
                             </span>
                           </label>
                         </div>

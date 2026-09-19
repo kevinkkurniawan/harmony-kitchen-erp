@@ -66,9 +66,10 @@ interface ToastMessage {
 interface MasterBarangManagerProps {
   isDark: boolean;
   mode?: 'master' | 'stock';
+  canViewPrice?: boolean;
 }
 
-export default function MasterBarangManager({ isDark, mode = 'master' }: MasterBarangManagerProps) {
+export default function MasterBarangManager({ isDark, mode = 'master', canViewPrice = true }: MasterBarangManagerProps) {
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -757,28 +758,33 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
                       }`}
                     />
                   </div>
-                  <div>
-                    <label className="block mb-1 text-emerald-950 dark:text-emerald-400">Harga Beli</label>
-                    <input
-                      type="number"
-                      value={formData.priceBuy ?? 0}
-                      onChange={(e) => setFormData({ ...formData, priceBuy: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
-                    <input
-                      type="number"
-                      value={formData.hpp ?? 0}
-                      onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
-                      className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
-                        isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
-                      }`}
-                    />
-                  </div>
+                  {canViewPrice && (
+                    <div>
+                      <label className="block mb-1 text-emerald-950 dark:text-emerald-400">Harga Beli</label>
+                      <input
+                        type="number"
+                        required
+                        value={formData.priceBuy || ''}
+                        onChange={(e) => setFormData({ ...formData, priceBuy: Number(e.target.value) })}
+                        className={`w-full p-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold ${
+                          isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                        }`}
+                      />
+                    </div>
+                  )}
+                  {canViewPrice && (
+                    <div>
+                      <label className="block mb-1 text-emerald-950 dark:text-emerald-400">HPP / Harga Modal</label>
+                      <input
+                        type="number"
+                        value={formData.hpp ?? 0}
+                        onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
+                        className={`w-full border-2 rounded-xl px-2 py-1 font-black outline-none ${
+                          isDark ? 'bg-slate-900 border-slate-700 text-emerald-400' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
+                        }`}
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block mb-1">Harga Grosir Tier 1</label>
                     <input
@@ -1169,8 +1175,12 @@ export default function MasterBarangManager({ isDark, mode = 'master' }: MasterB
             }`}>
               <div className="text-[11px] font-black text-slate-950 dark:text-slate-400 uppercase tracking-wider">Harga Retail, Beli & HPP</div>
               <div className="font-black text-sm text-slate-950 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
-              <div className="text-[11px] font-black text-emerald-950 dark:text-emerald-400">Harga Beli: Rp {(selectedProduct.priceBuy || 0).toLocaleString('id-ID')}</div>
-              <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
+              {canViewPrice && (
+                <>
+                  <div className="text-[11px] font-black text-emerald-950 dark:text-emerald-400">Harga Beli: Rp {(selectedProduct.priceBuy || 0).toLocaleString('id-ID')}</div>
+                  <div className="font-black text-sm text-emerald-950 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
+                </>
+              )}
             </div>
 
             {/* Box 4: Grosir Tiers */}

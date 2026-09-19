@@ -70,6 +70,7 @@ interface SummaryReportData {
 }
 
 interface SalesReportManagerProps {
+  canViewPrice?: boolean;
   isDark: boolean;
 }
 

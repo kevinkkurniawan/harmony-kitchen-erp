@@ -42,7 +42,8 @@ export interface ExpressReceiptHeader {
   doNo: string;
   driverName: string;
   vehicleNo: string;
-  whName: string;
+  transporter: string;
+  wh_name?: string;
   description: string;
   isExpress: boolean;
   isVoid: boolean;
@@ -57,6 +58,7 @@ interface ToastMessage {
 }
 
 interface PenerimaanBarangEkspressManagerProps {
+  canViewPrice?: boolean;
   isDark: boolean;
 }
 
@@ -71,14 +73,16 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
   const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
 
   // Form Header States
-  const [mrNo, setMrNo] = useState<string>(() => 'MR-EXP-' + Math.floor(100000 + Math.random() * 900000));
+  const [mrNo, setMrNo] = useState<string>('');
   const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
   const [selectedSupplierName, setSelectedSupplierName] = useState<string>('');
   const [doNo, setDoNo] = useState<string>('');
   const [driverName, setDriverName] = useState<string>('');
   const [vehicleNo, setVehicleNo] = useState<string>('');
-  const [whName, setWhName] = useState<string>('Gudang Utama Dapur');
+  const [transporter, setTransporter] = useState<string>('');
+  const [warehouses, setWarehouses] = useState<{id: number, whCode: string, location: string}[]>([]);
+  const [whId, setWhId] = useState<string>('');
   const [headerDesc, setHeaderDesc] = useState<string>('');
 
   // Item Entry States
@@ -142,25 +146,38 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     }
   };
 
-  // Fetch Suppliers for dropdown
+  // Fetch Suppliers and Lookups for dropdowns
   useEffect(() => {
     let isMounted = true;
-    async function loadSuppliers() {
+    async function loadData() {
       try {
-        const res = await fetch('/api/suppliers?onlyActive=true&all=true');
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setSuppliersList(json.data);
-          if (json.data.length > 0) {
-            setSelectedSupplierId(json.data[0].id);
-            setSelectedSupplierName(json.data[0].supplierName);
+        const [supRes, lookupRes] = await Promise.all([
+          fetch('/api/suppliers?onlyActive=true&all=true'),
+          fetch('/api/inventory/lookups')
+        ]);
+        const supJson = await supRes.json();
+        const lookupJson = await lookupRes.json();
+        
+        if (isMounted) {
+          if (supJson.success && Array.isArray(supJson.data)) {
+            setSuppliersList(supJson.data);
+            if (supJson.data.length > 0) {
+              setSelectedSupplierId(supJson.data[0].id.toString());
+              setSelectedSupplierName(supJson.data[0].supplierName);
+            }
+          }
+          if (lookupJson.success && lookupJson.data?.warehouses) {
+            setWarehouses(lookupJson.data.warehouses);
+            if (lookupJson.data.warehouses.length > 0) {
+              setWhId(lookupJson.data.warehouses[0].id.toString());
+            }
           }
         }
       } catch (err) {
-        console.error('Error fetching suppliers:', err);
+        console.error('Error fetching data:', err);
       }
     }
-    loadSuppliers();
+    loadData();
     return () => { isMounted = false; };
   }, []);
 
@@ -244,13 +261,14 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     setIsSubmitting(true);
     try {
       const payload = {
-        mrNo,
-        supplierId: selectedSupplierId,
-        supplierName: selectedSupplierName,
-        doNo,
-        driverName,
-        vehicleNo,
-        whName,
+        mr_no: mrNo,
+        supplier_id: selectedSupplierId,
+        supplier_name: selectedSupplierName,
+        do_no: doNo,
+        driver_name: driverName,
+        vehicle_no: vehicleNo,
+        transporter: transporter,
+        wh_id: whId,
         description: headerDesc,
         items,
       };
@@ -276,7 +294,8 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
             doNo,
             driverName,
             vehicleNo,
-            whName,
+            transporter,
+            wh_name: warehouses.find(w => w.id.toString() === whId)?.location || '-',
             description: headerDesc,
             isExpress: true,
             isVoid: false,
@@ -285,10 +304,11 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
         });
 
         // Reset form & return to list mode
-        setMrNo('MR-EXP-' + Math.floor(100000 + Math.random() * 900000));
+        setMrNo('');
         setDoNo('');
         setDriverName('');
         setVehicleNo('');
+        setTransporter('');
         setHeaderDesc('');
         setItems([]);
         setIsPrintModalOpen(true);
@@ -535,7 +555,28 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                                 const res = await fetch(`/api/purchasing/express/${row.id}`);
                                 const json = await res.json();
                                 if (json.success) {
-                                  setPrintData(json.data);
+                                  setPrintData({
+                                    header: {
+                                      id: json.data.id,
+                                      mrNo: json.data.mr_no,
+                                      mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
+                                      supplierId: 0,
+                                      supplierName: json.data.supplier_name,
+                                      doNo: json.data.do_no,
+                                      driverName: json.data.driver_name,
+                                      vehicleNo: json.data.vehicle_no,
+                                      wh_name: json.data.wh_name,
+                                    },
+                                    items: json.data.items.map((it: any) => ({
+                                      inventoryId: it.id,
+                                      inventoryNo: it.inventory_no,
+                                      inventoryName: it.inventory_name,
+                                      uomName: '-',
+                                      qty: it.qty,
+                                      barcode: it.barcode,
+                                      description: it.description
+                                    })),
+                                  });
                                   setIsPrintModalOpen(true);
                                 }
                               } catch (err) {
@@ -573,8 +614,9 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                   type="text"
                   readOnly
                   value={mrNo}
-                  className={`w-full p-2.5 rounded-xl border font-mono font-black text-amber-400 focus:outline-none ${
-                    isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
+                  placeholder="[AUTO GENERATE]"
+                  className={`w-full p-2.5 rounded-xl border font-mono font-black text-amber-400 focus:outline-none placeholder-amber-400/50 ${
+                    isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'
                   }`}
                 />
               </div>
@@ -616,14 +658,19 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
 
               <div>
                 <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Tujuan</label>
-                <input
-                  type="text"
-                  value={whName}
-                  onChange={(e) => setWhName(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                <select
+                  value={whId}
+                  onChange={(e) => setWhId(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
                     isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
-                />
+                >
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.location}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -652,11 +699,24 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 />
               </div>
 
-              <div className="col-span-2">
+              <div>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Transporter / Ekspedisi</label>
+                <input
+                  type="text"
+                  placeholder="Dakota Cargo / JTR"
+                  value={transporter}
+                  onChange={(e) => setTransporter(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div className="col-span-1 md:col-span-1">
                 <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Catatan Penerimaan</label>
                 <input
                   type="text"
-                  placeholder="Catatan pemeriksaan kondisi dus / fisik barang..."
+                  placeholder="Catatan fisik..."
                   value={headerDesc}
                   onChange={(e) => setHeaderDesc(e.target.value)}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
@@ -903,7 +963,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                 <div>
                   <div className="text-[10px] uppercase font-bold text-slate-500">Pengiriman & Gudang:</div>
                   <div className="font-bold text-slate-800">Sopir: {printData.header.driverName || '-'} ({printData.header.vehicleNo || '-'})</div>
-                  <div className="font-bold text-slate-800">Tujuan: {printData.header.whName}</div>
+                  <div className="font-bold text-slate-800">Tujuan: {printData.header.wh_name}</div>
                 </div>
               </div>
 
