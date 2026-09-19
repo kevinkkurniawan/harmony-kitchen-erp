@@ -617,10 +617,10 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                                 if (json.success) {
                                   setPrintData({
                                     header: {
-                                      id: json.data.id,
+                                      id: String(json.data.id),
                                       mrNo: json.data.mr_no,
                                       mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
-                                      supplierId: 0,
+                                      supplierId: '0',
                                       supplierName: json.data.supplier_name,
                                       doNo: json.data.do_no,
                                       poNo: json.data.po_no,
@@ -635,6 +635,10 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = tr
                                       ppnPercentage: json.data.ppn_percentage || 0,
                                       ppnValue: json.data.tax || 0,
                                       grandTotal: json.data.grand_total || 0,
+                                      transporter: json.data.transporter || '-',
+                                      description: json.data.description || '-',
+                                      isExpress: false,
+                                      isVoid: false,
                                     },
                                     items: json.data.items.map((it: any) => ({
                                       inventoryId: it.id,
