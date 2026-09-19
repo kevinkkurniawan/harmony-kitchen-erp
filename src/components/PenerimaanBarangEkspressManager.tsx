@@ -58,6 +58,7 @@ interface ToastMessage {
 }
 
 interface PenerimaanBarangEkspressManagerProps {
+  canViewPrice?: boolean;
   isDark: boolean;
 }
 
@@ -554,7 +555,28 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                                 const res = await fetch(`/api/purchasing/express/${row.id}`);
                                 const json = await res.json();
                                 if (json.success) {
-                                  setPrintData(json.data);
+                                  setPrintData({
+                                    header: {
+                                      id: json.data.id,
+                                      mrNo: json.data.mr_no,
+                                      mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
+                                      supplierId: 0,
+                                      supplierName: json.data.supplier_name,
+                                      doNo: json.data.do_no,
+                                      driverName: json.data.driver_name,
+                                      vehicleNo: json.data.vehicle_no,
+                                      wh_name: json.data.wh_name,
+                                    },
+                                    items: json.data.items.map((it: any) => ({
+                                      inventoryId: it.id,
+                                      inventoryNo: it.inventory_no,
+                                      inventoryName: it.inventory_name,
+                                      uomName: '-',
+                                      qty: it.qty,
+                                      barcode: it.barcode,
+                                      description: it.description
+                                    })),
+                                  });
                                   setIsPrintModalOpen(true);
                                 }
                               } catch (err) {

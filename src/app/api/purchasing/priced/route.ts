@@ -8,9 +8,7 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const where: any = {
-      poid: { not: null }, // Priced means it has a PO
-    };
+    const where: any = {};
     if (q) {
       where.OR = [
         { mrno: { contains: q, mode: 'insensitive' as const } },
