@@ -58,17 +58,21 @@ type TabKey =
 
 export default function ERPDashboard({ currentUser, userPermissions, onLogout }: ERPDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('master-barang');
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     const saved = sessionStorage.getItem('erp_active_tab');
     if (saved) {
       setActiveTab(saved as TabKey);
     }
+    setIsInitialized(true);
   }, []);
 
   useEffect(() => {
-    sessionStorage.setItem('erp_active_tab', activeTab);
-  }, [activeTab]);
+    if (isInitialized) {
+      sessionStorage.setItem('erp_active_tab', activeTab);
+    }
+  }, [activeTab, isInitialized]);
 
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
@@ -90,6 +94,17 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
   const isDark = theme === 'dark';
   const isAdmin = currentUser?.userLevel === 'Admin';
   const canViewHpp = isAdmin || userPermissions.find((permission) => permission.moduleCode === 'view-hpp')?.canView === true;
+
+  if (!isInitialized) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+        <div className="flex items-center gap-3">
+          <Store className="w-8 h-8 text-amber-500 animate-pulse" />
+          <span className="font-black text-xl tracking-wider">Memuat Workspace...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
