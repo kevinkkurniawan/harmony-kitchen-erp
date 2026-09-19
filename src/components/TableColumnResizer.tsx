@@ -5,8 +5,15 @@ import { useEffect } from 'react';
 const STORAGE_PREFIX = 'erp-table-widths:';
 
 function tableKey(table: HTMLTableElement) {
+  const explicitKey = table.dataset.erpTableId;
+  if (explicitKey) return `${STORAGE_PREFIX}${explicitKey}`;
   const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'))
-    .map((header) => header.textContent?.replace(/\s+/g, ' ').trim() || '')
+    .map((header) => Array.from(header.childNodes)
+      .filter((node) => !(node instanceof HTMLElement && node.dataset.erpColumnResizeHandle === 'true'))
+      .map((node) => node.textContent || '')
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim())
     .join('|');
   return `${STORAGE_PREFIX}${headers}`;
 }
@@ -24,13 +31,14 @@ function applyWidths(table: HTMLTableElement, widths: number[]) {
   const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'));
   if (headers.length !== widths.length) return;
   const totalWidth = widths.reduce((total, width) => total + width, 0);
+  const containerWidth = table.parentElement?.clientWidth || 0;
+  const targetWidth = Math.max(totalWidth, containerWidth);
   table.style.tableLayout = 'fixed';
-  table.style.width = `${totalWidth}px`;
-  table.style.minWidth = `${totalWidth}px`;
+  table.style.width = `${targetWidth}px`;
+  table.style.minWidth = `${targetWidth}px`;
   headers.forEach((header, index) => {
     header.style.width = `${widths[index]}px`;
     header.style.minWidth = `${widths[index]}px`;
-    header.style.maxWidth = `${widths[index]}px`;
   });
   if (table.parentElement) table.parentElement.style.overflowX = 'auto';
 }
@@ -49,6 +57,8 @@ function standardizeDataCells(table: HTMLTableElement) {
 }
 
 function initializeTable(table: HTMLTableElement) {
+  // Nested tables (for example the Kartu Stok ledger) are detail content, not primary grids.
+  if (table.parentElement?.closest('td')) return;
   const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'));
   if (!headers.length) return;
   standardizeDataCells(table);

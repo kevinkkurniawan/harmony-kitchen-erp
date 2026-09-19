@@ -16,6 +16,8 @@ import {
   PieChart,
   BarChart3,
   Filter,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 
 interface DailyReportRow {
@@ -83,7 +85,40 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
   const [itemData, setItemData] = useState<ItemReportRow[]>([]);
   const [summaryData, setSummaryData] = useState<SummaryReportData | null>(null);
 
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortedData = <T extends Record<string, any>>(data: T[]): T[] => {
+    if (!sortField) return data;
+    return [...data].sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+      
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        const numA = parseFloat(aVal);
+        const numB = parseFloat(bVal);
+        if (!isNaN(numA) && !isNaN(numB) && aVal.match(/^[0-9.-]+$/) && bVal.match(/^[0-9.-]+$/)) {
+          aVal = numA;
+          bVal = numB;
+        }
+      }
+      
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
 
   // Fetch Report Data
   const loadReportData = useCallback(async () => {
@@ -424,19 +459,17 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr
-                  className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                    isDark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                  }`}
+                  className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
                 >
-                  <th className="py-3.5 px-4 text-center">Tanggal</th>
-                  <th className="py-3.5 px-4 text-center">Total Transaksi</th>
-                  <th className="py-3.5 px-4 text-center">Total Qty Item</th>
-                  <th className="py-3.5 px-4 text-right">Omset Bruto</th>
-                  <th className="py-3.5 px-4 text-right">Diskon</th>
-                  <th className="py-3.5 px-4 text-right">Omset Bersih</th>
-                  <th className="py-3.5 px-4 text-right">Cash</th>
-                  <th className="py-3.5 px-4 text-right">QRIS</th>
-                  <th className="py-3.5 px-4 text-right">Transfer / Card</th>
+                  <th onClick={() => handleSort('date')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Tanggal</span>{sortField === 'date' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalOrders')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Transaksi</span>{sortField === 'totalOrders' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalItems')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Qty Item</span>{sortField === 'totalItems' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('grossSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Omset Bruto</span>{sortField === 'grossSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalDiscount')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Diskon</span>{sortField === 'totalDiscount' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('netSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Omset Bersih</span>{sortField === 'netSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('cashSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Cash</span>{sortField === 'cashSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('qrisSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>QRIS</span>{sortField === 'qrisSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('transferSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Transfer / Card</span>{sortField === 'transferSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 text-xs">
@@ -457,11 +490,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     </td>
                   </tr>
                 ) : (
-                  dailyData.map((row) => (
+                  getSortedData(dailyData).map((row) => (
                     <tr
                       key={row.date}
                       className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
+                        isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
                       }`}
                     >
                       <td className="py-3.5 px-4 text-center font-mono font-black text-purple-400">
@@ -501,17 +534,15 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr
-                  className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                    isDark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                  }`}
+                  className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
                 >
-                  <th className="py-3.5 px-4 text-center">Periode Bulan</th>
-                  <th className="py-3.5 px-4 text-center">Jumlah Transaksi</th>
-                  <th className="py-3.5 px-4 text-center">Total Item Terjual</th>
-                  <th className="py-3.5 px-4 text-right">Omset Bruto</th>
-                  <th className="py-3.5 px-4 text-right">Total Diskon</th>
-                  <th className="py-3.5 px-4 text-right">Omset Bersih</th>
-                  <th className="py-3.5 px-4 text-right">Perincian Cash & QRIS</th>
+                  <th onClick={() => handleSort('month')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Periode Bulan</span>{sortField === 'month' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalOrders')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Jumlah Transaksi</span>{sortField === 'totalOrders' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalItems')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Item Terjual</span>{sortField === 'totalItems' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('grossSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Omset Bruto</span>{sortField === 'grossSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalDiscount')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Total Diskon</span>{sortField === 'totalDiscount' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('netSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Omset Bersih</span>{sortField === 'netSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('cashSales')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Perincian Cash & QRIS</span>{sortField === 'cashSales' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 text-xs">
@@ -522,11 +553,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     </td>
                   </tr>
                 ) : (
-                  monthlyData.map((row) => (
+                  getSortedData(monthlyData).map((row) => (
                     <tr
                       key={row.month}
                       className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
+                        isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
                       }`}
                     >
                       <td className="py-3.5 px-4 text-center font-mono font-black text-purple-400">
@@ -561,16 +592,14 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr
-                  className={`text-[11px] font-black uppercase tracking-wider border-b ${
-                    isDark ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                  }`}
+                  className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
                 >
-                  <th className="py-3.5 px-4">Barcode / Kode</th>
-                  <th className="py-3.5 px-4">Nama Barang Persediaan</th>
-                  <th className="py-3.5 px-4 text-center">Total Qty Terjual</th>
-                  <th className="py-3.5 px-4 text-right">Harga Jual Rata-rata</th>
-                  <th className="py-3.5 px-4 text-right">Total Subtotal Revenue</th>
-                  <th className="py-3.5 px-4 text-right">Estimasi Profit</th>
+                  <th onClick={() => handleSort('barcode')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Barcode / Kode</span>{sortField === 'barcode' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Barang Persediaan</span>{sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalQtySold')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Qty Terjual</span>{sortField === 'totalQtySold' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('avgUnitPrice')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Harga Jual Rata-rata</span>{sortField === 'avgUnitPrice' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('totalRevenue')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Total Subtotal Revenue</span>{sortField === 'totalRevenue' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('profit')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Estimasi Profit</span>{sortField === 'profit' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 text-xs">
@@ -581,11 +610,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                     </td>
                   </tr>
                 ) : (
-                  itemData.map((row, idx) => (
+                  getSortedData(itemData).map((row, idx) => (
                     <tr
                       key={idx}
                       className={`transition-colors ${
-                        isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
+                        isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
                       }`}
                     >
                       <td className="py-3.5 px-4 font-mono font-semibold text-purple-400">

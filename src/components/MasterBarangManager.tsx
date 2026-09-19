@@ -1284,10 +1284,30 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                       {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th className="py-1.5 px-2">Brand</th>
-                  <th className="py-1.5 px-2">Category</th>
-                  <th className="py-1.5 px-2">Product</th>
-                  <th className="py-1.5 px-2">UoM</th>
+                  <th onClick={() => handleSort('brandName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Brand</span>
+                      {sortField === 'brandName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('categoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Category</span>
+                      {sortField === 'categoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('productName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Product</span>
+                      {sortField === 'productName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('uomName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>UoM</span>
+                      {sortField === 'uomName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
                   <th onClick={() => handleSort('price')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center justify-end gap-1">
                       <span>Price (Retail)</span>
@@ -1300,11 +1320,36 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewHp
                       {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
                     </div>
                   </th>}
-                  <th className="py-1.5 px-2">Keterangan</th>
-                  <th className="py-1.5 px-2 text-right">Grosir 1</th>
-                  <th className="py-1.5 px-2 text-right">Grosir 2</th>
-                  <th className="py-1.5 px-2 text-right">Grosir 3</th>
-                  <th className="py-1.5 px-2 text-center">Min/Max</th>
+                  <th onClick={() => handleSort('description')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Keterangan</span>
+                      {sortField === 'description' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('grosir1')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Grosir 1</span>
+                      {sortField === 'grosir1' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('grosir2')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Grosir 2</span>
+                      {sortField === 'grosir2' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('grosir3')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Grosir 3</span>
+                      {sortField === 'grosir3' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th onClick={() => handleSort('minStock')} className="py-1.5 px-2 text-center cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Min/Max</span>
+                      {sortField === 'minStock' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
                   <th onClick={() => handleSort('stokAkhir')} className="py-1.5 px-2 text-center cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center justify-center gap-1">
                       <span>Stok Akhir</span>

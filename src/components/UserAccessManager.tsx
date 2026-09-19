@@ -21,6 +21,8 @@ import {
   Printer,
   X,
   User as UserIcon,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 
 export interface UserRecord {
@@ -81,6 +83,18 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToastMessage({ text, type });
@@ -225,6 +239,15 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     }
   };
 
+  const sortedUsersList = [...usersList].sort((a, b) => {
+    if (!sortField) return 0;
+    const aValue = a[sortField as keyof UserRecord];
+    const bValue = b[sortField as keyof UserRecord];
+    if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   // Group permissions by category for nice UI matrix display
   const groupedPermissions = userPermissions.reduce((acc, perm) => {
     const info = MODULE_LABEL_MAP[perm.moduleCode] || { label: perm.moduleCode, group: 'Lainnya' };
@@ -315,16 +338,14 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
               <tr
-                className={`text-[11px] font-black uppercase tracking-wider border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}
+                className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
               >
-                <th className="py-3.5 px-4 text-center">#ID</th>
-                <th className="py-3.5 px-4">Username</th>
-                <th className="py-3.5 px-4">Nama Lengkap</th>
-                <th className="py-3.5 px-4">Level Akses</th>
-                <th className="py-3.5 px-4 text-center">Status</th>
-                <th className="py-3.5 px-4 text-center">Aksi Hak Akses</th>
+                <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>#ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('username')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Username</span>{sortField === 'username' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('fullName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Lengkap</span>{sortField === 'fullName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('userLevel')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Level Akses</span>{sortField === 'userLevel' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th className="py-1.5 px-2 text-center">Aksi Hak Akses</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/40 text-xs">
@@ -344,12 +365,10 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                     Tidak ada data user.
                   </td>
                 </tr>
-              ) : usersList.map((user) => (
+              ) : sortedUsersList.map((user) => (
                 <tr
                   key={user.id}
-                  className={`transition-colors ${
-                    isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-800'
-                  }`}
+                  className={`transition-colors ${isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}`}
                 >
                   <td className={`py-3.5 px-4 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{user.id}</td>
                   <td className="py-3.5 px-4 font-mono font-black text-emerald-400">@{user.username}</td>

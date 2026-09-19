@@ -80,6 +80,19 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
   const [ledgerData, setLedgerData] = useState<MovementLedger[]>([]);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
 
+  // Sorting State
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
   // Fetch Metrics
   const fetchMetrics = useCallback(async () => {
     try {
@@ -263,15 +276,15 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
       <div className="flex-1 min-h-0 overflow-auto p-5">
         <div className={`rounded-2xl border shadow-sm overflow-hidden ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <table className="w-full text-left border-collapse">
-            <thead className={`sticky top-0 z-10 text-[11px] font-black uppercase tracking-wider ${isDark ? 'bg-slate-950 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-              <tr>
-                <th className="px-4 py-3 w-16 text-center">Kode Barang</th>
-                <th className="px-4 py-3">Nama Barang</th>
-                <th className="px-4 py-3 text-right">Stok Gudang</th>
-                <th className="px-4 py-3 text-right">Stok Etalase</th>
-                <th className="px-4 py-3 text-right">Stok Akhir</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-center w-24">Aksi</th>
+            <thead className="sticky top-0 z-20">
+              <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors w-16 text-center"><div className="flex items-center justify-center gap-1"><span>Kode Barang</span>{sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Barang</span>{sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('stokGudang')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Gudang</span>{sortField === 'stokGudang' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('stokEtalase')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Etalase</span>{sortField === 'stokEtalase' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('stokAkhir')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Akhir</span>{sortField === 'stokAkhir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('minStock')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'minStock' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th className="py-1.5 px-2 text-center w-24">Aksi</th>
               </tr>
             </thead>
             <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -290,7 +303,16 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
                   </td>
                 </tr>
               ) : (
-                items.map((item) => {
+                [...items].sort((a, b) => {
+                  if (!sortField) return 0;
+                  let valA: any = a[sortField as keyof InventoryItem];
+                  let valB: any = b[sortField as keyof InventoryItem];
+                  if (typeof valA === 'string') valA = valA.toLowerCase();
+                  if (typeof valB === 'string') valB = valB.toLowerCase();
+                  if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+                  if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+                  return 0;
+                }).map((item) => {
                   const onHand = Number(item.stokAkhir || 0);
                   const stokEtalase = Number(item.stokEtalase || 0);
                   const stokGudang = Number(item.stokGudang || 0);
@@ -298,7 +320,7 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
 
                   return (
                     <React.Fragment key={item.id}>
-                      <tr className={`transition-colors group ${isExpanded ? (isDark ? 'bg-indigo-500/10' : 'bg-indigo-50') : (isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-50')}`}>
+                      <tr className={`transition-colors cursor-pointer group ${isExpanded ? (isDark ? 'bg-slate-700 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-900 font-bold border-l-4 border-amber-600') : (isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800')}`}>
                         <td className="px-4 py-3 text-center font-mono font-bold text-amber-500">{item.inventoryNo}</td>
                         <td className="px-4 py-3">
                           <div className="font-bold text-sm text-slate-900 dark:text-white">{item.inventoryName}</div>

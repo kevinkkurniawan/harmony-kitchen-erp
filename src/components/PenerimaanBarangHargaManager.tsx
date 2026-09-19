@@ -19,6 +19,8 @@ import {
   Plus,
   ArrowLeft,
   Eye,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { ERPProduct, Supplier } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -75,6 +77,19 @@ interface PenerimaanBarangHargaManagerProps {
 export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBarangHargaManagerProps) {
   // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
+
+  // Sorting States
+  const [sortField, setSortField] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   // List View States
   const [receiptsList, setReceiptsList] = useState<PricedReceiptHeader[]>([]);
@@ -519,17 +534,15 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
-                <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}>
-                  <th className="py-3.5 px-4 text-center">No MR</th>
-                  <th className="py-3.5 px-4">Tanggal MR</th>
-                  <th className="py-3.5 px-4">Supplier Pemasok</th>
-                  <th className="py-3.5 px-4">No. PO</th>
-                  <th className="py-3.5 px-4">Termin / Due Date</th>
-                  <th className="py-3.5 px-4 text-right">Grand Total</th>
-                  <th className="py-3.5 px-4 text-center">Status</th>
-                  <th className="py-3.5 px-4 text-center w-28">Aksi</th>
+                <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                  <th onClick={() => handleSort('mrNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>No MR</span>{sortField === 'mrNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('mrDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal MR</span>{sortField === 'mrDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Supplier Pemasok</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('poNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>No. PO</span>{sortField === 'poNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('dueDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Termin / Due Date</span>{sortField === 'dueDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('grandTotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-end gap-1"><span>Grand Total</span>{sortField === 'grandTotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th onClick={() => handleSort('isVoid')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isVoid' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  <th className="py-1.5 px-2 text-center w-28">Aksi</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -550,7 +563,27 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     </td>
                   </tr>
                 ) : (
-                  receiptsList.map((row: any) => {
+                  [...receiptsList].sort((a: any, b: any) => {
+                    if (!sortField) return 0;
+                    
+                    let valA = a[sortField];
+                    let valB = b[sortField];
+                    
+                    if (sortField === 'mrNo') { valA = a.mrNo || a.mr_no || ''; valB = b.mrNo || b.mr_no || ''; }
+                    else if (sortField === 'mrDate') { valA = a.mrDate || a.mr_date || ''; valB = b.mrDate || b.mr_date || ''; }
+                    else if (sortField === 'supplierName') { valA = a.supplierName || a.supplier_name || ''; valB = b.supplierName || b.supplier_name || ''; }
+                    else if (sortField === 'poNo') { valA = a.poNo || a.po_no || ''; valB = b.poNo || b.po_no || ''; }
+                    else if (sortField === 'dueDate') { valA = a.paymentType || ''; valB = b.paymentType || ''; }
+                    else if (sortField === 'grandTotal') { valA = a.grandTotal ?? a.totalAmount ?? a.total_amount ?? 0; valB = b.grandTotal ?? b.totalAmount ?? b.total_amount ?? 0; }
+                    else if (sortField === 'isVoid') { valA = a.isVoid ? 1 : 0; valB = b.isVoid ? 1 : 0; }
+
+                    if (typeof valA === 'string') valA = valA.toLowerCase();
+                    if (typeof valB === 'string') valB = valB.toLowerCase();
+                    
+                    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+                    return 0;
+                  }).map((row: any) => {
                     const mrNo = row.mrNo || row.mr_no || '-';
                     const mrDate = row.mrDate || row.mr_date || '-';
                     const supplier = row.supplierName || row.supplier_name || 'Supplier General';
@@ -559,7 +592,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     const grandTotal = row.grandTotal ?? row.totalAmount ?? row.total_amount ?? 0;
 
                     return (
-                      <tr key={row.id} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
+                      <tr key={row.id} className={isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}>
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>

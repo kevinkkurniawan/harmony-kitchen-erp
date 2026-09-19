@@ -49,8 +49,17 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; supplier: Supplier } | null>(null);
 
   // Sorting
-  const [sortField, setSortField] = useState<keyof Supplier>('id');
+  const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -274,8 +283,9 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
   // Sorted Suppliers
   const sortedSuppliers = [...suppliers].sort((a, b) => {
-    const valA = a[sortField] ?? '';
-    const valB = b[sortField] ?? '';
+    if (!sortField) return 0;
+    const valA = a[sortField as keyof Supplier] ?? '';
+    const valB = b[sortField as keyof Supplier] ?? '';
     if (typeof valA === 'number' && typeof valB === 'number') {
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     }
@@ -474,29 +484,16 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
-              <tr className={`font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-              }`}>
-                <th className="py-3 px-3.5 text-center w-12">ID</th>
-                <th className="py-3 px-4 w-28">Kode Supplier</th>
-                <th
-                  onClick={() => {
-                    if (sortField === 'supplierName') setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-                    else { setSortField('supplierName'); setSortOrder('asc'); }
-                  }}
-                  className="py-3 px-4 cursor-pointer hover:text-amber-300 transition-colors"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Nama Supplier / Perusahaan</span>
-                    {sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
-                  </div>
-                </th>
-                <th className="py-3 px-4">Alamat & Kota</th>
-                <th className="py-3 px-4">Telepon & Fax</th>
-                <th className="py-3 px-4">Contact Person (PIC)</th>
-                <th className="py-3 px-3 text-center">Status PKP</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-3 text-center">Aksi</th>
+              <tr className={"uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
+                <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center w-12"><div className="flex items-center justify-center gap-1"><span>ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('supplierNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors w-28"><div className="flex items-center gap-1"><span>Kode Supplier</span>{sortField === 'supplierNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Supplier / Perusahaan</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('address')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Alamat & Kota</span>{sortField === 'address' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('phone1')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Telepon & Fax</span>{sortField === 'phone1' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('contactPerson')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Contact Person (PIC)</span>{sortField === 'contactPerson' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('isTaxable')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status PKP</span>{sortField === 'isTaxable' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                <th className="py-1.5 px-2 text-center"><div className="flex items-center justify-center gap-1"><span>Aksi</span></div></th>
               </tr>
             </thead>
             <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
@@ -535,7 +532,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     className={`transition-colors cursor-pointer ${
                       selectedSupplier?.id === sup.id
                         ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                        : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
+                        : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
                     }`}
                   >
                     <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{sup.id}</td>
