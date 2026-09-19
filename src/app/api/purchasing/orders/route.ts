@@ -28,14 +28,14 @@ export async function GET(req: Request) {
 
     // Fetch suppliers to map supplier name
     const supplierIds = Array.from(new Set(orders.map((o: any) => o.supplierid).filter(Boolean))) as number[];
-    const suppliers = await prisma.supplier.findMany({ where: { id: { in: supplierIds } } });
+    const suppliers = await prisma.m_supplier.findMany({ where: { id: { in: supplierIds } } });
     const supplierMap = new Map(suppliers.map((s: any) => [s.id, s.suppliername]));
 
     // Fetch inventory for details
     const inventoryIds = Array.from(new Set(
       orders.flatMap((o: any) => o.t_purchaseorderdetail.map((d: any) => d.inventoryid))
     )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } } });
     const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
 
     const mapped = orders.map((po: any) => ({
@@ -74,19 +74,19 @@ export async function POST(req: Request) {
     const { po_no, po_date, supplier_name, delivery_date, description, subtotal, tax, grand_total, status = 'Approved', items } = body;
 
     // Lookup supplier
-    const supplier = await prisma.supplier.findFirst({ where: { suppliername: supplier_name } });
+    const supplier = await prisma.m_supplier.findFirst({ where: { suppliername: supplier_name } });
     const supplierid = supplier ? supplier.id : 1; // Default to 1 if not found
 
     // Lookup inventory IDs
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
 
     const created = await prisma.t_purchaseorderheader.create({
       data: {
         pono: po_no,
         podate: po_date ? new Date(po_date) : new Date(),
-        supplierid,
+        supplierid: Number(supplierid),
         deliverydate: delivery_date ? new Date(delivery_date) : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
         description,
         taxvalue: Number(tax || 0),
@@ -113,11 +113,11 @@ export async function PUT(req: Request) {
     const body = await req.json();
     const { id, po_no, po_date, supplier_name, delivery_date, description, tax, grand_total, status, items } = body;
 
-    const supplier = await prisma.supplier.findFirst({ where: { suppliername: supplier_name } });
+    const supplier = await prisma.m_supplier.findFirst({ where: { suppliername: supplier_name } });
     const supplierid = supplier ? supplier.id : 1;
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
 
     await prisma.t_purchaseorderdetail.deleteMany({ where: { poid: Number(id) } });
@@ -127,7 +127,7 @@ export async function PUT(req: Request) {
       data: {
         pono: po_no,
         podate: po_date ? new Date(po_date) : undefined,
-        supplierid,
+        supplierid: Number(supplierid),
         deliverydate: delivery_date ? new Date(delivery_date) : undefined,
         description,
         taxvalue: Number(tax || 0),

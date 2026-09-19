@@ -4,9 +4,9 @@ import { prisma } from '@/lib/db';
 export async function GET(request: Request) {
   try {
     const [brands, categories, uoms, productTypes, warehouses] = await Promise.all([
-      prisma.brand.findMany({ select: { id: true, brandname: true }, orderBy: { brandname: 'asc' } }),
-      prisma.category.findMany({ select: { id: true, categoryname: true }, orderBy: { categoryname: 'asc' } }),
-      prisma.uoM.findMany({ select: { id: true, uomname: true }, orderBy: { uomname: 'asc' } }),
+      prisma.m_brand.findMany({ select: { id: true, brandname: true }, orderBy: { brandname: 'asc' } }),
+      prisma.m_category.findMany({ select: { id: true, categoryname: true }, orderBy: { categoryname: 'asc' } }),
+      prisma.m_uom.findMany({ select: { id: true, uomname: true }, orderBy: { uomname: 'asc' } }),
       prisma.m_product.findMany({ select: { id: true, productname: true }, orderBy: { productname: 'asc' } }),
       prisma.m_warehouse.findMany({ select: { id: true, whno: true, whname: true } }),
     ]);

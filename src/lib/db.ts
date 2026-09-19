@@ -11,3 +11,8 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+(BigInt.prototype as any).toJSON = function () {
+  return Number(this);
+};
+

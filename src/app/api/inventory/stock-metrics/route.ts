@@ -18,23 +18,33 @@ export async function GET(req: Request) {
       ];
     }
 
-    const totalItems = await prisma.inventory.count({ where });
+    const totalItems = await prisma.m_inventory.count({ where });
 
-    const items = await prisma.inventory.findMany({
+    const items = await prisma.m_inventory.findMany({
       where,
       select: {
-        stokupdate: true,
+        id: true,
         hpp: true,
         minstock: true,
       }
     });
+
+    const inventoryIds = items.map((i) => Number(i.id));
+    const stocks = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT inventoryid, SUM(qtytotal) as total_qty FROM public.s_stockinventory WHERE inventoryid IN (${inventoryIds.length > 0 ? inventoryIds.join(',') : '0'}) GROUP BY inventoryid`
+    );
+
+    const stockMap = new Map();
+    for (const st of stocks) {
+      stockMap.set(String(st.inventoryid), Number(st.total_qty || 0));
+    }
 
     let totalValue = 0;
     let lowStockCount = 0;
     let outOfStockCount = 0;
 
     items.forEach((item) => {
-      const stock = Number(item.stokupdate || 0);
+      const stock = stockMap.get(String(item.id)) || 0;
       const minStock = Number(item.minstock || 0);
       const hpp = Number(item.hpp || 0);
 

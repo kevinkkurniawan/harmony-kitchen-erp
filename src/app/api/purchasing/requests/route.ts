@@ -30,7 +30,7 @@ export async function GET(req: Request) {
       requests.flatMap((r: any) => r.t_purchaserequisitiondetail.map((d: any) => d.inventoryid))
     )).filter(Boolean) as number[];
 
-    const inventories = await prisma.inventory.findMany({
+    const inventories = await prisma.m_inventory.findMany({
       where: { id: { in: inventoryIds } }
     });
     
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     const { pr_no, pr_date, required_date, description, status = 'Draft', items } = body;
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
 
     const created = await prisma.t_purchaserequisitionheader.create({
@@ -98,7 +98,7 @@ export async function PUT(req: Request) {
     const { id, pr_no, pr_date, required_date, description, status, items } = body;
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
 
     await prisma.t_purchaserequisitiondetail.deleteMany({ where: { prqid: Number(id) } });

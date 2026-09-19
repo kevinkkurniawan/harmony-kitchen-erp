@@ -131,10 +131,10 @@ model m_inventory {
   barcode             String?
   inventoryno         String?
   inventoryname       String?
-  inventorybrandid    Int?
+  inventorybrandid    BigInt?
   inventorycategoryid Int?      @default(1)
   inventoryproductid  Int?      @default(1)
-  uomid               Int?      @default(1)
+  uomid               BigInt?      @default(1)
   minstock            Int?      @default(0)
   maxstock            Int?      @default(0)
   kodeharga           String?
@@ -642,7 +642,7 @@ model t_invpaperdetail {
 
 model t_materialreceivedetail {
   id                      BigInt                  @id(map: "idx_20637_pk_t_mrvcashdetail") @default(autoincrement())
-  mrid                    Int
+  mrid                    BigInt
   isinventory             Boolean?
   inventoryid             String?
   qtyorder                Decimal?                @db.Decimal
@@ -677,7 +677,7 @@ model t_materialreceiveheader {
   id                      BigInt                    @id(map: "idx_20651_pk_t_mrvcashheader") @default(autoincrement())
   mrno                    String?                   @unique(map: "idx_20651_uq_t_mrvcashheader")
   mrdate                  DateTime?                 @db.Date
-  poid                    Int?
+  poid                    BigInt?
   pono                    String?
   whid                    Int?
   supplierid              Int?
@@ -721,7 +721,7 @@ model t_materialreceiveheader {
 
 model t_memodetail {
   id           BigInt       @id(map: "idx_20675_pk_t_memodetail") @default(autoincrement())
-  memoid       Int
+  memoid       BigInt
   inventoryid  Int?
   qty          Decimal      @default(0) @db.Decimal
   weight       Decimal?     @db.Decimal
@@ -758,7 +758,7 @@ model t_memoheader {
 
 model t_monthlydetail {
   id              BigInt           @id(map: "idx_20692_pk_t_monthlydetail") @default(autoincrement())
-  monthlyheaderid Int?
+  monthlyheaderid BigInt?
   component       String?
   value           Decimal?         @db.Decimal
   isdebit         Boolean?         @default(false)
@@ -815,7 +815,7 @@ model t_opname {
 
 model t_purchaseorderdetail {
   id                    BigInt                @id(map: "idx_20721_pk__t_purcha__2f60f6c137a5467c") @default(autoincrement())
-  poid                  Int
+  poid                  BigInt
   inventoryid           Int
   qtyreq                Int?                  @default(0)
   qty                   Int?                  @default(0)
@@ -845,7 +845,7 @@ model t_purchaseorderheader {
   pono                        String
   podate                      DateTime                     @db.Date
   prqno                       String?
-  prqid                       Int?
+  prqid                       BigInt?
   supplierid                  Int?
   sourceid                    Int?
   currency                    String?
@@ -916,7 +916,7 @@ model t_purchasepaymentheader {
 
 model t_purchaserequisitiondetail {
   id                          BigInt                      @id(map: "idx_20784_pk_t_purchasingrequisitiondetail") @default(autoincrement())
-  prqid                       Int
+  prqid                       BigInt
   inventoryid                 Int?
   qty                         Decimal                     @default(0) @db.Decimal
   weight                      Decimal?                    @db.Decimal
@@ -972,7 +972,7 @@ model t_salesdailysummary {
 
 model t_salesgrosirdetail {
   id                  BigInt              @id(map: "idx_20813_pk_t_salesgrosirdetail_1") @default(autoincrement())
-  sgid                Int
+  sgid                BigInt
   inventoryid         Int
   qty                 Decimal?            @default(0) @db.Decimal
   qtyout              Int?                @default(0)
@@ -1062,7 +1062,7 @@ model t_salesgrosirpayment {
 
 model t_salesorderdetail {
   id                 BigInt             @id(map: "idx_20872_pk_t_salesorderdetail") @default(autoincrement())
-  salesorderid       Int
+  salesorderid       BigInt
   inventoryid        Int
   qty                Decimal?           @default(0) @db.Decimal
   uom                String?
@@ -1214,7 +1214,7 @@ model t_salespospromo {
 
 model t_salesshippingdetail {
   id                    BigInt                @id(map: "idx_20959_pk_t_salesshippingdetail") @default(autoincrement())
-  salesshippingid       Int
+  salesshippingid       BigInt
   inventoryid           Int
   uom                   Int?
   qty                   Decimal?              @default(0) @db.Decimal
@@ -1237,7 +1237,7 @@ model t_salesshippingheader {
   id                    BigInt                  @id(map: "idx_20973_pk_t_salesshippingheader") @default(autoincrement())
   salesshippingcode     String
   salesshippingdate     DateTime?               @db.Date
-  salesorderid          Int?
+  salesorderid          BigInt?
   whno                  Int
   salesid               Int?
   customerid            Int?
@@ -1295,7 +1295,7 @@ model t_whoutheader {
 
 model t_whtransferdetail {
   id                 BigInt             @id(map: "idx_20994_pk_t_whtransferdetail") @default(autoincrement())
-  whtransferid       Int
+  whtransferid       BigInt
   inventoryid        Int?
   qty                Decimal            @default(0) @db.Decimal
   weight             Decimal?           @db.Decimal

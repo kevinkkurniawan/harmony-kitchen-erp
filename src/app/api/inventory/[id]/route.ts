@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const i = await prisma.inventory.findUnique({ where: { id: Number(id) } });
+    const i = await prisma.m_inventory.findUnique({ where: { id: Number(id) } });
     if (!i) return NextResponse.json({ success: false }, { status: 404 });
     const mapped = { id: i.id, barcode: i.barcode, inventory_no: i.inventoryno, inventory_name: i.inventoryname, category_id: null, brand_id: null, uom_id: null, hpp: 0, price: i.price, grosir1: i.grosir1, grosir2: i.grosir2, grosir3: i.grosir3, stock: 0, is_active: true };
     return NextResponse.json({ success: true, data: mapped });
@@ -39,7 +39,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     // Clean up undefined fields so we don't overwrite with nulls if omitted
     Object.keys(data).forEach(key => data[key as keyof typeof data] === undefined && delete data[key as keyof typeof data]);
 
-    const updated = await prisma.inventory.update({ where: { id: Number(id) }, data });
+    const updated = await prisma.m_inventory.update({ where: { id: Number(id) }, data });
     return NextResponse.json({ success: true, data: updated });
   } catch (error: any) {
     console.error('Update error:', error);
@@ -49,7 +49,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    await prisma.inventory.delete({ where: { id: Number(id) } });
+    await prisma.m_inventory.delete({ where: { id: Number(id) } });
     return NextResponse.json({ success: true });
   } catch (error: any) { 
     if (error?.code === 'P2003') {

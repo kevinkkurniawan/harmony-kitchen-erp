@@ -38,7 +38,7 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    const headerIds = transactions.map((t: any) => t.id);
+    const headerIds = transactions.map((t: any) => Number(t.id));
     const details = await prisma.t_salesposdetail.findMany({
       where: { salesposheaderid: { in: headerIds } }
     });
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
     const inventoryIds = Array.from(new Set(
       details.map((d: any) => d.inventoryid)
     )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } }, include: { m_uom: true } });
+    const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } }, include: { m_uom: true } });
     const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
 
     const mapped = transactions.map((s: any) => {

@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     const inventoryIds = Array.from(new Set(
       returns.flatMap((r: any) => r.t_memodetail.map((d: any) => d.inventoryid))
     )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ where: { id: { in: inventoryIds } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } } });
     const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
 
     const mapped = returns.map((r: any) => ({
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     }
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
 
     const created = await prisma.t_memoheader.create({
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
     for (const it of items) {
       const invId = invMapByNo.get(it.inventory_no || it.inventoryNo);
       if (invId) {
-        await prisma.inventory.updateMany({
+        await prisma.m_inventory.updateMany({
           where: { id: invId },
           data: { stokupdate: { decrement: Number(it.qty) } },
         }).catch(() => {});

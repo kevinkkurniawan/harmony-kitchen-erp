@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     const inventoryIds = Array.from(new Set(
       receives.flatMap((r: any) => r.t_materialreceivedetail.map((d: any) => Number(d.inventoryid)))
     )).filter(Boolean) as number[];
-    const inventories = await prisma.inventory.findMany({ 
+    const inventories = await prisma.m_inventory.findMany({ 
       where: { id: { in: inventoryIds } }
     });
     const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     if (!supplierIdNum) {
       return NextResponse.json({ success: false, error: 'Supplier ID is required' }, { status: 400 });
     }
-    const supplier = await prisma.supplier.findUnique({ where: { id: supplierIdNum } });
+    const supplier = await prisma.m_supplier.findUnique({ where: { id: supplierIdNum } });
     if (!supplier) {
       return NextResponse.json({ success: false, error: 'Supplier not found' }, { status: 404 });
     }
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
     }
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
+    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i]));
 
     for (const it of items) {
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
         poid: po ? po.id : null,
         pono: po_no,
         dono: do_no,
-        supplierid: supplier.id,
+        supplierid: Number(supplier.id),
         suppliername: supplier.suppliername,
         drivername: driver_name,
         vehicleno: vehicle_no,
@@ -170,7 +170,7 @@ export async function POST(req: Request) {
     for (const it of items) {
       const inv = invMapByNo.get(it.inventory_no || it.inventoryNo);
       if (inv) {
-        await prisma.inventory.update({
+        await prisma.m_inventory.update({
           where: { id: inv.id },
           data: { stokupdate: { increment: Number(it.qty) || 0 } },
         });
