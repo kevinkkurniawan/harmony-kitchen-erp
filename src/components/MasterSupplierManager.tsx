@@ -315,7 +315,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
       {/* 📊 SUMMARY CARDS HEADER */}
       <div className={`px-5 py-3 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
           isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-blue-50/60 border-blue-200/80'
@@ -372,7 +372,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
       {/* 👑 MASTER SUPPLIER TOOLBAR */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         {/* Search Bar Input */}
         <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
@@ -387,15 +387,13 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`w-full border-2 rounded-xl pl-10 pr-10 py-1.5 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                isDark
-                  ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400'
-                  : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
+                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
               }`}
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover:text-white cursor-pointer"
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -447,9 +445,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
           <button
             onClick={exportToCSV}
             className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50'
-                : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
+              isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
             }`}
           >
             <Download className="w-4 h-4 text-emerald-300" />
@@ -462,9 +458,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               addToast('Data supplier berhasil di-refresh', 'info');
             }}
             className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -476,7 +470,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
       {/* 📄 SUPPLIER DATA TABLE WORKBENCH */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
@@ -512,7 +506,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     <div className="flex flex-col items-center justify-center animate-pulse">
                       <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                       <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat master data supplier dari ERP Database</p>
+                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat master data supplier dari ERP Database</p>
                     </div>
                   </td>
                 </tr>
@@ -541,22 +535,22 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     className={`transition-colors cursor-pointer ${
                       selectedSupplier?.id === sup.id
                         ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                        : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
+                        : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
                     }`}
                   >
-                    <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{sup.id}</td>
+                    <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{sup.id}</td>
                     <td className="py-3 px-4 font-mono font-black text-amber-400">{sup.supplierNo || '-'}</td>
                     <td className="py-3 px-4 font-black">
                       <div>{sup.supplierName}</div>
                       {sup.email && <div className="text-[11px] font-normal text-indigo-400 flex items-center gap-1 mt-0.5"><Mail className="w-3 h-3" />{sup.email}</div>}
                     </td>
-                    <td className="py-3 px-4 text-slate-300 max-w-xs truncate">
+                    <td className={`py-3 px-4 max-w-xs truncate ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                       <div>{sup.address && sup.address !== '-' ? sup.address : 'Alamat belum diisi'}</div>
                       {sup.city && <div className="text-[11px] font-bold text-amber-400/90 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{sup.city}</div>}
                     </td>
                     <td className="py-3 px-4 font-mono">
                       <div className="flex items-center gap-1">{sup.phone1 && sup.phone1 !== '-' ? <Phone className="w-3 h-3 text-emerald-400 shrink-0" /> : null}<span>{sup.phone1 || '-'}</span></div>
-                      {sup.phone2 && sup.phone2 !== '-' && <div className="text-slate-400 text-[11px]">Alt: {sup.phone2}</div>}
+                      {sup.phone2 && sup.phone2 !== '-' && <div className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alt: {sup.phone2}</div>}
                     </td>
                     <td className="py-3 px-4 font-bold">
                       {sup.contactPerson && sup.contactPerson !== '-' ? (
@@ -574,7 +568,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                           PKP
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-800 border border-slate-700 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                           Non-PKP
                         </span>
                       )}
@@ -631,7 +625,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
           }`}
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
-          <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-700/50">
+          <div className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b border-slate-700/50 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             Aksi Supplier Menu
           </div>
           <button
@@ -688,7 +682,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -698,7 +692,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             <form onSubmit={handleSaveForm} className="p-6 space-y-4 text-xs font-bold overflow-y-auto flex-1">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Kode Supplier *</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kode Supplier *</label>
                   <input
                     type="text"
                     required
@@ -706,12 +700,12 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.supplierNo || ''}
                     onChange={(e) => setFormData({ ...formData, supplierNo: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block mb-1 text-slate-400">Nama Supplier / Perusahaan *</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Supplier / Perusahaan *</label>
                   <input
                     type="text"
                     required
@@ -719,7 +713,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     value={formData.supplierName || ''}
                     onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -727,26 +721,26 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2">
-                  <label className="block mb-1 text-slate-400">Alamat Perusahaan</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alamat Perusahaan</label>
                   <input
                     type="text"
                     placeholder="Jl. Raya Industri No. 88"
                     value={formData.address || ''}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Kota</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kota</label>
                   <input
                     type="text"
                     placeholder="Surabaya / Jakarta"
                     value={formData.city || ''}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -754,38 +748,38 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">No. Telepon 1</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Telepon 1</label>
                   <input
                     type="text"
                     placeholder="031-888999"
                     value={formData.phone1 || ''}
                     onChange={(e) => setFormData({ ...formData, phone1: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">No. Telepon 2</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Telepon 2</label>
                   <input
                     type="text"
                     placeholder="0812345678"
                     value={formData.phone2 || ''}
                     onChange={(e) => setFormData({ ...formData, phone2: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Fax</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Fax</label>
                   <input
                     type="text"
                     placeholder="031-888990"
                     value={formData.fax || ''}
                     onChange={(e) => setFormData({ ...formData, fax: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -793,26 +787,26 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Contact Person (PIC Sales)</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Contact Person (PIC Sales)</label>
                   <input
                     type="text"
                     placeholder="Bpk. Budi Santoso"
                     value={formData.contactPerson || ''}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Email Resmi</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Email Resmi</label>
                   <input
                     type="email"
                     placeholder="sales@supplier.com"
                     value={formData.email || ''}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -820,14 +814,14 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Nomor NPWP Pajak</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nomor NPWP Pajak</label>
                   <input
                     type="text"
                     placeholder="01.234.567.8-012.000"
                     value={formData.taxNo || ''}
                     onChange={(e) => setFormData({ ...formData, taxNo: e.target.value })}
                     className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
@@ -845,14 +839,14 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Deskripsi / Catatan Tambahan</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Catatan Tambahan</label>
                 <textarea
                   rows={2}
                   placeholder="Catatan ketentuan pembayaran / term of payment..."
                   value={formData.description || ''}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>

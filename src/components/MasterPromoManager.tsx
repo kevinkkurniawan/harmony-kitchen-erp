@@ -457,7 +457,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
 
       {/* 📊 SUMMARY CARDS HEADER */}
       <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
           isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-purple-50/60 border-purple-200/80'
@@ -556,15 +556,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`w-full border-2 rounded-xl pl-10 pr-10 py-1.5 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                isDark
-                  ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400'
-                  : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
+                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
               }`}
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover:text-white cursor-pointer"
+                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -604,9 +602,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
           <button
             onClick={exportToCSV}
             className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50'
-                : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
+              isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
             }`}
           >
             <Download className="w-4 h-4 text-emerald-300" />
@@ -620,9 +616,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               addToast('Data promo berhasil di-refresh', 'info');
             }}
             className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -636,7 +630,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         {promoTab === 'rules' ? (
           /* TABLE ATURAN PROMO (sp_MDPromo_GetData) */
           <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
@@ -666,7 +660,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center font-bold text-slate-400">
+                    <td colSpan={7} className={`py-12 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       <RefreshCw className="w-5 h-5 text-amber-400 animate-spin mx-auto mb-2" />
                       Memuat aturan promo dari database...
                     </td>
@@ -703,13 +697,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         className={`transition-colors cursor-pointer ${
                           selectedRule?.id === rule.id
                             ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
+                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
                         }`}
                       >
-                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{rule.id}</td>
+                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{rule.id}</td>
                         <td className="py-3 px-4 font-mono font-bold text-amber-500">{code}</td>
                         <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
-                        <td className="py-3 px-4 font-bold text-slate-300">{group}</td>
+                        <td className={`py-3 px-4 font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{group}</td>
                         <td className="py-3 px-3 text-right font-mono font-black text-emerald-400">
                           {pct > 0 ? `${pct}%` : '-'}
                         </td>
@@ -759,7 +753,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         ) : (
           /* TABLE KELOMPOK PROMO GROUP (sp_MDPromoGroup_GetData) */
           <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
@@ -780,7 +774,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat data kelompok promo dari Cloud Database</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat data kelompok promo dari Cloud Database</p>
                       </div>
                     </td>
                   </tr>
@@ -813,10 +807,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         className={`transition-colors cursor-pointer ${
                           selectedGroup?.id === group.id
                             ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-slate-50 text-slate-900'
+                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
                         }`}
                       >
-                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-400">{group.id}</td>
+                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{group.id}</td>
                         <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
                         <td className="py-3 px-3 text-center font-mono font-bold text-amber-400">{count} Promo</td>
                         <td className="py-3 px-3 text-center">
@@ -869,7 +863,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
           }`}
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
-          <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-700/50">
+          <div className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b border-slate-700/50 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             Aksi Menu Context
           </div>
           <button
@@ -938,7 +932,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               </div>
               <button
                 onClick={() => setIsRuleModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -947,7 +941,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             {/* Modal Body Form */}
             <form onSubmit={handleSaveRuleForm} className="p-6 space-y-4 text-xs font-bold">
               <div>
-                <label className="block mb-1 text-slate-400">Nama Promo *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Promo *</label>
                 <input
                   type="text"
                   required
@@ -955,33 +949,33 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   value={ruleFormData.promoName || ''}
                   onChange={(e) => setRuleFormData({ ...ruleFormData, promoName: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Qty Minimum Order *</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty Minimum Order *</label>
                   <input
                     type="number"
                     min={1}
                     value={ruleFormData.qtyMin || 1}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, qtyMin: parseInt(e.target.value) || 1 })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Qty Maksimum Order *</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty Maksimum Order *</label>
                   <input
                     type="number"
                     min={1}
                     value={ruleFormData.qtyMax || 9999}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, qtyMax: parseInt(e.target.value) || 9999 })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
@@ -989,7 +983,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block mb-1 text-slate-400">Diskon (%)</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon (%)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -998,45 +992,45 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                     value={ruleFormData.promoPercentage || 0}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, promoPercentage: parseFloat(e.target.value) || 0 })}
                     className={`w-full p-2.5 rounded-xl border font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Diskon Grosir (Rp)</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon Grosir (Rp)</label>
                   <input
                     type="number"
                     min={0}
                     value={ruleFormData.promoGrosir || 0}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, promoGrosir: parseFloat(e.target.value) || 0 })}
                     className={`w-full p-2.5 rounded-xl border font-bold text-emerald-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                     }`}
                   />
                 </div>
                 <div>
-                  <label className="block mb-1 text-slate-400">Bundle Qty Items</label>
+                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Bundle Qty Items</label>
                   <input
                     type="number"
                     min={0}
                     value={ruleFormData.promoBundle || 0}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, promoBundle: parseInt(e.target.value) || 0 })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Deskripsi / Keterangan Promo</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Keterangan Promo</label>
                 <textarea
                   rows={3}
                   placeholder="Keterangan syarat & ketentuan promo..."
                   value={ruleFormData.description || ''}
                   onChange={(e) => setRuleFormData({ ...ruleFormData, description: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
@@ -1100,7 +1094,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               </div>
               <button
                 onClick={() => setIsGroupModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1109,7 +1103,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             {/* Modal Body Form */}
             <form onSubmit={handleSaveGroupForm} className="p-6 space-y-4 text-xs font-bold">
               <div>
-                <label className="block mb-1 text-slate-400">Kode Promo Group *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kode Promo Group *</label>
                 <input
                   type="text"
                   required
@@ -1117,13 +1111,13 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   value={groupFormData.promoCode || ''}
                   onChange={(e) => setGroupFormData({ ...groupFormData, promoCode: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-300'
+                    isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
                   }`}
                 />
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Nama Kelompok Promo *</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Kelompok Promo *</label>
                 <input
                   type="text"
                   required
@@ -1131,20 +1125,20 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   value={groupFormData.promoName || ''}
                   onChange={(e) => setGroupFormData({ ...groupFormData, promoName: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-400">Deskripsi / Keterangan Group</label>
+                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Keterangan Group</label>
                 <textarea
                   rows={3}
                   placeholder="Keterangan tujuan kelompok promo..."
                   value={groupFormData.description || ''}
                   onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                   }`}
                 />
               </div>

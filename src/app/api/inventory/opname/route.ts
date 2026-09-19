@@ -114,6 +114,7 @@ export async function POST(req: Request) {
     let no_tx = body.no_tx || body.noTransaction || body.opnameNo;
     const date = body.date || body.opnameDate;
     let items = body.items;
+    const mode = body.mode || 'set'; // 'add' or 'set'
 
     // Support single-item payload
     if (!items && body.inventoryId !== undefined) {
@@ -133,10 +134,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'No. Opname dan detail barang wajib diisi' }, { status: 400 });
     }
 
-    // Resolve inventory IDs for items that might only have barcodes or inventory_no
+    // Resolve inventories
+    const inventoryIds = items.map((it: any) => Number(it.inventoryId)).filter(Boolean);
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i.id]));
+    const inventories = await prisma.inventory.findMany({
+      where: {
+        OR: [
+          ...(inventoryIds.length > 0 ? [{ id: { in: inventoryIds } }] : []),
+          ...(inventoryNos.length > 0 ? [{ inventoryno: { in: inventoryNos } }] : []),
+        ]
+      }
+    });
+    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i]));
+    const invMapById = new Map(inventories.map((i: any) => [i.id, i]));
 
     const result = await prisma.$transaction(async (tx) => {
       await tx.t_opname.deleteMany({
@@ -144,11 +154,20 @@ export async function POST(req: Request) {
       });
       
       const toCreate = items.map((it: any) => {
-        const physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
+        const invId = Number(it.inventoryId || invMapByNo.get(it.inventoryNo || it.inventory_no)?.id || 1);
+        const inv = invMapById.get(invId) || invMapByNo.get(it.inventoryNo || it.inventory_no);
+        const currentStock = Number(inv?.stokupdate || 0);
+        let physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
+        
+        // If 'add', final physical qty is current + the increment
+        if (mode === 'add') {
+          physQty = currentStock + physQty;
+        }
+
         return {
           notransaction: no_tx,
-          inventoryid: Number(it.inventoryId || invMapByNo.get(it.inventoryNo || it.inventory_no) || 1),
-          barcode: it.barcode || '',
+          inventoryid: invId,
+          barcode: it.barcode || inv?.barcode || '',
           qty: physQty,
           price: 0,
           description: '',
@@ -162,7 +181,7 @@ export async function POST(req: Request) {
 
       await tx.t_opname.createMany({ data: toCreate });
 
-      // Adjust stock
+      // Adjust stock (since physQty is now the final absolute stock for both modes)
       for (const it of toCreate) {
         if (it.inventoryid) {
           await tx.inventory.updateMany({

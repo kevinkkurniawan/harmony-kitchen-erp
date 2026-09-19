@@ -61,7 +61,7 @@ export default function ERPDashboard() {
     | 'user-management'
   >('master-barang');
 
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
   // Load User Permissions when logged in user changes
   useEffect(() => {
@@ -94,15 +94,13 @@ export default function ERPDashboard() {
   return (
     <div
       className={`h-screen w-screen flex flex-col font-sans overflow-hidden select-none transition-colors duration-200 ${
-        isDark ? 'bg-[#070b14] text-slate-100' : 'bg-slate-100 text-slate-900'
+        isDark ? 'dark bg-[#070b14] text-slate-100' : 'bg-slate-100 text-slate-900'
       }`}
     >
       {/* 🚀 ERP TOP HEADER WITH PREMIUM UI/UX */}
       <header
         className={`h-14 border-b px-6 flex items-center justify-between shrink-0 z-30 shadow-md ${
-          isDark
-            ? 'border-slate-800 bg-slate-900/95 text-white'
-            : 'border-slate-200 bg-white text-slate-900'
+          isDark ? 'border-slate-800 bg-slate-900/95 text-white' : 'border-slate-300 bg-white text-slate-900'
         }`}
       >
         <div className="flex items-center gap-4">
@@ -136,9 +134,7 @@ export default function ERPDashboard() {
           <button
             onClick={() => setTheme(isDark ? 'light' : 'dark')}
             className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-sm ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+              isDark ? 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
             }`}
             title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
@@ -153,9 +149,7 @@ export default function ERPDashboard() {
               window.location.reload();
             }}
             className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer shadow-sm ${
-              isDark
-                ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30'
-                : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200'
+              isDark ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200'
             }`}
             title="Keluar dari Sistem ERP"
           >
@@ -170,10 +164,10 @@ export default function ERPDashboard() {
         {/* SIDEBAR NAVIGATION */}
         <aside
           className={`w-64 border-r flex flex-col shrink-0 transition-colors ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
           }`}
         >
-          <div className="p-4 border-b border-slate-800/60 font-bold text-xs uppercase text-slate-400 tracking-wider flex items-center justify-between">
+          <div className={`p-4 border-b border-slate-800/60 font-bold text-xs uppercase tracking-wider flex items-center justify-between ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             <span>Modul Utama ERP</span>
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
           </div>
@@ -192,9 +186,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'memo-sync-stok'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -208,9 +200,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'stok-opname'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <Package className="w-4 h-4 text-amber-400 shrink-0" />
@@ -234,9 +224,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'master-barang'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <Package className="w-4 h-4 text-amber-400 shrink-0" />
@@ -250,9 +238,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'inventory-stok'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -266,9 +252,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'master-promo'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <Tag className="w-4 h-4 text-purple-400 shrink-0" />
@@ -282,9 +266,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'master-supplier'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <Users className="w-4 h-4 text-blue-400 shrink-0" />
@@ -308,9 +290,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-start gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'penerimaan-barang'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <Package className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
@@ -324,9 +304,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-start gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'penerimaan-barang-harga'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <DollarSign className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
@@ -350,9 +328,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'sales-sync-stok'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <RefreshCw className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -366,9 +342,7 @@ export default function ERPDashboard() {
                     className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                       activeTab === 'sales-monitoring'
                         ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                        : isDark
-                        ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                        : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                     }`}
                   >
                     <BarChart3 className="w-4 h-4 text-indigo-400 shrink-0" />
@@ -390,9 +364,7 @@ export default function ERPDashboard() {
                   className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                     activeTab === 'laporan-penjualan'
                       ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
-                      : isDark
-                      ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5'
-                      : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                      : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
                   }`}
                 >
                   <FileSpreadsheet className="w-4 h-4 text-pink-400 shrink-0" />
@@ -413,9 +385,7 @@ export default function ERPDashboard() {
                   className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
                     activeTab === 'user-management'
                       ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
-                      : isDark
-                      ? 'text-emerald-400 hover:bg-slate-800/80 hover:translate-x-0.5'
-                      : 'text-emerald-600 hover:bg-slate-100 hover:translate-x-0.5'
+                      : isDark ? 'text-emerald-400 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-emerald-600 hover:bg-slate-100 hover:translate-x-0.5'
                   }`}
                 >
                   <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />

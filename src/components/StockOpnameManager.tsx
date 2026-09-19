@@ -544,8 +544,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
               : 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
           }`}
         >
-          {toastMessage.type === 'success' && <CheckCircle className="w-5 h-5 text-white shrink-0" />}
-          {toastMessage.type === 'error' && <XCircle className="w-5 h-5 text-white shrink-0" />}
+          {toastMessage.type === 'success' && <CheckCircle className={`w-5 h-5 shrink-0 ${isDark ? "text-white" : "text-slate-900"}`} />}
+          {toastMessage.type === 'error' && <XCircle className={`w-5 h-5 shrink-0 ${isDark ? "text-white" : "text-slate-900"}`} />}
           {toastMessage.type === 'info' && <Sparkles className="w-5 h-5 text-amber-300 shrink-0" />}
           <span>{toastMessage.text}</span>
         </div>
@@ -554,7 +554,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       {/* 👑 TOP COMPACT WORKBENCH TOOLBAR */}
       <div
         className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm shrink-0 ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
         {/* Title & Transaction Selector */}
@@ -638,9 +638,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
               opnameItems.length === 0
                 ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
             }`}
             title="Export data opname ke CSV"
           >
@@ -654,9 +652,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
               opnameItems.length === 0
                 ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
             }`}
             title="Cetak Laporan Stok Opname"
           >
@@ -691,16 +687,16 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
       {/* 📊 SUMMARY METRICS CARDS (1:1 with SyncStock) */}
       <div className={`px-5 py-3.5 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm shrink-0 ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <Package className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Total Item Opname</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Item Opname</div>
             <div className={`text-lg font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
               {stats.totalItems} Barang
             </div>
@@ -708,13 +704,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
             <CheckCircle className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Barang Klop (Sesuai)</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Barang Klop (Sesuai)</div>
             <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
               {stats.matchedCount} Item
             </div>
@@ -722,13 +718,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400">
             <AlertTriangle className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Barang Ada Selisih</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Barang Ada Selisih</div>
             <div className={`text-lg font-black ${isDark ? 'text-rose-300' : 'text-rose-950'}`}>
               {stats.varianceCount} Item
             </div>
@@ -736,13 +732,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
             <DollarSign className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold text-slate-400">Total Nilai Fisik</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Nilai Fisik</div>
             <div className={`text-sm font-black font-mono ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
               Rp {stats.totalValue.toLocaleString('id-ID')}
             </div>
@@ -800,7 +796,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
         {/* Qty Counted */}
         <div className="w-24 flex items-center gap-1">
-          <span className="text-xs font-bold text-slate-400">Qty:</span>
+          <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty:</span>
           <input
             type="number"
             min="0"
@@ -838,11 +834,11 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT (1:1 with SyncStock) */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           {/* Table Toolbar (Tabs & Search) */}
           <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 sticky top-0 z-30 ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
           {/* Filter Tabs */}
           <div className="flex items-center gap-1.5">
@@ -884,7 +880,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
           {/* Table Live Search */}
           <div className="relative min-w-[220px]">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
             <input
               type="text"
               placeholder="Filter tabel opname..."
@@ -922,13 +918,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                     <div className="flex flex-col items-center justify-center animate-pulse">
                       <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                       <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className="text-xs text-slate-400 mt-2 font-semibold">Memuat riwayat Stok Opname dari ERP Database</p>
+                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat riwayat Stok Opname dari ERP Database</p>
                     </div>
                   </td>
                 </tr>
               ) : filteredTableItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-20 text-center text-slate-400 font-medium">
+                  <td colSpan={8} className={`py-20 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                     {opnameItems.length === 0
                       ? 'Belum ada item opname. Gunakan form Quick Scan di atas atau klik "Populasi Semua".'
                       : 'Tidak ada item yang sesuai dengan filter.'}
@@ -946,17 +942,17 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         isDark ? 'hover:bg-slate-800/60 text-slate-200' : 'hover:bg-amber-50/50 text-slate-800'
                       }`}
                     >
-                      <td className="py-2.5 px-4 text-center font-bold text-slate-400">{idx + 1}</td>
+                      <td className={`py-2.5 px-4 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
                       <td className="py-2.5 px-4 font-mono">
                         <span className="font-bold text-amber-500 block">{item.inventoryNo}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">{item.barcode}</span>
+                        <span className={`text-[10px] font-normal ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.barcode}</span>
                       </td>
                       <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">
                         {item.inventoryName}
                       </td>
 
                       {/* System Stock */}
-                      <td className="py-2.5 px-4 text-center font-mono font-bold text-slate-400 text-sm">
+                      <td className={`py-2.5 px-4 text-center font-mono font-bold text-sm ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                         {sysQty}
                       </td>
 
@@ -1012,7 +1008,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         )}
                       </td>
 
-                      <td className="py-2.5 px-4 text-slate-400 italic">{item.description}</td>
+                      <td className={`py-2.5 px-4 italic ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.description}</td>
 
                       <td className="py-2.5 px-4 text-center">
                         <button
@@ -1032,13 +1028,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
         {/* COMPACT WORKBENCH FOOTER STATS BAR */}
         <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-3 shrink-0 ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
         }`}>
           <div className="flex items-center gap-4 text-xs font-bold">
-            <span className="text-slate-400">
+            <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Barang: <strong className="text-slate-900 dark:text-white">{stats.totalItems} SKU</strong>
             </span>
-            <span className="text-slate-400">
+            <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>
               Total Qty Fisik: <strong className="text-amber-500">{stats.totalPhysicalQty} Unit</strong>
             </span>
             <span className="text-emerald-500">
@@ -1049,7 +1045,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             </span>
           </div>
 
-          <div className="text-xs font-bold text-slate-400">
+          <div className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             Total Nilai Fisik: <strong className="text-emerald-400 font-mono text-sm">Rp {stats.totalValue.toLocaleString('id-ID')}</strong>
           </div>
         </div>

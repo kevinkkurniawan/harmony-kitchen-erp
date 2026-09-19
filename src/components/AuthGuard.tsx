@@ -36,7 +36,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Jangan render apa-apa selama pengecekan status awal agar tidak berkedip
   if (isChecking) {
-    return <div className="min-h-screen bg-slate-50 dark:bg-slate-900" />;
+    return <div className="min-h-screen bg-slate-50" />;
   }
 
   // Jika sudah login, tampilkan aplikasi utama
@@ -46,21 +46,21 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Jika belum login, tampilkan form login dengan style POS
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Decorative background elements */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/20 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/20 blur-[120px] rounded-full pointer-events-none" />
 
-      <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-800 text-slate-100 w-full max-w-md rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden relative z-10">
+      <div className="bg-white/80 backdrop-blur-xl border border-slate-300 text-slate-900 w-full max-w-md rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] overflow-hidden relative z-10">
         {/* Header */}
-        <div className="p-8 bg-slate-950/50 border-b border-slate-800 text-center">
+        <div className="p-8 bg-slate-50/80 border-b border-slate-300 text-center">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
             <Store className="w-8 h-8 text-white font-bold" />
           </div>
-          <h2 className="font-extrabold text-2xl text-white tracking-tight mb-1">
+          <h2 className="font-extrabold text-2xl text-slate-900 tracking-tight mb-1">
             Harmony Kitchen ERP
           </h2>
-          <p className="text-sm text-slate-400 font-medium">
+          <p className="text-sm text-slate-600 font-medium">
             Sistem Manajemen Terpadu
           </p>
         </div>
@@ -68,15 +68,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         {/* Form */}
         <form onSubmit={handleLogin} className="p-8 space-y-5">
           {error && (
-            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-semibold flex items-center gap-2.5 animate-in slide-in-from-top-2">
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-sm font-semibold flex items-center gap-2.5 animate-in slide-in-from-top-2">
               <AlertCircle className="w-5 h-5 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 ml-1">
-              <UserIcon className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 ml-1">
+              <UserIcon className="w-3.5 h-3.5 text-indigo-500" />
               Username Admin
             </label>
             <input
@@ -85,13 +85,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Masukkan username"
-              className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3.5 text-base text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3.5 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 ml-1">
-              <Lock className="w-3.5 h-3.5 text-indigo-400" />
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 ml-1">
+              <Lock className="w-3.5 h-3.5 text-indigo-500" />
               Password
             </label>
             <input
@@ -100,7 +100,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3.5 text-base text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3.5 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all"
             />
           </div>
 

@@ -12,9 +12,7 @@ export default function MemoWidget({ isDark }: MemoWidgetProps) {
     <div className="px-2 py-1">
       <div
         className={`relative rounded-2xl p-3 border transition-all shadow-sm ${
-          isDark
-            ? 'bg-amber-950/20 border-amber-500/30 text-slate-200'
-            : 'bg-amber-50/70 border-amber-300/80 text-slate-800'
+          isDark ? 'bg-amber-950/20 border-amber-500/30 text-slate-200' : 'bg-amber-50/70 border-amber-300/80 text-slate-800'
         }`}
       >
         <div className="flex items-center gap-2 mb-1.5 pb-1 border-b border-amber-500/20">
