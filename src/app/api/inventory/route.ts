@@ -12,6 +12,7 @@ export async function GET(req: Request) {
     // Parse filters
     const query = searchParams.get('q') || '';
     const minusStock = searchParams.get('minusStock') === 'true';
+    const status = searchParams.get('status');
     const onlyActive = searchParams.get('onlyActive') === 'true';
 
     const where: any = {};
@@ -24,9 +25,13 @@ export async function GET(req: Request) {
       ];
     }
     if (minusStock) where.stokupdate = { lt: 0 };
-    if (onlyActive) where.isactive = true;
+    if (status === 'active' || (onlyActive && status !== 'all' && status !== 'inactive')) {
+      where.isactive = true;
+    } else if (status === 'inactive') {
+      where.isactive = false;
+    }
 
-    const [total, items, categories, productTypes] = await Promise.all([
+    const [total, items, categories, productTypes, wholesaleCategories] = await Promise.all([
       prisma.m_inventory.count({ where }),
       prisma.m_inventory.findMany({ 
         where, 
@@ -39,7 +44,8 @@ export async function GET(req: Request) {
         }
       }),
       prisma.m_category.findMany(),
-      prisma.m_product.findMany()
+      prisma.m_product.findMany(),
+      prisma.m_wholesalecategory.findMany()
     ]);
     
     // Fetch stock for these items
@@ -65,51 +71,66 @@ export async function GET(req: Request) {
     // Create maps for O(1) lookups
     const categoryMap = new Map(categories.map((c: any) => [c.id, c.categoryname]));
     const productTypeMap = new Map(productTypes.map((p: any) => [p.id, p.productname]));
+    const wholesaleMap = new Map(wholesaleCategories.map((wc: any) => [wc.id, wc]));
+
     const mapped = items.map((i: any) => {
       const stockData = stockMap.get(String(i.id)) || { gudang: 0, etalase: 0 };
       const totalStock = stockData.gudang + stockData.etalase;
+      const wc = i.wholesalecategoryid ? wholesaleMap.get(i.wholesalecategoryid) : null;
       
       return {
-      id: String(i.id),
-      barcode: i.barcode || i.inventoryno,
-      inventoryNo: i.inventoryno,
-      inventory_no: i.inventoryno,
-      inventoryName: i.inventoryname,
-      inventory_name: i.inventoryname,
-      inventoryBrandId: i.inventorybrandid,
-      brandName: i.m_brand?.brandname || 'General',
-      brand_name: i.m_brand?.brandname || 'General',
-      inventoryCategoryId: i.inventorycategoryid,
-      categoryName: categoryMap.get(i.inventorycategoryid) || 'General',
-      category_name: categoryMap.get(i.inventorycategoryid) || 'General',
-      inventoryProductId: i.inventoryproductid,
-      productName: productTypeMap.get(i.inventoryproductid) || 'General',
-      product_name: productTypeMap.get(i.inventoryproductid) || 'General',
-      uoMId: i.uomid,
-      uomName: i.m_uom?.uomname || 'Pcs',
-      uom_name: i.m_uom?.uomname || 'Pcs',
-      minStock: Number(i.minstock || 0),
-      maxStock: Number(i.maxstock || 0),
-      kodeHarga: i.kodeharga || '',
-      description: i.description || '',
-      ...(mayViewHpp ? { hpp: Number(i.hpp || 0) } : {}),
-      price: i.price,
-      grosir1: i.grosir1,
-      grosir2: i.grosir2,
-      grosir3: i.grosir3,
-      stock: totalStock,
-      stokAwal: Number(i.stokawal || 0),
-      stokAkhir: totalStock,
-      isActive: Boolean(i.isactive ?? true),
-      is_active: Boolean(i.isactive ?? true),
-      createdAt: i.createddate,
-      created_at: i.createddate,
-      stokGudang: stockData.gudang,
-      stokEtalase: stockData.etalase
-    };
+        id: String(i.id),
+        barcode: i.barcode || i.inventoryno,
+        inventoryNo: i.inventoryno,
+        inventory_no: i.inventoryno,
+        inventoryName: i.inventoryname,
+        inventory_name: i.inventoryname,
+        inventoryBrandId: i.inventorybrandid ? Number(i.inventorybrandid) : null,
+        brandName: i.m_brand?.brandname || 'General',
+        brand_name: i.m_brand?.brandname || 'General',
+        inventoryCategoryId: i.inventorycategoryid,
+        categoryName: categoryMap.get(i.inventorycategoryid) || 'General',
+        category_name: categoryMap.get(i.inventorycategoryid) || 'General',
+        inventoryProductId: i.inventoryproductid,
+        productName: productTypeMap.get(i.inventoryproductid) || 'General',
+        product_name: productTypeMap.get(i.inventoryproductid) || 'General',
+        uoMId: i.uomid ? Number(i.uomid) : null,
+        uomName: i.m_uom?.uomname || 'Pcs',
+        uom_name: i.m_uom?.uomname || 'Pcs',
+        minStock: Number(i.minstock || 0),
+        maxStock: Number(i.maxstock || 0),
+        kodeHarga: i.kodeharga || '',
+        description: i.description || '',
+        ...(mayViewHpp ? { hpp: Number(i.hpp || 0) } : {}),
+        price: i.price || 0,
+        priceBuy: i.pricebuy || 0,
+        grosir1: i.grosir1,
+        grosir2: i.grosir2,
+        grosir3: i.grosir3,
+        wholesaleCategoryId: i.wholesalecategoryid || null,
+        wholesaleCategoryName: wc ? wc.name : undefined,
+        wholesaleCategory: wc ? {
+          id: wc.id,
+          code: wc.code,
+          name: wc.name,
+          version: wc.version,
+          tier1_minqty: wc.tier1_minqty,
+          tier2_minqty: wc.tier2_minqty,
+          tier3_minqty: wc.tier3_minqty,
+        } : null,
+        stock: totalStock,
+        stokAwal: Number(i.stokawal || 0),
+        stokAkhir: totalStock,
+        isActive: Boolean(i.isactive ?? true),
+        is_active: Boolean(i.isactive ?? true),
+        createdAt: i.createddate,
+        created_at: i.createddate,
+        stokGudang: stockData.gudang,
+        stokEtalase: stockData.etalase
+      };
     });
     return createPaginatedResponse(mapped, total, paginationParams);
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) { return NextResponse.json({ success: false, error: error.message }, { status: 500 }); }
 }
 export async function POST(req: Request) {
   try {
@@ -138,6 +159,7 @@ export async function POST(req: Request) {
       grosir1: body.grosir1 ? Number(body.grosir1) : null,
       grosir2: body.grosir2 ? Number(body.grosir2) : null,
       grosir3: body.grosir3 ? Number(body.grosir3) : null,
+      wholesalecategoryid: body.wholesaleCategoryId ? Number(body.wholesaleCategoryId) : (body.wholesalecategoryid ? Number(body.wholesalecategoryid) : null),
       isactive: body.isActive !== undefined ? Boolean(body.isActive) : true,
       stokawal: Number(body.stokAwal) || 0,
       stokupdate: Number(body.stokAwal) || 0, // Initial stock

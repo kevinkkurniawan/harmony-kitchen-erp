@@ -1,36 +1,64 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { getCurrentUser } from '@/lib/session';
+import { requireCapability } from '@/lib/capabilities';
+import { saveOpnameTransaction, reverseOpnameTransaction } from '@/lib/stock-opname';
+import { apiError, apiSuccess } from '@/lib/api-response';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const noTx = searchParams.get('noTx');
     const q = searchParams.get('q') || '';
+    const statusFilter = searchParams.get('status');
     const paginationParams = getPaginationParams(req, 50);
 
     if (noTx) {
-      const details = await prisma.t_opname.findMany({
+      const header = await prisma.t_opnameheader.findUnique({
         where: { notransaction: noTx },
       });
 
+      let details = await prisma.t_opnamedetail.findMany({
+        where: { notransaction: noTx },
+      });
+
+      // Fallback to t_opname if details in t_opnamedetail not present
       if (!details || details.length === 0) {
-        return NextResponse.json({ success: false, error: 'Opname tidak ditemukan' }, { status: 404 });
+        const legacyDetails = await prisma.t_opname.findMany({
+          where: { notransaction: noTx },
+        });
+        if (!legacyDetails || legacyDetails.length === 0) {
+          return apiError('NOT_FOUND', 'Opname tidak ditemukan', 404);
+        }
+        details = legacyDetails.map((ld) => ({
+          id: ld.id,
+          notransaction: ld.notransaction,
+          inventoryid: ld.inventoryid,
+          barcode: ld.barcode,
+          systemqty: new Prisma.Decimal(0),
+          physicalqty: new Prisma.Decimal(ld.qty || 0),
+          differenceqty: new Prisma.Decimal(0),
+          unitprice: new Prisma.Decimal(ld.price || 0),
+          notes: ld.description,
+          rowguid: ld.rowguid,
+        }));
       }
 
-      const inventoryIds = details.map((d: any) => d.inventoryid).filter(Boolean);
+      const inventoryIds = details.map((d) => BigInt(d.inventoryid)).filter(Boolean);
       const inventories = await prisma.m_inventory.findMany({
         where: { id: { in: inventoryIds } },
         select: { id: true, barcode: true, inventoryno: true, inventoryname: true, price: true, stokupdate: true },
       });
 
-      const invMap = new Map(inventories.map((inv: any) => [inv.id, inv]));
+      const invMap = new Map(inventories.map((inv) => [Number(inv.id), inv]));
 
-      const items = details.map((d: any) => {
+      const items = details.map((d) => {
         const matched = invMap.get(d.inventoryid);
-        const sysQty = matched?.stokupdate || 0;
-        const physQty = Number(d.qty || 0);
-        const diffQty = physQty - sysQty;
+        const sysQty = Number(d.systemqty ?? matched?.stokupdate ?? 0);
+        const physQty = Number(d.physicalqty ?? 0);
+        const diffQty = Number(d.differenceqty ?? (physQty - sysQty));
 
         return {
           id: String(d.id),
@@ -47,159 +75,198 @@ export async function GET(req: Request) {
           diffQty: diffQty,
           diff_qty: diffQty,
           qty: physQty,
-          price: matched?.price || d.price || 0,
+          price: Number(d.unitprice || matched?.price || 0),
+          notes: d.notes || '',
           description: diffQty === 0 ? 'Sesuai (Klop)' : diffQty > 0 ? `Surplus (+${diffQty})` : `Defisit (${diffQty})`,
         };
       });
 
-      return NextResponse.json({
-        success: true,
-        data: items,
-        header: {
-          noTransaction: noTx,
-          no_tx: noTx,
-          opnameNo: noTx,
-          date: details[0].opnamedate || details[0].createddate,
-          whName: 'Gudang Utama',
-          items,
-        },
+      return apiSuccess({
+        noTransaction: noTx,
+        no_tx: noTx,
+        opnameNo: noTx,
+        date: header?.opnamedate || new Date(),
+        status: header?.status || 'POSTED',
+        notes: header?.notes || '',
+        createdUser: header?.createduser || 'system',
+        postedUser: header?.posteduser,
+        postedDate: header?.posteddate,
+        reversedUser: header?.reverseduser,
+        reversedDate: header?.reverseddate,
+        reversedReason: header?.reversedreason,
+        whName: 'Gudang Utama',
+        items,
       });
     }
 
-    const where = q
-      ? { notransaction: { contains: q, mode: 'insensitive' as const } }
-      : undefined;
+    // Query opname headers list
+    const where: any = {};
+    if (q) {
+      where.notransaction = { contains: q, mode: 'insensitive' };
+    }
+    if (statusFilter && statusFilter !== 'ALL') {
+      where.status = statusFilter;
+    }
 
-    // We must group by notransaction to get headers
-    const groups = await prisma.t_opname.groupBy({
-      by: ['notransaction', 'opnamedate', 'createddate'],
-      where,
-      _count: { inventoryid: true },
-      orderBy: { createddate: 'desc' },
-      skip: paginationParams.skip,
-      take: paginationParams.limit,
-    });
-    
-    // For total count of unique opnames
-    const totalGroups = await prisma.t_opname.groupBy({
+    const [headers, total] = await Promise.all([
+      prisma.t_opnameheader.findMany({
+        where,
+        orderBy: { opnamedate: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      }),
+      prisma.t_opnameheader.count({ where }),
+    ]);
+
+    // If no headers in t_opnameheader yet, fallback to legacy grouping
+    if (total === 0 && !statusFilter) {
+      const legacyWhere = q ? { notransaction: { contains: q, mode: 'insensitive' as const } } : undefined;
+      const groups = await prisma.t_opname.groupBy({
+        by: ['notransaction', 'opnamedate', 'createddate'],
+        where: legacyWhere,
+        _count: { inventoryid: true },
+        orderBy: { createddate: 'desc' },
+        skip: paginationParams.skip,
+        take: paginationParams.limit,
+      });
+
+      const totalGroups = await prisma.t_opname.groupBy({
+        by: ['notransaction'],
+        where: legacyWhere,
+      });
+
+      const mapped = groups.map((g, i) => ({
+        id: String(i),
+        noTransaction: g.notransaction,
+        opname_no: g.notransaction,
+        opnameNo: g.notransaction,
+        opnameDate: g.opnamedate || g.createddate,
+        opname_date: g.opnamedate || g.createddate,
+        status: 'POSTED',
+        whName: 'Gudang Utama',
+        totalItems: g._count.inventoryid,
+        total_items: g._count.inventoryid,
+        created_at: g.createddate,
+      }));
+
+      return createPaginatedResponse(mapped, totalGroups.length, paginationParams);
+    }
+
+    // Fetch item counts for headers
+    const txNos = headers.map((h) => h.notransaction);
+    const detailCounts = await prisma.t_opnamedetail.groupBy({
       by: ['notransaction'],
-      where,
+      where: { notransaction: { in: txNos } },
+      _count: { inventoryid: true },
     });
-    const total = totalGroups.length;
+    const countMap = new Map(detailCounts.map((dc) => [dc.notransaction, dc._count.inventoryid]));
 
-    const mapped = groups.map((g: any, i: number) => ({
-      id: String(i),
-      noTransaction: g.notransaction,
-      opname_no: g.notransaction,
-      opnameNo: g.notransaction,
-      opnameDate: g.opnamedate || g.createddate,
-      opname_date: g.opnamedate || g.createddate,
+    const mapped = headers.map((h) => ({
+      id: String(h.id),
+      noTransaction: h.notransaction,
+      opname_no: h.notransaction,
+      opnameNo: h.notransaction,
+      opnameDate: h.opnamedate,
+      opname_date: h.opnamedate,
+      status: h.status,
+      notes: h.notes,
+      postedUser: h.posteduser,
+      postedDate: h.posteddate,
+      reversedUser: h.reverseduser,
+      reversedDate: h.reverseddate,
       whName: 'Gudang Utama',
       wh_name: 'Gudang Utama',
-      totalItems: g._count.inventoryid,
-      total_items: g._count.inventoryid,
-      created_at: g.createddate,
+      totalItems: countMap.get(h.notransaction) || 0,
+      total_items: countMap.get(h.notransaction) || 0,
+      created_at: h.createddate,
     }));
 
     return createPaginatedResponse(mapped, total, paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/inventory/opname:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return apiError('INTERNAL_ERROR', error.message || 'Gagal memuat data opname', 500);
   }
 }
 
 export async function POST(req: Request) {
   try {
+    const user = await getCurrentUser();
+    const actor = user?.username || 'system';
     const body = await req.json();
-    let no_tx = body.no_tx || body.noTransaction || body.opnameNo;
-    const date = body.date || body.opnameDate;
-    let items = body.items;
-    const mode = body.mode || 'set'; // 'add' or 'set'
+    const action = body.action || (body.isDraft ? 'draft' : 'post');
+    const noTx = body.no_tx || body.noTransaction || body.opnameNo || `OPN-${Date.now()}`;
+    const idempotencyKey = body.idempotencyKey || req.headers.get('x-idempotency-key') || undefined;
 
+    // Handle reversal
+    if (action === 'reverse') {
+      const auth = await requireCapability('OPNAME_REVERSE');
+      if ('errorResponse' in auth) return auth.errorResponse;
+
+      if (!body.reason) {
+        return apiError('VALIDATION_ERROR', 'Alasan pembatalan opname (reversal) wajib diisi.', 400);
+      }
+
+      const result = await reverseOpnameTransaction({
+        noTransaction: noTx,
+        reason: body.reason,
+        actor,
+        idempotencyKey,
+      });
+
+      return apiSuccess(result, `Opname ${noTx} berhasil dibatalkan (reversed).`);
+    }
+
+    // Handle post or draft
+    if (action === 'post') {
+      const auth = await requireCapability('OPNAME_POST');
+      if ('errorResponse' in auth) return auth.errorResponse;
+    }
+
+    let items = body.items;
     // Support single-item payload
     if (!items && body.inventoryId !== undefined) {
       const inv = await prisma.m_inventory.findUnique({ where: { id: Number(body.inventoryId) } });
       if (inv) {
-        no_tx = no_tx || `OPN-SINGLE-${Date.now()}`;
         const physQty = Number(body.qtyOpname ?? body.qty ?? body.physicalQty ?? inv.stokupdate);
         items = [{
           inventoryId: inv.id,
           barcode: inv.barcode || '',
-          qty: physQty,
+          systemQty: Number(inv.stokupdate || 0),
+          physicalQty: physQty,
+          unitPrice: Number(inv.hpp || inv.price || 0),
         }];
       }
     }
 
-    if (!no_tx || !items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ success: false, error: 'No. Opname dan detail barang wajib diisi' }, { status: 400 });
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return apiError('VALIDATION_ERROR', 'Detail barang opname wajib diisi.', 400);
     }
 
-    // Resolve inventories
-    const inventoryIds = items.map((it: any) => Number(it.inventoryId)).filter(Boolean);
-    const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.m_inventory.findMany({
-      where: {
-        OR: [
-          ...(inventoryIds.length > 0 ? [{ id: { in: inventoryIds } }] : []),
-          ...(inventoryNos.length > 0 ? [{ inventoryno: { in: inventoryNos } }] : []),
-        ]
-      }
+    const result = await saveOpnameTransaction({
+      noTransaction: noTx,
+      date: body.date || body.opnameDate,
+      whId: body.whId || 1,
+      notes: body.notes || '',
+      items: items.map((it: any) => ({
+        inventoryId: Number(it.inventoryId || it.id),
+        barcode: it.barcode,
+        systemQty: it.systemQty !== undefined ? Number(it.systemQty) : undefined,
+        physicalQty: Number(it.qty ?? it.physicalQty ?? 0),
+        unitPrice: it.price !== undefined ? Number(it.price) : undefined,
+        notes: it.notes || it.description || '',
+      })),
+      actor,
+      action: action === 'post' ? 'post' : 'draft',
+      idempotencyKey,
     });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i]));
-    const invMapById = new Map(inventories.map((i: any) => [i.id, i]));
 
-    const result = await prisma.$transaction(async (tx) => {
-      await tx.t_opname.deleteMany({
-        where: { notransaction: no_tx },
-      });
-      
-      const toCreate = items.map((it: any) => {
-        const invId = Number(it.inventoryId || invMapByNo.get(it.inventoryNo || it.inventory_no)?.id || 1);
-        const inv = invMapById.get(invId) || invMapByNo.get(it.inventoryNo || it.inventory_no);
-        const currentStock = Number(inv?.stokupdate || 0);
-        let physQty = Number(it.qty ?? it.physicalQty ?? it.physical_qty ?? 0);
-        
-        // If 'add', final physical qty is current + the increment
-        if (mode === 'add') {
-          physQty = currentStock + physQty;
-        }
+    const msg = action === 'post'
+      ? `Stock Opname ${noTx} berhasil diposting & pergerakan stok telah dicatat.`
+      : `Draft Stock Opname ${noTx} berhasil disimpan.`;
 
-        return {
-          notransaction: no_tx,
-          inventoryid: invId,
-          barcode: it.barcode || inv?.barcode || '',
-          qty: physQty,
-          price: 0,
-          description: '',
-          opnamedate: date ? new Date(date) : new Date(),
-          createduser: 'system',
-          createddate: new Date(),
-          modifieduser: 'system',
-          modifieddate: new Date(),
-        };
-      });
-
-      await tx.t_opname.createMany({ data: toCreate });
-
-      // Adjust stock (since physQty is now the final absolute stock for both modes)
-      for (const it of toCreate) {
-        if (it.inventoryid) {
-          await tx.m_inventory.updateMany({
-            where: { id: it.inventoryid },
-            data: { stokupdate: it.qty },
-          });
-        }
-      }
-      return toCreate;
-    }, { maxWait: 15000, timeout: 60000 });
-
-    return NextResponse.json({
-      success: true,
-      message: 'Stock Opname berhasil disimpan & stok inventori telah diperbarui',
-      data: result,
-    });
+    return apiSuccess(result, msg);
   } catch (error: any) {
     console.error('Error in POST /api/inventory/opname:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return apiError('BAD_REQUEST', error.message || 'Gagal menyimpan opname', 400);
   }
 }

@@ -11,8 +11,8 @@ export interface ERPProduct {
   productName?: string;
   uoMId?: number;
   uomName?: string;
-  minStock: number;
-  maxStock: number;
+  minStock?: number;
+  maxStock?: number;
   kodeHarga: string;
   description: string;
   price: number; // Harga Jual Retail
@@ -23,6 +23,17 @@ export interface ERPProduct {
   grosir1: number;
   grosir2: number;
   grosir3: number;
+  wholesaleCategoryId?: number | null;
+  wholesaleCategoryName?: string;
+  wholesaleCategory?: {
+    id: number;
+    code: string;
+    name: string;
+    version: number;
+    tier1_minqty: number;
+    tier2_minqty: number;
+    tier3_minqty: number;
+  } | null;
   disc1?: number;
   disc2?: number;
   stokAwal: number;
@@ -104,7 +115,7 @@ export interface SalesMonitoringRow {
   id: string;
   user: string;
   noNota: string;
-  jenisBayar: 'Credit Card' | 'Cash' | 'Qris';
+  jenisBayar: 'Credit Card' | 'Cash' | 'Qris' | 'Transfer' | 'Debit';
   bank: string;
   nomTransaksi: number;
   diskonAkhir: number;
@@ -115,6 +126,11 @@ export interface SalesMonitoringRow {
   debit: number;
   qris: number;
   cc: number;
+  status?: string;
+  isVoid?: boolean;
+  manualDiscountAmount?: number;
+  manualDiscountMode?: string;
+  manualDiscountReason?: string;
 }
 
 export interface SalesReportDailyRow {
@@ -123,6 +139,12 @@ export interface SalesReportDailyRow {
   debit: number;
   kredit: number;
   qris: number;
+  transfer?: number;
   lainLain: number;
+  netSales: number;
+  hpp: number;
+  netIncome: number;
+  marginPercentage: number;
+  hppProvenance?: 'EXACT' | 'ESTIMATED' | 'UNAVAILABLE';
   totalHarian: number;
 }

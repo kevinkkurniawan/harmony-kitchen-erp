@@ -78,9 +78,9 @@ export async function GET(req: Request) {
         customer_name: s.customername || 'Pelanggan Umum',
         cashierName: 'Kasir', // Cashier logic could be mapped to cashierid
         cashier_name: 'Kasir',
-        paymentMethod: 'Tunai', // Add payment mapping if available
-        paymentType: 'Tunai',
-        payment_method: 'Tunai',
+        paymentMethod: s.paymenttypecode || 'CASH',
+        paymentType: s.paymenttypecode || 'CASH',
+        payment_method: s.paymenttypecode || 'CASH',
         subtotal: subtotal,
         totalAmount: subtotal,
         total_amount: subtotal,
@@ -97,7 +97,8 @@ export async function GET(req: Request) {
         amount_paid: Number(s.grandtotal),
         changeAmount: 0,
         change_amount: 0,
-        status: s.status || (s.isvoid ? 'Void' : 'Completed'),
+        isVoid: Boolean(s.isvoid),
+        status: s.isvoid ? 'VOID' : (s.status || 'COMPLETED'),
         items: s_details.map((d: any) => {
           const inv = inventoryMap.get(d.inventoryid);
           return {

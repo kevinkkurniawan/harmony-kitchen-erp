@@ -24,6 +24,9 @@ import {
   User,
   ChevronUp,
   ChevronDown,
+  Edit3,
+  RotateCcw,
+  Ban,
 } from 'lucide-react';
 
 export interface PosItemDetail {
@@ -104,6 +107,20 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   // Print Modal
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [printData, setPrintData] = useState<{ header: PosHeader; items: PosItemDetail[] } | null>(null);
+
+  // Payment Correction Modal
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedTxForPayment, setSelectedTxForPayment] = useState<any>(null);
+  const [newPaymentType, setNewPaymentType] = useState('CASH');
+  const [paymentCorrectionReason, setPaymentCorrectionReason] = useState('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Void / Unvoid Modal
+  const [isVoidModalOpen, setIsVoidModalOpen] = useState(false);
+  const [voidActionType, setVoidActionType] = useState<'VOID' | 'UNVOID'>('VOID');
+  const [selectedTxForVoid, setSelectedTxForVoid] = useState<any>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [isSubmittingVoid, setIsSubmittingVoid] = useState(false);
 
   const handleSort = (field: string) => {
     if (sortField !== field) {
@@ -204,23 +221,101 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
     }
   };
 
-  // Void Transaction
-  const handleVoidTransaction = async (id: string, invoiceNo: string) => {
-    if (!window.confirm(`Apakah Anda yakin ingin membatalkan (VOID) nota transaksi ${invoiceNo}?`)) return;
+  // Payment Correction Handlers
+  const handleOpenPaymentCorrection = (tx: any) => {
+    setSelectedTxForPayment(tx);
+    setNewPaymentType(tx.paymentType || 'CASH');
+    setPaymentCorrectionReason('');
+    setIsPaymentModalOpen(true);
+  };
 
+  const handleSubmitPaymentCorrection = async () => {
+    if (!selectedTxForPayment) return;
+    if (!paymentCorrectionReason.trim()) {
+      addToast('Alasan koreksi metode pembayaran wajib diisi!', 'warning');
+      return;
+    }
+
+    setIsSubmittingPayment(true);
     try {
-      const res = await fetch(`/api/sales/monitoring/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sales/monitoring/${selectedTxForPayment.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CORRECT_PAYMENT',
+          paymentType: newPaymentType,
+          reason: paymentCorrectionReason.trim(),
+        }),
+      });
       const json = await res.json();
       if (json.success) {
-        addToast(json.message, 'success');
+        addToast(json.data?.message || 'Metode pembayaran berhasil diubah.', 'success');
+        setIsPaymentModalOpen(false);
         reloadData();
       } else {
-        addToast(`Gagal void: ${json.error}`, 'error');
+        addToast(`Gagal mengubah metode pembayaran: ${json.error}`, 'error');
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+    } catch (err: any) {
+      addToast(`Error: ${err.message || err}`, 'error');
+    } finally {
+      setIsSubmittingPayment(false);
     }
+  };
+
+  // Void / Unvoid Handlers
+  const handleOpenVoidModal = (tx: any, action: 'VOID' | 'UNVOID') => {
+    setSelectedTxForVoid(tx);
+    setVoidActionType(action);
+    setVoidReason('');
+    setIsVoidModalOpen(true);
+  };
+
+  const handleSubmitVoidAction = async () => {
+    if (!selectedTxForVoid) return;
+    if (!voidReason.trim()) {
+      addToast(`Alasan ${voidActionType === 'VOID' ? 'pembatalan (void)' : 'pengaktifan (unvoid)'} wajib diisi!`, 'warning');
+      return;
+    }
+
+    setIsSubmittingVoid(true);
+    try {
+      const res = await fetch(`/api/sales/monitoring/${selectedTxForVoid.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: voidActionType,
+          reason: voidReason.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        addToast(json.data?.message || `Transaksi berhasil di-${voidActionType}.`, 'success');
+        setIsVoidModalOpen(false);
+        reloadData();
+      } else {
+        addToast(`Gagal memproses ${voidActionType}: ${json.error}`, 'error');
+      }
+    } catch (err: any) {
+      addToast(`Error: ${err.message || err}`, 'error');
+    } finally {
+      setIsSubmittingVoid(false);
+    }
+  };
+
+  // Print with Audit Trail Marker
+  const handlePrintReceipt = async () => {
+    if (printData?.header?.id) {
+      try {
+        await fetch(`/api/sales/monitoring/${printData.header.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'REPRINT', reason: 'Cetak ulang struk nota kasir' }),
+        });
+      } catch (err) {
+        console.error('Error logging reprint:', err);
+      }
+    }
+    window.print();
   };
 
   return (
@@ -549,7 +644,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   if (sortField === 'subtotal') { valA = a.subtotal ?? a.totalAmount ?? a.total_amount ?? 0; valB = b.subtotal ?? b.totalAmount ?? b.total_amount ?? 0; }
                   if (sortField === 'discValue') { valA = a.discValue ?? a.discount ?? a.discountAmount ?? a.discount_amount ?? 0; valB = b.discValue ?? b.discount ?? b.discountAmount ?? b.discount_amount ?? 0; }
                   if (sortField === 'grandTotal') { valA = a.grandTotal ?? a.grand_total ?? 0; valB = b.grandTotal ?? b.grand_total ?? 0; }
-                  if (sortField === 'status') { valA = 'LUNAS'; valB = 'LUNAS'; }
+                  if (sortField === 'status') { valA = a.isVoid ? 'VOID' : 'LUNAS'; valB = a.isVoid ? 'VOID' : 'LUNAS'; }
 
                   if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
                   if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
@@ -563,9 +658,26 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   const subtotal = row.subtotal ?? row.totalAmount ?? row.total_amount ?? 0;
                   const disc = row.discValue ?? row.discount ?? row.discountAmount ?? row.discount_amount ?? 0;
                   const grandTotal = row.grandTotal ?? row.grand_total ?? 0;
+                  const isVoid = Boolean(row.isVoid || row.status === 'VOID' || row.status === 'Void');
 
                   return (
-                    <tr key={row.id} className={isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}>
+                    <tr
+                      key={row.id}
+                      tabIndex={0}
+                      onDoubleClick={() => handleViewReceipt(row.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleViewReceipt(row.id);
+                        }
+                      }}
+                      className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                        isVoid
+                          ? isDark ? 'bg-rose-950/20 opacity-75 hover:bg-rose-950/40 text-slate-400' : 'bg-rose-50/50 opacity-75 hover:bg-rose-100/60 text-slate-500'
+                          : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
+                      }`}
+                      title="Double-click atau tekan Enter untuk melihat detail nota"
+                    >
                       <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
                       <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{txDate}</td>
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -588,23 +700,65 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                       <td className="py-3.5 px-4 text-right font-mono text-rose-400">
                         {disc > 0 ? `- Rp ${Number(disc).toLocaleString('id-ID')}` : '-'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
+                      <td className={`py-3.5 px-4 text-right font-mono font-black ${isVoid ? 'line-through text-slate-500' : 'text-emerald-400'}`}>
                         Rp {Number(grandTotal).toLocaleString('id-ID')}
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                          LUNAS
-                        </span>
+                        {isVoid ? (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                            VOID
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            LUNAS
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={() => handleViewReceipt(row.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewReceipt(row.id);
+                            }}
                             className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
                             title="Lihat & Cetak Struk"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPaymentCorrection(row);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
+                            title="Ubah Metode Pembayaran"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          {isVoid ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenVoidModal(row, 'UNVOID');
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 cursor-pointer"
+                              title="Pulihkan Transaksi (UNVOID)"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenVoidModal(row, 'VOID');
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                              title="Batalkan Transaksi (VOID)"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -628,7 +782,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintReceipt}
                   className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5 text-amber-400" />
@@ -678,6 +832,11 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                 <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">HARMONY KITCHEN & RESTO</h2>
                 <p className="text-[10px] text-slate-600">Jl. Raya Dapur No. 88, Surabaya</p>
                 <p className="text-[10px] text-slate-600">Telp: (031) 8899-7766</p>
+                {printData.header.isVoid && (
+                  <div className="my-1 py-1 px-2 border-2 border-rose-600 text-rose-600 font-black text-center text-xs tracking-widest uppercase">
+                    *** TRANSAKSI DIBATALKAN (VOID) ***
+                  </div>
+                )}
                 <div className="border-b border-dashed border-slate-400 my-2" />
               </div>
 
@@ -767,6 +926,160 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                 <p>Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.</p>
                 <p className="pt-2 font-mono">www.harmonykitchen.id</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 💳 MODAL KOREKSI TIPE PEMBAYARAN */}
+      {isPaymentModalOpen && selectedTxForPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-md ${isDark ? "bg-slate-900 text-slate-100 border border-slate-700" : "bg-white text-slate-900"} rounded-3xl p-6 shadow-2xl space-y-4`}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-indigo-500" />
+                <h3 className="font-black text-sm">Koreksi Metode Pembayaran</h3>
+              </div>
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 flex justify-between items-center font-bold">
+                <span className="text-slate-500">No. Transaksi:</span>
+                <span className="font-mono text-indigo-400 font-black">{selectedTxForPayment.invoiceNo}</span>
+              </div>
+
+              <div>
+                <label className="block mb-1.5 font-bold text-slate-600 dark:text-slate-400">Pilih Metode Pembayaran Baru *</label>
+                <select
+                  value={newPaymentType}
+                  onChange={(e) => setNewPaymentType(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border font-black focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer ${
+                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                >
+                  <option value="CASH">CASH / Tunai</option>
+                  <option value="QRIS">QRIS Instant</option>
+                  <option value="TRANSFER">Bank Transfer</option>
+                  <option value="DEBIT">EDC Debit / Credit</option>
+                  <option value="TEMPO">Tempo / Corporate Account</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block mb-1.5 font-bold text-slate-600 dark:text-slate-400">Alasan Koreksi (Wajib untuk Audit Trail) *</label>
+                <textarea
+                  rows={3}
+                  value={paymentCorrectionReason}
+                  onChange={(e) => setPaymentCorrectionReason(e.target.value)}
+                  placeholder="Contoh: Salah pilih tombol bayar, customer bayar via QRIS BCA..."
+                  className={`w-full p-2.5 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSubmitPaymentCorrection}
+                disabled={isSubmittingPayment}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-black transition-all shadow-lg shadow-indigo-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingPayment ? 'Menyimpan...' : 'Simpan Koreksi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚫 MODAL VOID / UNVOID TRANSAKSI */}
+      {isVoidModalOpen && selectedTxForVoid && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-md ${isDark ? "bg-slate-900 text-slate-100 border border-slate-700" : "bg-white text-slate-900"} rounded-3xl p-6 shadow-2xl space-y-4`}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                {voidActionType === 'VOID' ? (
+                  <Ban className="w-5 h-5 text-rose-500" />
+                ) : (
+                  <RotateCcw className="w-5 h-5 text-emerald-500" />
+                )}
+                <h3 className="font-black text-sm">
+                  {voidActionType === 'VOID' ? 'Batalkan Transaksi (VOID)' : 'Pulihkan Transaksi (UNVOID)'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsVoidModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+                voidActionType === 'VOID'
+                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              }`}>
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <p className="font-medium text-[11px]">
+                  {voidActionType === 'VOID'
+                    ? 'Transaksi akan dibatalkan, omset dikurangi, dan stok barang akan otomatis dikembalikan ke gudang/dapur.'
+                    : 'Transaksi akan dipulihkan kembali ke status selesai, dan stok barang akan otomatis dipotong kembali.'}
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 flex justify-between items-center font-bold">
+                <span className="text-slate-500">No. Nota:</span>
+                <span className="font-mono text-indigo-400 font-black">{selectedTxForVoid.invoiceNo}</span>
+              </div>
+
+              <div>
+                <label className="block mb-1.5 font-bold text-slate-600 dark:text-slate-400">
+                  Alasan {voidActionType === 'VOID' ? 'Pembatalan (VOID)' : 'Pemulihan (UNVOID)'} *
+                </label>
+                <textarea
+                  rows={3}
+                  value={voidReason}
+                  onChange={(e) => setVoidReason(e.target.value)}
+                  placeholder={voidActionType === 'VOID' ? 'Contoh: Pelanggan salah pesan, transaksi duplikat input...' : 'Contoh: Pembatalan salah klik, customer jadi bayar...'}
+                  className={`w-full p-2.5 rounded-xl border text-xs font-medium focus:outline-none focus:ring-2 ${
+                    voidActionType === 'VOID' ? 'focus:ring-rose-500' : 'focus:ring-emerald-500'
+                  } ${isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900'}`}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setIsVoidModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSubmitVoidAction}
+                disabled={isSubmittingVoid}
+                className={`px-5 py-2 rounded-xl text-white text-xs font-black transition-all shadow-lg active:scale-95 cursor-pointer disabled:opacity-50 ${
+                  voidActionType === 'VOID'
+                    ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/20'
+                    : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
+                }`}
+              >
+                {isSubmittingVoid ? 'Memproses...' : voidActionType === 'VOID' ? 'Konfirmasi VOID' : 'Konfirmasi UNVOID'}
+              </button>
             </div>
           </div>
         </div>

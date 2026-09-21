@@ -159,6 +159,7 @@ model m_inventory {
   grosir1             Int?
   grosir2             Int?
   grosir3             Int?
+  wholesalecategoryid Int?
   m_brand             m_brand?  @relation(fields: [inventorybrandid], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_m_inventory_m_brand")
   m_uom               m_uom?    @relation(fields: [uomid], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_m_inventory_m_uom")
 }
@@ -1152,51 +1153,65 @@ model t_salespayment {
 }
 
 model t_salesposdetail {
-  id               BigInt    @id(map: "idx_20923_pk_t_salesposdetail") @default(autoincrement())
-  salesposheaderid Int
-  inventoryid      Int
-  uom              Int?
-  qty              Decimal?  @default(0) @db.Decimal
-  weight           Decimal?  @db.Decimal
-  price            Decimal?  @db.Decimal
-  disc             Int?      @default(0)
-  disc2            Int?      @default(0)
-  disc3            Int?      @default(0)
-  subtotal         Decimal?  @db.Decimal
-  remarks          String?
-  issync           Boolean?  @default(false)
-  syncdate         DateTime? @db.Date
-  createduser      String
-  createddate      DateTime  @default(now()) @db.Timestamptz(6)
-  modifieduser     String
-  modifieddate     DateTime  @default(now()) @db.Timestamptz(6)
-  rowguid          String    @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id                  BigInt    @id(map: "idx_20923_pk_t_salesposdetail") @default(autoincrement())
+  salesposheaderid    Int
+  inventoryid         Int
+  uom                 Int?
+  qty                 Decimal?  @default(0) @db.Decimal
+  weight              Decimal?  @db.Decimal
+  price               Decimal?  @db.Decimal
+  disc                Int?      @default(0)
+  disc2               Int?      @default(0)
+  disc3               Int?      @default(0)
+  subtotal            Decimal?  @db.Decimal
+  remarks             String?
+  issync              Boolean?  @default(false)
+  syncdate            DateTime? @db.Date
+  unithpp             Decimal?  @default(0) @db.Decimal
+  totalhpp            Decimal?  @default(0) @db.Decimal
+  hppprovenance       String?   @default("EXACT")
+  pricesource         String?   @default("RETAIL")
+  wholesalecategoryid Int?
+  wholesaleversion    Int?
+  wholesaletier       Int?
+  createduser         String
+  createddate         DateTime  @default(now()) @db.Timestamptz(6)
+  modifieduser        String
+  modifieddate        DateTime  @default(now()) @db.Timestamptz(6)
+  rowguid             String    @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
 
   @@unique([salesposheaderid, inventoryid], map: "idx_20923_ix_t_salesposdetail")
 }
 
 model t_salesposheader {
-  id           BigInt    @id(map: "idx_20938_pk_t_salesposheader") @default(autoincrement())
-  salesposno   String
-  salesposdate DateTime? @db.Date
-  whid         Int?
-  salesid      Int?
-  customerid   Int?
-  customername String?
-  grandtotal   Decimal?  @db.Decimal
-  deliveryfee  Decimal?  @db.Decimal
-  remarks      String?
-  isvoid       Boolean?  @default(false)
-  isdone       Boolean?  @default(false)
-  isgrosir     Boolean?  @default(false)
-  status       String?
-  isonline     Boolean?  @default(false)
-  cashierid    Int?
-  createduser  String
-  createddate  DateTime  @default(now()) @db.Timestamptz(6)
-  modifieduser String
-  modifieddate DateTime  @default(now()) @db.Timestamptz(6)
-  rowguid      String    @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  id                   BigInt    @id(map: "idx_20938_pk_t_salesposheader") @default(autoincrement())
+  salesposno           String
+  salesposdate         DateTime? @db.Date
+  whid                 Int?
+  salesid              Int?
+  customerid           Int?
+  customername         String?
+  grandtotal           Decimal?  @db.Decimal
+  deliveryfee          Decimal?  @db.Decimal
+  remarks              String?
+  isvoid               Boolean?  @default(false)
+  isdone               Boolean?  @default(false)
+  isgrosir             Boolean?  @default(false)
+  status               String?
+  isonline             Boolean?  @default(false)
+  cashierid            Int?
+  isoverridegrosir     Boolean?  @default(false)
+  manualdiscountmode   String?
+  manualdiscountvalue  Decimal?  @default(0) @db.Decimal
+  manualdiscountamount Decimal?  @default(0) @db.Decimal
+  manualdiscountreason String?
+  manualdiscountuser   String?
+  paymenttypecode      String?
+  createduser          String
+  createddate          DateTime  @default(now()) @db.Timestamptz(6)
+  modifieduser         String
+  modifieddate         DateTime  @default(now()) @db.Timestamptz(6)
+  rowguid              String    @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
 }
 
 model t_salespospromo {
@@ -1334,3 +1349,83 @@ model temp_barcodelist {
 
   @@ignore
 }
+
+model m_wholesalecategory {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique
+  name         String
+  description  String?
+  isactive     Boolean   @default(true)
+  version      Int       @default(1)
+  tier1_minqty Int       @default(0)
+  tier2_minqty Int       @default(0)
+  tier3_minqty Int       @default(0)
+  createduser  String?
+  createddate  DateTime? @default(now()) @db.Timestamptz(6)
+  modifieduser String?
+  modifieddate DateTime? @default(now()) @db.Timestamptz(6)
+  rowguid      String?   @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+}
+
+model t_opnameheader {
+  id             BigInt    @id @default(autoincrement())
+  notransaction  String    @unique
+  opnamedate     DateTime  @default(now()) @db.Timestamptz(6)
+  whid           Int?
+  status         String    @default("DRAFT")
+  notes          String?
+  createduser    String?
+  createddate    DateTime? @default(now()) @db.Timestamptz(6)
+  posteduser     String?
+  posteddate     DateTime? @db.Timestamptz(6)
+  reverseduser   String?
+  reverseddate   DateTime? @db.Timestamptz(6)
+  reversedreason String?
+  idempotencykey String?   @unique
+  rowguid        String?   @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+}
+
+model t_opnamedetail {
+  id            BigInt   @id @default(autoincrement())
+  notransaction String
+  inventoryid   Int
+  barcode       String?
+  systemqty     Decimal  @default(0) @db.Decimal
+  physicalqty   Decimal  @default(0) @db.Decimal
+  differenceqty Decimal  @default(0) @db.Decimal
+  unitprice     Decimal? @default(0) @db.Decimal
+  notes         String?
+  rowguid       String?  @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+
+  @@index([notransaction], map: "idx_opnamedetail_notransaction")
+}
+
+model t_auditevent {
+  id             BigInt   @id @default(autoincrement())
+  eventtype      String
+  entitytype     String
+  entityid       String
+  actor          String
+  actiondate     DateTime @default(now()) @db.Timestamptz(6)
+  reason         String?
+  beforedata     Json?
+  afterdata      Json?
+  idempotencykey String?  @unique
+  rowguid        String?  @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+
+  @@index([entitytype, entityid], map: "idx_auditevent_entity")
+  @@index([actiondate], map: "idx_auditevent_actiondate")
+}
+
+model t_usercapability {
+  id             Int       @id @default(autoincrement())
+  userid         Int
+  capabilitycode String    @db.VarChar(100)
+  isgranted      Boolean   @default(true)
+  grantedby      String?
+  granteddate    DateTime? @default(now()) @db.Timestamptz(6)
+  rowguid        String?   @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+
+  @@unique([userid, capabilitycode], map: "idx_user_capability")
+}
+

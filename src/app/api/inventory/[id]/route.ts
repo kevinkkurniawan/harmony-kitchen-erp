@@ -42,6 +42,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       grosir1: body.grosir1 !== undefined ? Number(body.grosir1) : null,
       grosir2: body.grosir2 !== undefined ? Number(body.grosir2) : null,
       grosir3: body.grosir3 !== undefined ? Number(body.grosir3) : null,
+      wholesalecategoryid: body.wholesaleCategoryId !== undefined 
+        ? (body.wholesaleCategoryId ? Number(body.wholesaleCategoryId) : null) 
+        : (body.wholesalecategoryid !== undefined ? (body.wholesalecategoryid ? Number(body.wholesalecategoryid) : null) : undefined),
       isactive: body.isActive !== undefined ? Boolean(body.isActive) : undefined,
       stokawal: body.stokAwal !== undefined ? Number(body.stokAwal) : undefined,
     };

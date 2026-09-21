@@ -70,6 +70,8 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
   const [usersList, setUsersList] = useState<UserRecord[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
   const [userPermissions, setUserPermissions] = useState<ModulePermission[]>([]);
+  const [userCapabilities, setUserCapabilities] = useState<Record<string, boolean>>({});
+  const [capabilityCatalog, setCapabilityCatalog] = useState<{ code: string; name: string; description: string; category: string }[]>([]);
 
   // Add User Form Modal
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -135,6 +137,8 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setUserPermissions(json.data);
+        setUserCapabilities(json.capabilities || {});
+        setCapabilityCatalog(json.capabilityCatalog || []);
         setIsPermModalOpen(true);
       } else {
         showToast('Gagal memuat permission user', 'error');
@@ -157,6 +161,13 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         return item;
       })
     );
+  };
+
+  const handleToggleCapability = (capCode: string) => {
+    setUserCapabilities((prev) => ({
+      ...prev,
+      [capCode]: !prev[capCode],
+    }));
   };
 
   // Check / Uncheck All for a user
@@ -186,6 +197,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         body: JSON.stringify({
           userId: selectedUser.id,
           permissions: userPermissions,
+          capabilities: userCapabilities,
         }),
       });
 
@@ -261,6 +273,13 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     return acc;
   }, {} as Record<string, (ModulePermission & { labelName: string })[]>);
 
+  // Group capabilities by category
+  const groupedCapabilities = capabilityCatalog.reduce((acc, cap) => {
+    if (!acc[cap.category]) acc[cap.category] = [];
+    acc[cap.category].push(cap);
+    return acc;
+  }, {} as Record<string, typeof capabilityCatalog>);
+
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Toast Notification */}
@@ -274,174 +293,168 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
               : 'bg-amber-500 text-slate-950 border-amber-400'
           }`}
         >
-          {toastMessage.type === 'success' && <CheckCircle className="w-4 h-4" />}
-          {toastMessage.type === 'error' && <XCircle className="w-4 h-4" />}
-          {toastMessage.type === 'info' && <Sparkles className="w-4 h-4" />}
+          {toastMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
           <span>{toastMessage.text}</span>
         </div>
       )}
 
-      {/* 🛡️ PAGE HEADER */}
+      {/* Header Bar */}
       <div
-        className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-          isDark ? 'bg-gradient-to-r from-slate-900 via-emerald-950/20 to-slate-900 border-slate-800' : 'bg-gradient-to-r from-emerald-50/70 via-white to-emerald-50/40 border-emerald-200'
+        className={`p-6 rounded-3xl border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+          isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
         }`}
       >
-        <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-2xl bg-emerald-500 text-slate-950 font-black shadow-lg shadow-emerald-500/20">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20">
             <ShieldCheck className="w-7 h-7" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                User ERP & Hak Akses Management
-              </h1>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Manajemen Pengguna ERP dan Matriks Hak Akses Modul (View, Add, Edit, Delete, Print)
+            <h1 className="text-xl font-black tracking-tight">User ERP & Hak Akses</h1>
+            <p className={`text-xs mt-0.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+              Kelola daftar user ERP, peran, serta hak akses modul dan kapabilitas sensitif.
             </p>
           </div>
         </div>
 
-        {/* Header Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setIsAddUserOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
+            onClick={loadUsers}
+            disabled={isLoading}
+            className={`px-4 py-2 rounded-2xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+            }`}
           >
-            <Plus className="w-4 h-4" />
-            <span>Tambah User Baru</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>Refresh</span>
           </button>
 
           <button
-            onClick={loadUsers}
-            className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 active:scale-95 cursor-pointer transition-all ${
-              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm'
-            }`}
+            onClick={() => setIsAddUserOpen(true)}
+            className="px-4 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            <Plus className="w-4 h-4" />
+            <span>Tambah User</span>
           </button>
         </div>
       </div>
 
-      {/* 👥 USERS TABLE GRID */}
+      {/* Main Users Table */}
       <div
-        className={`rounded-2xl border shadow-lg overflow-hidden transition-all ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
+        className={`rounded-3xl border shadow-sm overflow-hidden transition-all ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
-        <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
-          <span className="font-black text-xs uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Daftar User & Hak Akses ERP
-          </span>
-          <span className={`text-xs font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total: {usersList.length} User Terdaftar</span>
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-auto relative">
-          <table className="w-full text-left border-separate border-spacing-0 text-xs">
-            <thead className="sticky top-0 z-20">
-              <tr
-                className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
-              >
-                <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>#ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('username')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Username</span>{sortField === 'username' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('fullName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Lengkap</span>{sortField === 'fullName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('userLevel')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Level Akses</span>{sortField === 'userLevel' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th className="py-1.5 px-2 text-center">Aksi Hak Akses</th>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className={`border-b font-black uppercase tracking-wider ${isDark ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>
+              <tr>
+                <th className="p-4 cursor-pointer" onClick={() => handleSort('id')}>
+                  <div className="flex items-center gap-1.5">
+                    ID {sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                  </div>
+                </th>
+                <th className="p-4 cursor-pointer" onClick={() => handleSort('username')}>
+                  <div className="flex items-center gap-1.5">
+                    Username {sortField === 'username' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                  </div>
+                </th>
+                <th className="p-4 cursor-pointer" onClick={() => handleSort('fullName')}>
+                  <div className="flex items-center gap-1.5">
+                    Nama Lengkap {sortField === 'fullName' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                  </div>
+                </th>
+                <th className="p-4 cursor-pointer" onClick={() => handleSort('userLevel')}>
+                  <div className="flex items-center gap-1.5">
+                    Level Access / Role {sortField === 'userLevel' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                  </div>
+                </th>
+                <th className="p-4 text-center">Status</th>
+                <th className="p-4 text-right">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/40 text-xs">
-              {isLoading ? (
+            <tbody className="divide-y divide-slate-800/40 font-medium">
+              {isLoading && usersList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-24">
-                    <div className="flex flex-col items-center justify-center animate-pulse">
-                      <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
-                      <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat data user dari Database System</p>
-                    </div>
+                  <td colSpan={6} className="p-8 text-center text-slate-500 font-bold">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-400" />
+                    Memuat data user...
                   </td>
                 </tr>
-              ) : usersList.length === 0 ? (
+              ) : sortedUsersList.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className={`py-12 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                    Tidak ada data user.
+                  <td colSpan={6} className="p-8 text-center text-slate-500 font-bold">
+                    Belum ada data user.
                   </td>
                 </tr>
-              ) : sortedUsersList.map((user) => (
-                <tr
-                  key={user.id}
-                  className={`transition-colors ${isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}`}
-                >
-                  <td className={`py-3.5 px-4 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{user.id}</td>
-                  <td className="py-3.5 px-4 font-mono font-black text-emerald-400">@{user.username}</td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">{user.fullName}</td>
-                  <td className="py-3.5 px-4">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
-                        user.userLevel === 'Admin'
-                          ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                          : user.userLevel === 'Manager'
-                          ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                          : user.userLevel === 'Supervisor'
-                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                          : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                      }`}
-                    >
-                      {user.userLevel}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      Aktif
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <button
-                      onClick={() => handleEditPermissions(user)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-[11px] flex items-center gap-1.5 mx-auto shadow cursor-pointer transition-all"
-                    >
-                      <Key className="w-3.5 h-3.5" />
-                      <span>Pengaturan Hak Akses</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              ) : (
+                sortedUsersList.map((user) => (
+                  <tr
+                    key={user.id}
+                    className={`transition-colors ${
+                      isDark ? 'hover:bg-slate-800/40 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
+                    }`}
+                  >
+                    <td className="p-4 font-mono font-bold text-slate-500">{user.id}</td>
+                    <td className="p-4 font-bold text-emerald-400">{user.username}</td>
+                    <td className="p-4 font-semibold">{user.fullName}</td>
+                    <td className="p-4">
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide uppercase bg-slate-800 text-slate-300 border border-slate-700">
+                        {user.userLevel}
+                      </span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                        user.isActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        {user.isActive ? 'Aktif' : 'Nonaktif'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={() => handleEditPermissions(user)}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1.5 ml-auto transition-all cursor-pointer"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        <span>Atur Hak Akses</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 🔐 MODAL EDIT PERMISSION MATRIX (1:1 ControlPanel.frmUserSetting) */}
+      {/* 🔐 MODAL ATUR HAK AKSES */}
       {isPermModalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div
-            className={`w-full max-w-4xl rounded-3xl border shadow-2xl overflow-hidden my-8 transition-all ${
+            className={`w-full max-w-4xl max-h-[90vh] rounded-3xl border shadow-2xl flex flex-col transition-all overflow-hidden ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
             }`}
           >
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800/60 flex items-center justify-between bg-gradient-to-r from-emerald-950/30 via-slate-900 to-slate-900">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500 text-slate-950 font-black shadow">
-                  <Key className="w-5 h-5" />
+                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-black tracking-tight">
-                    Pengaturan Hak Akses: <span className="text-emerald-400">{selectedUser.fullName}</span> (@{selectedUser.username})
+                  <h2 className="text-base font-black flex items-center gap-2">
+                    Hak Akses: <span className="text-emerald-400 font-mono">{selectedUser.username}</span>
+                    <span className="text-xs font-normal text-slate-400">({selectedUser.fullName})</span>
                   </h2>
-                  <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                    Level Access: <strong className="text-amber-400 uppercase">{selectedUser.userLevel}</strong> | Sesuaikan matriks fungsi modul
-                  </p>
+                  <p className="text-xs text-slate-400">Atur hak akses modul dan kapabilitas sensitif untuk user ini.</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsPermModalOpen(false)}
-                className={`p-2 rounded-xl hover:text-white hover:bg-slate-800 cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
+                className={`p-2 rounded-xl border transition-all ${isDark ? 'border-slate-800 hover:bg-slate-800 text-slate-400' : 'border-slate-300 hover:bg-slate-100 text-slate-600'}`}
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -457,117 +470,175 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   onClick={() => handleCheckAll(true)}
                   className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold border border-emerald-500/30 cursor-pointer transition-all"
                 >
-                  ☑️ Centang Semua
+                  ☑️ Centang Semua Modul
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCheckAll(false)}
                   className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold border border-red-500/30 cursor-pointer transition-all"
                 >
-                  ⬜ Uncentang Semua
+                  ⬜ Uncentang Semua Modul
                 </button>
               </div>
             </div>
 
-            {/* Permission Matrix Tree / Table */}
+            {/* Content Body */}
             <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
-              {Object.entries(groupedPermissions).map(([groupName, items]) => (
-                <div key={groupName} className="space-y-2">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 border-b border-slate-800 pb-1.5">
-                    {groupName}
-                  </h3>
-                  <div className="space-y-2">
-                    {items.map((perm) => (
+              {/* Sensitive Capabilities Section */}
+              {Object.keys(groupedCapabilities).length > 0 && (
+                <div className="space-y-3 pb-6 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-400" />
+                    <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
+                      🔒 Otorisasi Aksi Sensitif (Granular Capabilities)
+                    </h3>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Otorisasi server-side untuk operasi transaksi material dan data sensitif (Admin memiliki akses penuh secara default).
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                    {Object.entries(groupedCapabilities).map(([cat, caps]) => (
                       <div
-                        key={perm.moduleCode}
-                        className={`p-3 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
-                          isDark ? 'bg-slate-950/50 border-slate-800/80' : 'bg-white border-slate-300'
+                        key={cat}
+                        className={`p-3.5 rounded-2xl border space-y-2.5 ${
+                          isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
                         }`}
                       >
-                        <div className="font-bold text-xs">
-                          {perm.labelName}
-                          <span className="block text-[10px] font-mono text-slate-500">{perm.moduleCode}</span>
+                        <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                          {cat}
                         </div>
-
-                        {/* 5 Function Checkboxes (View, Add, Edit, Delete, Print) */}
-                        <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canView}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canView')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canView ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Lihat (View)
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canAdd}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canAdd')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canAdd ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Tambah
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canEdit}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canEdit')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canEdit ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Edit
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canDelete}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canDelete')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canDelete ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Hapus
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canPrint}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canPrint')}
-                              className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canPrint ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                              Cetak
-                            </span>
-                          </label>
-
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={perm.canViewPrice}
-                              onChange={() => handleTogglePerm(perm.moduleCode, 'canViewPrice')}
-                              className="w-4 h-4 accent-amber-500 cursor-pointer rounded"
-                            />
-                            <span className={perm.canViewPrice ? 'text-amber-400 font-bold' : 'text-slate-500'}>
-                              Lihat Harga (HPP)
-                            </span>
-                          </label>
+                        <div className="space-y-2">
+                          {caps.map((cap) => (
+                            <label
+                              key={cap.code}
+                              className="flex items-start gap-2.5 cursor-pointer select-none group"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={Boolean(userCapabilities[cap.code])}
+                                onChange={() => handleToggleCapability(cap.code)}
+                                className="w-4 h-4 mt-0.5 accent-amber-500 cursor-pointer rounded"
+                              />
+                              <div>
+                                <div className={`text-xs font-bold ${userCapabilities[cap.code] ? 'text-amber-400' : 'text-slate-400'}`}>
+                                  {cap.name}
+                                </div>
+                                <div className="text-[10px] text-slate-500 leading-snug">
+                                  {cap.description}
+                                </div>
+                              </div>
+                            </label>
+                          ))}
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* Module Permissions Matrix */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">
+                  📋 Hak Akses Modul CRUD
+                </h3>
+                {Object.entries(groupedPermissions).map(([groupName, items]) => (
+                  <div key={groupName} className="space-y-2">
+                    <div className="text-xs font-bold text-slate-400 border-b border-slate-800 pb-1">
+                      {groupName}
+                    </div>
+                    <div className="space-y-2">
+                      {items.map((perm) => (
+                        <div
+                          key={perm.moduleCode}
+                          className={`p-3 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
+                            isDark ? 'bg-slate-950/50 border-slate-800/80' : 'bg-white border-slate-300'
+                          }`}
+                        >
+                          <div className="font-bold text-xs">
+                            {perm.labelName}
+                            <span className="block text-[10px] font-mono text-slate-500">{perm.moduleCode}</span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perm.canView}
+                                onChange={() => handleTogglePerm(perm.moduleCode, 'canView')}
+                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
+                              />
+                              <span className={perm.canView ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                Lihat (View)
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perm.canAdd}
+                                onChange={() => handleTogglePerm(perm.moduleCode, 'canAdd')}
+                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
+                              />
+                              <span className={perm.canAdd ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                Tambah
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perm.canEdit}
+                                onChange={() => handleTogglePerm(perm.moduleCode, 'canEdit')}
+                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
+                              />
+                              <span className={perm.canEdit ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                Edit
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perm.canDelete}
+                                onChange={() => handleTogglePerm(perm.moduleCode, 'canDelete')}
+                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
+                              />
+                              <span className={perm.canDelete ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                Hapus
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perm.canPrint}
+                                onChange={() => handleTogglePerm(perm.moduleCode, 'canPrint')}
+                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
+                              />
+                              <span className={perm.canPrint ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
+                                Cetak
+                              </span>
+                            </label>
+
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perm.canViewPrice}
+                                onChange={() => handleTogglePerm(perm.moduleCode, 'canViewPrice')}
+                                className="w-4 h-4 accent-amber-500 cursor-pointer rounded"
+                              />
+                              <span className={perm.canViewPrice ? 'text-amber-400 font-bold' : 'text-slate-500'}>
+                                Lihat Harga (HPP)
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Modal Footer */}

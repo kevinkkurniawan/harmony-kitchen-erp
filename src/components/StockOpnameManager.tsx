@@ -113,6 +113,10 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   };
 
   // Status States
+  const [opnameStatus, setOpnameStatus] = useState<'NEW' | 'DRAFT' | 'POSTED' | 'REVERSED'>('NEW');
+  const [reversedReasonText, setReversedReasonText] = useState<string>('');
+  const [isReverseModalOpen, setIsReverseModalOpen] = useState<boolean>(false);
+  const [reverseReasonInput, setReverseReasonInput] = useState<string>('');
   const [isBlindCount, setIsBlindCount] = useState<boolean>(false);
   const [auditorName, setAuditorName] = useState<string>('Super Administrator');
   const [isReconciling, setIsReconciling] = useState<boolean>(false);
@@ -210,6 +214,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const handleNewOpname = () => {
     setNoTransaction(generateNewTxNo());
     setSelectedHistoryTx('');
+    setOpnameStatus('NEW');
+    setReversedReasonText('');
     setOpnameItems([]);
     setSelectedInvId('');
     setBarcodeInput('');
@@ -402,11 +408,15 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     try {
       const res = await fetch(`/api/inventory/opname?noTx=${encodeURIComponent(txNo)}`);
       const json = await res.json();
-      const detailItems = json.data?.items || json.data || [];
-      if (json.success && Array.isArray(detailItems)) {
+      const payload = json.data;
+      const detailItems = payload?.items || json.data?.items || json.data || [];
+      if (json.success) {
         setNoTransaction(txNo);
-        if (json.header?.whName || json.header?.wh_name) {
-          setWarehouse(json.header.whName || json.header.wh_name);
+        const statusVal = payload?.status || json.header?.status || 'POSTED';
+        setOpnameStatus(statusVal);
+        setReversedReasonText(payload?.reversedReason || '');
+        if (payload?.whName || json.header?.whName) {
+          setWarehouse(payload?.whName || json.header?.whName);
         }
         setOpnameItems(
           detailItems.map((d: any) => ({
@@ -420,7 +430,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             description: d.description || '',
           }))
         );
-        showToast(`Memuat Transaksi Opname ${txNo}`, 'info');
+        showToast(`Memuat Transaksi Opname ${txNo} (${statusVal})`, 'info');
       }
     } catch (err) {
       console.error('Failed to load opname detail:', err);
@@ -439,8 +449,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setIsReconciling(true);
   };
 
-  // Submit Opname Transaction to Server
-  const handleSubmitOpname = async () => {
+  // Submit Opname Transaction (action: 'draft' | 'post')
+  const handleSubmitOpname = async (action: 'draft' | 'post' = 'post') => {
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/inventory/opname', {
@@ -455,21 +465,59 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           items: opnameItems,
           createdBy: auditorName,
           remarks: `Stok Opname ${noTransaction} (Auditor: ${auditorName})`,
+          action,
         }),
       });
 
       const json = await res.json();
       if (json.success) {
-        showToast(json.message || 'Transaksi Stok Opname berhasil disimpan!', 'success');
+        showToast(json.message || (action === 'post' ? 'Stok Opname berhasil diposting!' : 'Draft Opname berhasil disimpan!'), 'success');
         setIsReconciling(false);
         loadInitialData();
         handleNewOpname();
       } else {
-        showToast(json.error || 'Gagal menyimpan stok opname', 'error');
+        showToast(json.error?.message || json.error || 'Gagal menyimpan stok opname', 'error');
       }
     } catch (err) {
       console.error('Submit opname error:', err);
       showToast('Terjadi kesalahan saat menyimpan opname', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Reverse Opname Handler
+  const handleReverseOpname = async () => {
+    if (!reverseReasonInput.trim()) {
+      showToast('Alasan pembatalan (reversal) wajib diisi!', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/inventory/opname', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          no_tx: noTransaction,
+          action: 'reverse',
+          reason: reverseReasonInput,
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        showToast(json.message || `Opname ${noTransaction} berhasil dibatalkan (reversed)!`, 'success');
+        setIsReverseModalOpen(false);
+        setReverseReasonInput('');
+        loadInitialData();
+        handleSelectHistory(noTransaction);
+      } else {
+        showToast(json.error?.message || json.error || 'Gagal membatalkan opname', 'error');
+      }
+    } catch (err) {
+      console.error('Reverse opname error:', err);
+      showToast('Terjadi kesalahan saat membatalkan opname', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -1384,7 +1432,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                 Batal & Cek Ulang
               </button>
               <button
-                onClick={handleSubmitOpname}
+                onClick={() => handleSubmitOpname('post')}
                 disabled={isSubmitting}
                 className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-amber-500/20"
               >

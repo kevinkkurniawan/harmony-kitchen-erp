@@ -178,6 +178,55 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
     }
   };
 
+  const handleViewReceiptDetail = async (id: string | number) => {
+    try {
+      const res = await fetch(`/api/purchasing/priced/${id}`);
+      const json = await res.json();
+      if (json.success) {
+        setPrintData({
+          header: {
+            id: String(json.data.id),
+            mrNo: json.data.mr_no,
+            mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
+            supplierId: '0',
+            supplierName: json.data.supplier_name,
+            doNo: json.data.do_no,
+            poNo: json.data.po_no,
+            driverName: json.data.driver_name,
+            vehicleNo: json.data.vehicle_no,
+            whName: json.data.wh_name || 'Gudang Utama',
+            paymentType: json.data.payment_type || '-',
+            dueDate: json.data.due_date || '-',
+            downPayment: json.data.down_payment || 0,
+            discPercentage: json.data.disc_percentage || 0,
+            discValue: json.data.disc_value || 0,
+            ppnPercentage: json.data.ppn_percentage || 0,
+            ppnValue: json.data.tax || 0,
+            grandTotal: json.data.grand_total || 0,
+            description: json.data.description || '-',
+            isExpress: false,
+            isVoid: false,
+          },
+          items: json.data.items.map((it: any) => ({
+            inventoryId: it.id,
+            inventoryNo: it.inventory_no,
+            inventoryName: it.inventory_name,
+            uomName: '-',
+            qty: it.qty,
+            price: it.price || 0,
+            discPercentage: it.disc_percentage || 0,
+            subtotal: it.subtotal || 0,
+            barcode: it.barcode,
+            description: it.description,
+          })),
+        });
+        setIsPrintModalOpen(true);
+      }
+    } catch (err) {
+      console.error('Error fetching priced receipt detail:', err);
+    }
+  };
+
   // Fetch Suppliers for dropdown
   useEffect(() => {
     let isMounted = true;
@@ -595,7 +644,19 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     const grandTotal = row.grandTotal ?? row.totalAmount ?? row.total_amount ?? 0;
 
                     return (
-                      <tr key={row.id} className={isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}>
+                      <tr
+                        key={row.id}
+                        tabIndex={0}
+                        onDoubleClick={() => handleViewReceiptDetail(row.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleViewReceiptDetail(row.id);
+                          }
+                        }}
+                        className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}`}
+                        title="Double-click atau tekan Enter untuk melihat detail"
+                      >
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
@@ -615,66 +676,21 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                             </span>
                           )}
                         </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`/api/purchasing/priced/${row.id}`);
-                                const json = await res.json();
-                                if (json.success) {
-                                  setPrintData({
-                                    header: {
-                                      id: String(json.data.id),
-                                      mrNo: json.data.mr_no,
-                                      mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
-                                      supplierId: '0',
-                                      supplierName: json.data.supplier_name,
-                                      doNo: json.data.do_no,
-                                      poNo: json.data.po_no,
-                                      driverName: json.data.driver_name,
-                                      vehicleNo: json.data.vehicle_no,
-                                      wh_name: json.data.wh_name,
-                                      paymentType: json.data.payment_type || '-',
-                                      dueDate: json.data.due_date || '-',
-                                      downPayment: json.data.down_payment || 0,
-                                      discPercentage: json.data.disc_percentage || 0,
-                                      discValue: json.data.disc_value || 0,
-                                      ppnPercentage: json.data.ppn_percentage || 0,
-                                      ppnValue: json.data.tax || 0,
-                                      grandTotal: json.data.grand_total || 0,
-                                      transporter: json.data.transporter || '-',
-                                      description: json.data.description || '-',
-                                      isExpress: false,
-                                      isVoid: false,
-                                    },
-                                    items: json.data.items.map((it: any) => ({
-                                      inventoryId: it.id,
-                                      inventoryNo: it.inventory_no,
-                                      inventoryName: it.inventory_name,
-                                      uomName: '-',
-                                      qty: it.qty,
-                                      price: it.price || 0,
-                                      discPercentage: it.disc_percentage || 0,
-                                      subtotal: it.subtotal || 0,
-                                      barcode: it.barcode,
-                                      description: it.description
-                                    })),
-                                  });
-                                  setIsPrintModalOpen(true);
-                                }
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                            title="Lihat & Cetak Faktur"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewReceiptDetail(row.id);
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
+                              title="Lihat & Cetak Faktur"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                   );
                 })
               )}
