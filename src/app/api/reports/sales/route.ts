@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { getCurrentUser } from '@/lib/session';
 import { hasCapability } from '@/lib/capabilities';
+import { parseBangkokStartOfDay, parseBangkokEndOfDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
+import { parseColumnFilters } from '@/lib/column-filter';
 
 export async function GET(request: Request) {
   try {
@@ -14,10 +16,29 @@ export async function GET(request: Request) {
     const startDateParam = searchParams.get('startDate') || searchParams.get('dateFrom');
     const endDateParam = searchParams.get('endDate') || searchParams.get('dateTo');
 
-    // Bangkok / WIB timezone: UTC+7
-    const startDate = startDateParam ? new Date(startDateParam) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const endDate = endDateParam ? new Date(endDateParam) : new Date();
-    endDate.setHours(23, 59, 59, 999);
+    // Parse Bangkok timezone dates (+07:00)
+    const startDate = startDateParam
+      ? parseBangkokStartOfDay(startDateParam)
+      : parseBangkokStartOfDay(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+    const endDate = endDateParam
+      ? parseBangkokEndOfDay(endDateParam)
+      : parseBangkokEndOfDay(getTodayBangkok());
+
+    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(searchParams, {
+      whitelist: ['paymenttypecode', 'createduser', 'customername', 'isvoid', 'startDate', 'endDate', 'dateFrom', 'dateTo', 'type'],
+      exactMatchFields: ['paymenttypecode'],
+      containsFields: ['createduser', 'customername'],
+      booleanFields: ['isvoid'],
+    });
+
+    if (unsupportedFilters.length > 0) {
+      return apiError(
+        'BAD_REQUEST',
+        `Filter kolom tidak didukung: ${unsupportedFilters.join(', ')}`,
+        400,
+        unsupportedFilters.map((f) => ({ field: f, message: 'Filter kolom tidak didukung' }))
+      );
+    }
 
     const sales = await prisma.t_salesposheader.findMany({
       where: {
@@ -26,6 +47,7 @@ export async function GET(request: Request) {
           lte: endDate,
         },
         isvoid: false, // Active non-void transactions for reporting
+        ...columnWhere,
       },
       orderBy: { salesposdate: 'desc' },
     });
@@ -45,7 +67,7 @@ export async function GET(request: Request) {
       const dailyMap: Record<string, any> = {};
 
       sales.forEach((s: any) => {
-        const dStr = s.salesposdate ? new Date(s.salesposdate).toISOString().slice(0, 10) : '2026-09-01';
+        const dStr = s.salesposdate ? formatBangkokDate(s.salesposdate) : getTodayBangkok();
         if (!dailyMap[dStr]) {
           dailyMap[dStr] = {
             date: dStr,
@@ -58,6 +80,7 @@ export async function GET(request: Request) {
             qrisSales: 0,
             transferSales: 0,
             cardSales: 0,
+            otherSales: 0,
             ...(canViewProfit ? { totalHpp: 0, netIncome: 0, profitMarginPct: 0 } : {}),
           };
         }
@@ -70,8 +93,12 @@ export async function GET(request: Request) {
         const s_details = detailsByHeader.get(s.id) || [];
         s_details.forEach((d: any) => {
           disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
-          itemsCount += Number(d.qty || 0);
-          hppSum += Number(d.hpp || 0) * Number(d.qty || 0);
+          const qty = Number(d.qty || 0);
+          itemsCount += qty;
+
+          // Use authoritative totalhpp or unithpp * qty (with fallback to legacy hpp)
+          const lineHpp = Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
+          hppSum += lineHpp;
         });
 
         const gross = net + disc;
@@ -83,11 +110,19 @@ export async function GET(request: Request) {
         entry.totalDiscount += disc;
         entry.netSales += net;
 
-        const payType = (s.paymenttype || s.remarks || 'CASH').toUpperCase();
-        if (payType.includes('CASH') || payType.includes('TUNAI')) entry.cashSales += net;
-        else if (payType.includes('QRIS')) entry.qrisSales += net;
-        else if (payType.includes('TRANSFER')) entry.transferSales += net;
-        else entry.cardSales += net;
+        // Authoritative payment type categorization
+        const payType = (s.paymenttypecode || s.remarks || 'CASH').toUpperCase();
+        if (payType === 'CASH' || payType.includes('TUNAI')) {
+          entry.cashSales += net;
+        } else if (payType === 'QRIS' || payType.includes('QRIS')) {
+          entry.qrisSales += net;
+        } else if (payType === 'TRANSFER' || payType.includes('TRANSFER')) {
+          entry.transferSales += net;
+        } else if (payType.includes('EDC') || payType.includes('DEBIT') || payType.includes('CARD') || payType === 'BCA' || payType === 'MANDIRI') {
+          entry.cardSales += net;
+        } else {
+          entry.otherSales += net;
+        }
 
         if (canViewProfit) {
           entry.totalHpp += hppSum;
@@ -96,14 +131,15 @@ export async function GET(request: Request) {
         }
       });
 
-      return apiSuccess(Object.values(dailyMap));
+      const result = Object.values(dailyMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
+      return apiSuccess(result);
     }
 
     if (type === 'monthly') {
       const monthlyMap: Record<string, any> = {};
 
       sales.forEach((s: any) => {
-        const mStr = s.salesposdate ? new Date(s.salesposdate).toISOString().slice(0, 7) : '2026-09';
+        const mStr = s.salesposdate ? formatBangkokMonth(s.salesposdate) : getTodayBangkok().slice(0, 7);
         if (!monthlyMap[mStr]) {
           monthlyMap[mStr] = {
             month: mStr,
@@ -116,6 +152,7 @@ export async function GET(request: Request) {
             qrisSales: 0,
             transferSales: 0,
             cardSales: 0,
+            otherSales: 0,
             ...(canViewProfit ? { totalHpp: 0, netIncome: 0, profitMarginPct: 0 } : {}),
           };
         }
@@ -128,8 +165,11 @@ export async function GET(request: Request) {
         const s_details = detailsByHeader.get(s.id) || [];
         s_details.forEach((d: any) => {
           disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
-          itemsCount += Number(d.qty || 0);
-          hppSum += Number(d.hpp || 0) * Number(d.qty || 0);
+          const qty = Number(d.qty || 0);
+          itemsCount += qty;
+
+          const lineHpp = Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
+          hppSum += lineHpp;
         });
 
         const gross = net + disc;
@@ -141,11 +181,18 @@ export async function GET(request: Request) {
         entry.totalDiscount += disc;
         entry.netSales += net;
 
-        const payType = (s.paymenttype || s.remarks || 'CASH').toUpperCase();
-        if (payType.includes('CASH') || payType.includes('TUNAI')) entry.cashSales += net;
-        else if (payType.includes('QRIS')) entry.qrisSales += net;
-        else if (payType.includes('TRANSFER')) entry.transferSales += net;
-        else entry.cardSales += net;
+        const payType = (s.paymenttypecode || s.remarks || 'CASH').toUpperCase();
+        if (payType === 'CASH' || payType.includes('TUNAI')) {
+          entry.cashSales += net;
+        } else if (payType === 'QRIS' || payType.includes('QRIS')) {
+          entry.qrisSales += net;
+        } else if (payType === 'TRANSFER' || payType.includes('TRANSFER')) {
+          entry.transferSales += net;
+        } else if (payType.includes('EDC') || payType.includes('DEBIT') || payType.includes('CARD') || payType === 'BCA' || payType === 'MANDIRI') {
+          entry.cardSales += net;
+        } else {
+          entry.otherSales += net;
+        }
 
         if (canViewProfit) {
           entry.totalHpp += hppSum;
@@ -154,16 +201,13 @@ export async function GET(request: Request) {
         }
       });
 
-      return apiSuccess(Object.values(monthlyMap));
+      const result = Object.values(monthlyMap).sort((a: any, b: any) => b.month.localeCompare(a.month));
+      return apiSuccess(result);
     }
 
-    // Default item detail breakdown
-    return apiSuccess({
-      canViewProfit,
-      salesCount: sales.length,
-    });
-  } catch (error: any) {
-    console.error('Error generating sales profit report:', error);
-    return apiError('INTERNAL_ERROR', error.message || 'Gagal memuat laporan penjualan & profit', 500);
+    return apiError('BAD_REQUEST', `Tipe laporan "${type}" tidak valid.`, 400);
+  } catch (err: any) {
+    console.error('Error generating sales report:', err);
+    return apiError('INTERNAL_ERROR', err.message || 'Gagal membuat laporan penjualan', 500);
   }
 }

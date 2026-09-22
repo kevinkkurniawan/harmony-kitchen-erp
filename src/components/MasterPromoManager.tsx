@@ -17,7 +17,6 @@ import {
   ChevronUp,
   ChevronDown,
   Layers,
-  Percent,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 
@@ -29,21 +28,11 @@ export interface PromoRuleItem {
   promo_name?: string;
   groupName?: string;
   group_name?: string;
-  promoBundle?: number;
-  promoGrosir?: number;
-  promoPercentage?: number;
-  discountPct?: number;
-  discount_pct?: number;
   qtyMin?: number;
   qtyMax?: number;
   isPartial?: boolean;
   isGroup?: boolean;
   description?: string;
-  promoGrosirType?: string;
-  startDate?: string;
-  start_date?: string;
-  endDate?: string;
-  end_date?: string;
   isActive: boolean;
   is_active?: boolean;
 }
@@ -106,18 +95,15 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   const [isGroupModalOpen, setIsGroupModalOpen] = useState<boolean>(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
 
-  // Form Data
+  // Form Data (Quantity-only threshold model)
   const [ruleFormData, setRuleFormData] = useState<Partial<PromoRuleItem>>({
     promoName: '',
-    promoBundle: 0,
-    promoGrosir: 0,
-    promoPercentage: 0,
     qtyMin: 1,
     qtyMax: 9999,
     isPartial: true,
     isGroup: true,
+    groupName: '',
     description: '',
-    promoGrosirType: 'PERCENT',
     isActive: true,
   });
 
@@ -215,15 +201,12 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
     setModalMode('create');
     setRuleFormData({
       promoName: '',
-      promoBundle: 0,
-      promoGrosir: 0,
-      promoPercentage: 10,
       qtyMin: 1,
       qtyMax: 9999,
       isPartial: true,
       isGroup: true,
+      groupName: '',
       description: '',
-      promoGrosirType: 'PERCENT',
       isActive: true,
     });
     setIsRuleModalOpen(true);
@@ -376,17 +359,15 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   const exportToCSV = () => {
     if (promoTab === 'rules') {
       if (promoRules.length === 0) return addToast('Tidak ada data promo rules untuk diexport', 'warning');
-      const headers = ['ID', 'Nama Promo', 'Qty Min', 'Qty Max', 'Diskon %', 'Nominal Grosir', 'Bundle Qty', 'Status Aktif', 'Keterangan'];
+      const headers = ['ID', 'Nama Promo', 'Qty Min', 'Qty Max', 'Cakupan', 'Status Aktif', 'Keterangan'];
       const csvRows = [headers.join(',')];
       promoRules.forEach((r) => {
         csvRows.push([
           r.id,
           `"${r.promoName.replace(/"/g, '""')}"`,
-          r.qtyMin,
-          r.qtyMax,
-          r.promoPercentage,
-          r.promoGrosir,
-          r.promoBundle,
+          r.qtyMin || 1,
+          r.qtyMax || 9999,
+          r.isGroup ? 'GLOBAL' : `"${(r.groupName || r.group_name || '-').replace(/"/g, '""')}"`,
           r.isActive ? 'AKTIF' : 'NON-AKTIF',
           `"${(r.description || '').replace(/"/g, '""')}"`,
         ].join(','));
@@ -469,7 +450,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
       </div>
 
       {/* 📊 SUMMARY CARDS HEADER */}
-      <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
+      <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-3 gap-3.5 shadow-sm ${
         isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
@@ -493,21 +474,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
           <div>
             <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Promo Aktif</div>
             <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              {promoRules.filter((r) => r.isActive).length}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-amber-50/60 border-amber-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-            <Percent className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Promo Diskon %</div>
-            <div className={`text-lg font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              {promoRules.filter((r) => (r.discountPct ?? r.discount_pct ?? 0) > 0).length}
+              {promoRules.filter(r => r.isActive).length}
             </div>
           </div>
         </div>
@@ -641,46 +608,75 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
       {/* 📄 PROMO DATA TABLE WORKBENCH */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         {promoTab === 'rules' ? (
-          /* TABLE ATURAN PROMO (sp_MDPromo_GetData) */
+          /* TABLE ATURAN PROMO (Quantity-only threshold model) */
           <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
             <table className="w-full text-left border-separate border-spacing-0 text-xs">
               <thead className="sticky top-0 z-20">
                 <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                  <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('promoName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Promo</span>{sortField === 'promoName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('promoBundle')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Promo Bundle</span>{sortField === 'promoBundle' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('promoGrosir')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Promo Grosir (Rp)</span>{sortField === 'promoGrosir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('discountPct')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Diskon (%)</span>{sortField === 'discountPct' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('qtyMin')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Qty Min</span>{sortField === 'qtyMin' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('qtyMax')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Qty Max</span>{sortField === 'qtyMax' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('groupName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Group</span>{sortField === 'groupName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th className="py-1.5 px-2 text-center">Aksi</th>
+                  <th className="py-3 px-3.5 text-center w-12">ID</th>
+                  <th
+                    className="py-3 px-4 cursor-pointer hover:text-amber-400"
+                    onClick={() => handleSort('promoName')}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Nama Aturan Promo</span>
+                      {sortField === 'promoName' && (
+                        sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                  </th>
+                  <th className="py-3 px-4">Kelompok Target</th>
+                  <th
+                    className="py-3 px-3 text-center cursor-pointer hover:text-amber-400"
+                    onClick={() => handleSort('qtyMin')}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Qty Min</span>
+                      {sortField === 'qtyMin' && (
+                        sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="py-3 px-3 text-center cursor-pointer hover:text-amber-400"
+                    onClick={() => handleSort('qtyMax')}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Qty Max</span>
+                      {sortField === 'qtyMax' && (
+                        sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                  </th>
+                  <th className="py-3 px-4">Keterangan</th>
+                  <th className="py-3 px-3 text-center">Status</th>
+                  <th className="py-3 px-3 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={10} className={`py-12 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                      <RefreshCw className="w-5 h-5 text-amber-400 animate-spin mx-auto mb-2" />
-                      Memuat aturan promo dari database...
+                    <td colSpan={8} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
+                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat aturan promo dari database</p>
+                      </div>
                     </td>
                   </tr>
-                ) : promoRules.length === 0 ? (
+                ) : sortedRules.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
+                    <td colSpan={8} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
                       Tidak ada aturan promo ditemukan.
                     </td>
                   </tr>
                 ) : (
                   sortedRules.map((rule) => {
-                    const code = rule.promoNo || rule.promo_no || `PRM-${rule.id}`;
-                    const name = rule.promoName || rule.promo_name || 'Promo Item';
-                    const group = rule.groupName || rule.group_name || 'Promo Utama';
-                    const pct = rule.discountPct ?? rule.discount_pct ?? 0;
-                    const active = rule.isActive ?? rule.is_active ?? true;
+                    const groupDisplay = rule.isGroup
+                      ? 'GLOBAL'
+                      : (rule.groupName || rule.group_name || 'Spesifik');
 
                     return (
                       <tr
@@ -700,32 +696,45 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         className={`transition-colors cursor-pointer ${
                           selectedRule?.id === rule.id
                             ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
+                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
                         }`}
                       >
                         <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{rule.id}</td>
-                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
-                        <td className="py-3 px-3 text-right font-mono text-slate-600 dark:text-slate-400">{rule.promoBundle || 0}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-emerald-500">{rule.promoGrosir ? `Rp ${rule.promoGrosir.toLocaleString('id-ID')}` : '-'}</td>
-                        <td className="py-3 px-3 text-right font-mono font-black text-amber-500">{pct > 0 ? `${pct}%` : '-'}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-500">{rule.qtyMin || 0}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-500">{rule.qtyMax || 0}</td>
-                        <td className="py-3 px-3 text-center">
-                          {rule.isGroup ? (
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-500/20 text-slate-400 border border-slate-500/40">GLOBAL</span>
-                          ) : (
-                            <span className="font-bold text-slate-700 dark:text-slate-300">
-                              {rule.groupName || rule.group_name || '-'}
-                            </span>
-                          )}
+                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
+                          <div className="flex items-center gap-2">
+                            <span>{rule.promoName || rule.promo_name || 'Promo Tanpa Nama'}</span>
+                            {rule.promoNo && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">
+                                {rule.promoNo}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            rule.isGroup
+                              ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                              : 'bg-slate-500/20 text-slate-300'
+                          }`}>
+                            {groupDisplay}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-sky-400">
+                          {rule.qtyMin ?? 1}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-bold text-sky-400">
+                          {rule.qtyMax ?? 9999}
+                        </td>
+                        <td className={`py-3 px-4 text-xs truncate max-w-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                          {rule.description || '-'}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                            active
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            rule.isActive
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-400 border-rose-500/40'
                           }`}>
-                            {active ? 'AKTIF' : 'NON-AKTIF'}
+                            {rule.isActive ? 'AKTIF' : 'NON-AKTIF'}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center">
@@ -763,7 +772,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             </table>
           </div>
         ) : (
-          /* TABLE KELOMPOK PROMO GROUP (sp_MDPromoGroup_GetData) */
+          /* TABLE KELOMPOK PROMO GROUP */
           <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
@@ -786,7 +795,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat data kelompok promo dari Cloud Database</p>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat data kelompok promo dari database</p>
                       </div>
                     </td>
                   </tr>
@@ -798,7 +807,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   </tr>
                 ) : (
                   promoGroups.map((group) => {
-                    const name = group.groupName || group.group_name || 'Kelompok Promo';
+                    const name = group.groupName || group.group_name || group.promoName || 'Kelompok Promo';
                     const count = group.promosCount ?? group.promos_count ?? 0;
 
                     return (
@@ -830,37 +839,37 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                             AKTIF
                           </span>
                         </td>
-                      <td className="py-3 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedGroup(group);
-                              setModalMode('edit');
-                              setGroupFormData({ ...group });
-                              setIsGroupModalOpen(true);
-                            }}
-                            className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                            title="Edit Group"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteGroup(group);
-                            }}
-                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                            title="Hapus Group"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedGroup(group);
+                                setModalMode('edit');
+                                setGroupFormData({ ...group });
+                                setIsGroupModalOpen(true);
+                              }}
+                              className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
+                              title="Edit Group"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteGroup(group);
+                              }}
+                              className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                              title="Hapus Group"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -898,7 +907,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             className="w-full px-3.5 py-2 text-left hover:bg-amber-500/20 hover:text-amber-300 flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Edit className="w-4 h-4 text-amber-400" />
-            <span>&Edit Promo</span>
+            <span>Edit Promo</span>
           </button>
 
           {contextMenu.type === 'rule' && (
@@ -910,7 +919,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
               className="w-full px-3.5 py-2 text-left hover:bg-emerald-500/20 hover:text-emerald-300 flex items-center gap-2 cursor-pointer transition-colors"
             >
               <Zap className="w-4 h-4 text-emerald-400" />
-              <span>&Toggle Status Aktif</span>
+              <span>Toggle Status Aktif</span>
             </button>
           )}
 
@@ -923,15 +932,15 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
             className="w-full px-3.5 py-2 text-left hover:bg-rose-500/20 text-rose-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-700/50"
           >
             <Trash2 className="w-4 h-4" />
-            <span>&Hapus Promo</span>
+            <span>Hapus Promo</span>
           </button>
         </div>
       )}
 
-      {/* ✏️ FORM MODAL FOR PROMO RULE (Create / Edit) */}
+      {/* ✏️ FORM MODAL FOR PROMO RULE (Create / Edit) - Quantity-Only Threshold Model */}
       {isRuleModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
+          <div className={`w-full max-w-xl rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
             isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
           }`}>
             {/* Modal Header */}
@@ -957,7 +966,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Promo Grosir Dapur Utama / Paket Parcel"
+                  placeholder="Contoh: Tier Grosir 1 (Qty 5+)"
                   value={ruleFormData.promoName || ''}
                   onChange={(e) => setRuleFormData({ ...ruleFormData, promoName: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
@@ -972,6 +981,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   <input
                     type="number"
                     min={1}
+                    required
                     value={ruleFormData.qtyMin || 1}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, qtyMin: parseInt(e.target.value) || 1 })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
@@ -984,49 +994,9 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   <input
                     type="number"
                     min={1}
+                    required
                     value={ruleFormData.qtyMax || 9999}
                     onChange={(e) => setRuleFormData({ ...ruleFormData, qtyMax: parseInt(e.target.value) || 9999 })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon (%)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={100}
-                    value={ruleFormData.promoPercentage || 0}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, promoPercentage: parseFloat(e.target.value) || 0 })}
-                    className={`w-full p-2.5 rounded-xl border font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon Grosir (Rp)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={ruleFormData.promoGrosir || 0}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, promoGrosir: parseFloat(e.target.value) || 0 })}
-                    className={`w-full p-2.5 rounded-xl border font-bold text-emerald-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Bundle Qty Items</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={ruleFormData.promoBundle || 0}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, promoBundle: parseInt(e.target.value) || 0 })}
                     className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                       isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                     }`}
@@ -1038,7 +1008,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                 <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Keterangan Promo</label>
                 <textarea
                   rows={3}
-                  placeholder="Keterangan syarat & ketentuan promo..."
+                  placeholder="Keterangan syarat & ketentuan promo / ambang batas quantity..."
                   value={ruleFormData.description || ''}
                   onChange={(e) => setRuleFormData({ ...ruleFormData, description: e.target.value })}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
@@ -1055,17 +1025,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                     onChange={(e) => setRuleFormData({ ...ruleFormData, isGroup: e.target.checked })}
                     className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
                   />
-                  <span>Berlaku Untuk Grup (isGroup)</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={ruleFormData.isPartial}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, isPartial: e.target.checked })}
-                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
-                  />
-                  <span>Dapat Diaplikasikan Sebagian (isPartial)</span>
+                  <span>Berlaku Global (Semua Produk)</span>
                 </label>
 
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -1092,8 +1052,8 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                   >
                     <option value="" disabled>Pilih Kelompok Promo</option>
                     {promoGroups.map(g => (
-                      <option key={g.id} value={g.groupName || g.group_name || ''}>
-                        {g.groupName || g.group_name || 'Kelompok Promo'}
+                      <option key={g.id} value={g.groupName || g.group_name || g.promoName || ''}>
+                        {g.groupName || g.group_name || g.promoName || 'Kelompok Promo'}
                       </option>
                     ))}
                   </select>

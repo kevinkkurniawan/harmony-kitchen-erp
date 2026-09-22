@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { validateWholesaleThresholds } from '@/lib/wholesale-rules';
-import { getCurrentUser } from '@/lib/session';
+import { requireCapability } from '@/lib/capabilities';
 
 export async function GET(req: Request) {
   try {
@@ -28,10 +28,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    const actor = user?.username || 'system';
-    const body = await req.json();
+    const auth = await requireCapability('INVENTORY_EDIT');
+    if ('errorResponse' in auth) return auth.errorResponse;
+    const actor = auth.user.username || 'system';
 
+    const body = await req.json();
     const { code, name, description, tier1_minqty, tier2_minqty, tier3_minqty, isactive } = body;
 
     if (!code || !name) {

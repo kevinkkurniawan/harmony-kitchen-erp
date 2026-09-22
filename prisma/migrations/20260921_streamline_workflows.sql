@@ -61,13 +61,44 @@ ALTER TABLE t_salesposheader ADD COLUMN IF NOT EXISTS manualdiscountreason TEXT;
 ALTER TABLE t_salesposheader ADD COLUMN IF NOT EXISTS manualdiscountuser VARCHAR(100);
 ALTER TABLE t_salesposheader ADD COLUMN IF NOT EXISTS paymenttypecode VARCHAR(50);
 
-ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS unithpp DECIMAL DEFAULT 0;
-ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS totalhpp DECIMAL DEFAULT 0;
-ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS hppprovenance VARCHAR(20) DEFAULT 'EXACT';
+-- HPP columns: add as nullable first for backfill classification
+ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS unithpp DECIMAL;
+ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS totalhpp DECIMAL;
+ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS hppprovenance VARCHAR(20);
 ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS pricesource VARCHAR(50) DEFAULT 'RETAIL';
 ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS wholesalecategoryid INT;
 ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS wholesaleversion INT;
 ALTER TABLE t_salesposdetail ADD COLUMN IF NOT EXISTS wholesaletier INT;
+
+-- Legacy HPP Classification Backfill:
+-- Step 3a: Existing rows with positive captured unithpp or totalhpp -> EXACT
+UPDATE t_salesposdetail
+SET hppprovenance = 'EXACT'
+WHERE hppprovenance IS NULL
+  AND ((unithpp IS NOT NULL AND unithpp > 0) OR (totalhpp IS NOT NULL AND totalhpp > 0));
+
+-- Step 3b: Rows where HPP is missing/zero but master inventory has HPP -> ESTIMATED
+UPDATE t_salesposdetail d
+SET unithpp = COALESCE(d.unithpp, i.hpp, 0),
+    totalhpp = COALESCE(d.totalhpp, (COALESCE(i.hpp, 0) * COALESCE(d.qty, 1)), 0),
+    hppprovenance = 'ESTIMATED'
+FROM m_inventory i
+WHERE d.inventoryid = i.id
+  AND d.hppprovenance IS NULL
+  AND i.hpp IS NOT NULL
+  AND i.hpp > 0;
+
+-- Step 3c: All remaining unclassified legacy rows -> UNAVAILABLE
+UPDATE t_salesposdetail
+SET unithpp = COALESCE(unithpp, 0),
+    totalhpp = COALESCE(totalhpp, 0),
+    hppprovenance = 'UNAVAILABLE'
+WHERE hppprovenance IS NULL;
+
+-- Step 3d: Set default values for future rows
+ALTER TABLE t_salesposdetail ALTER COLUMN unithpp SET DEFAULT 0;
+ALTER TABLE t_salesposdetail ALTER COLUMN totalhpp SET DEFAULT 0;
+ALTER TABLE t_salesposdetail ALTER COLUMN hppprovenance SET DEFAULT 'EXACT';
 
 -- 4. Audit Event table
 CREATE TABLE IF NOT EXISTS t_auditevent (

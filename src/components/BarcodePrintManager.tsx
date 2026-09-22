@@ -115,11 +115,32 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
 
   const totalLabels = queue.reduce((sum, item) => sum + item.printQty, 0);
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (queue.length === 0) {
       addToast('Antrian cetak kosong. Tambahkan barang terlebih dahulu.', 'warning');
       return;
     }
+
+    try {
+      const res = await fetch('/api/barcode/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: queue,
+          totalLabels,
+          labelSize,
+          includePrice,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        addToast(json.error?.message || json.error || 'Izin cetak barcode ditolak.', 'error');
+        return;
+      }
+    } catch (e: any) {
+      console.error('Error logging barcode print audit:', e);
+    }
+
     window.print();
   };
 

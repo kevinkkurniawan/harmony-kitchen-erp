@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { validateWholesaleThresholds } from '@/lib/wholesale-rules';
-import { getCurrentUser } from '@/lib/session';
+import { requireCapability } from '@/lib/capabilities';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -27,8 +27,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const catId = Number(id);
     if (!catId) return apiError('BAD_REQUEST', 'ID Kategori tidak valid', 400);
 
-    const user = await getCurrentUser();
-    const actor = user?.username || 'system';
+    const auth = await requireCapability('INVENTORY_EDIT');
+    if ('errorResponse' in auth) return auth.errorResponse;
+    const actor = auth.user.username || 'system';
+
     const body = await req.json();
 
     const existing = await prisma.m_wholesalecategory.findUnique({
@@ -74,7 +76,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const catId = Number(id);
     if (!catId) return apiError('BAD_REQUEST', 'ID Kategori tidak valid', 400);
 
-    // Check if items in m_inventory reference this category
+    const auth = await requireCapability('INVENTORY_EDIT');
+    if ('errorResponse' in auth) return auth.errorResponse;
+
     const itemCount = await prisma.m_inventory.count({
       where: { wholesalecategoryid: catId },
     });

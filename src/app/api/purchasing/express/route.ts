@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { parseColumnFilters } from '@/lib/column-filter';
+import { apiError } from '@/lib/api-response';
 
 export async function GET(req: Request) {
   try {
@@ -8,7 +10,28 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const where: any = {};
+    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(searchParams, {
+      whitelist: ['mrno', 'suppliername', 'whid', 'isvoid', 'mrdate', 'dono', 'drivername', 'vehicleno', 'page', 'limit'],
+      exactMatchFields: ['mrno', 'dono'],
+      containsFields: ['suppliername', 'drivername', 'vehicleno'],
+      numberFields: ['whid'],
+      booleanFields: ['isvoid'],
+      dateRangeFields: ['mrdate'],
+    });
+
+    if (unsupportedFilters.length > 0) {
+      return apiError(
+        'BAD_REQUEST',
+        `Filter kolom tidak didukung: ${unsupportedFilters.join(', ')}`,
+        400,
+        unsupportedFilters.map((f) => ({ field: f, message: 'Filter kolom tidak didukung' }))
+      );
+    }
+
+    const where: any = {
+      ...columnWhere,
+    };
+
     if (q) {
       where.OR = [
         { mrno: { contains: q, mode: 'insensitive' as const } },

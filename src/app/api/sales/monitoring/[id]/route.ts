@@ -41,6 +41,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         qty: Number(d.qty || 0),
         price: Number(d.price || 0),
         hpp: Number(d.unithpp || d.hpp || 0),
+        totalHpp: Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * Number(d.qty || 0))),
+        hppProvenance: d.hppprovenance || 'EXACT',
         disc: Number(d.disc || 0),
         subtotal: Number(d.subtotal || 0),
         wholesalePriceSource: d.pricesource || null,
@@ -77,7 +79,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const headerId = Number(id);
 
     const body = await req.json();
-    const { action, reason, paymentType } = body;
+    const { action, reason, paymentType, idempotencyKey } = body;
 
     const existingHeader = await prisma.t_salesposheader.findUnique({
       where: { id: headerId },
@@ -113,6 +115,39 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           },
         });
 
+        // Sync payment record and rebalance payment buckets
+        let paymenttypeid = 1;
+        let isCash = false;
+        if (newType === 'CASH') {
+          paymenttypeid = 1;
+          isCash = true;
+        } else if (newType === 'EDC BCA') paymenttypeid = 3;
+        else if (newType === 'QRIS') paymenttypeid = 4;
+        else if (newType === 'TRANSFER') paymenttypeid = 7;
+        else if (newType === 'EDC MANDIRI') paymenttypeid = 8;
+        else if (newType === 'SHOPEE') paymenttypeid = 5;
+        else if (newType === 'TOKOPEDIA') paymenttypeid = 6;
+
+        const currentPayments = await tx.t_salespayment.findMany({
+          where: { salesposid: headerId },
+        });
+
+        for (const p of currentPayments) {
+          const totalAmount = Number(p.netvalue || p.transactionvalue || 0);
+          const voucherAmount = Number(p.voucher || 0);
+          const payAmount = Math.max(0, totalAmount - voucherAmount);
+
+          await tx.t_salespayment.update({
+            where: { salesposid: p.salesposid },
+            data: {
+              paymenttypeid,
+              tunai: isCash ? payAmount : 0,
+              debit: isCash ? 0 : payAmount,
+              modifieduser: actor,
+            },
+          });
+        }
+
         await recordAuditEvent({
           actor,
           eventType: 'PAYMENT_TYPE_CORRECTION',
@@ -121,6 +156,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           beforeData: { paymentType: oldType },
           afterData: { paymentType: newType },
           reason: reason.trim(),
+          idempotencyKey,
         }, tx);
       });
 
@@ -133,9 +169,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if ('errorResponse' in auth) return auth.errorResponse;
       const actor = auth.user.username || 'system';
 
-      if (existingHeader.isvoid) {
-        return apiError('CONFLICT', 'Transaksi ini sudah dalam status VOID.', 409);
-      }
       if (!reason || !reason.trim()) {
         return apiError('VALIDATION_ERROR', 'Alasan pembatalan (void) transaksi wajib diisi.', 400);
       }
@@ -145,9 +178,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       });
 
       await prisma.$transaction(async (tx) => {
-        // Mark header void
-        await tx.t_salesposheader.update({
-          where: { id: headerId },
+        // Atomic conditional update to prevent double voiding
+        const updateResult = await tx.t_salesposheader.updateMany({
+          where: { id: headerId, isvoid: false },
           data: {
             isvoid: true,
             status: 'VOID',
@@ -155,6 +188,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             modifieddate: new Date(),
           },
         });
+
+        if (updateResult.count === 0) {
+          throw new Error('Transaksi ini sudah dalam status VOID atau statusnya telah berubah.');
+        }
 
         // Compensating stock movement for each item (return to stock)
         for (const item of details) {
@@ -167,8 +204,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 inventoryid: invId,
                 stockdate: new Date(),
                 invoiceid: headerId,
-                invoicetype: 1,
-                invoicecode: existingHeader.salesposno,
+                invoicetype: 1, // Purchase In / Compensating In
+                invoicecode: `${existingHeader.salesposno}-VOID`,
                 qty: qty,
                 whcode: 1,
                 createduser: actor,
@@ -195,6 +232,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           beforeData: { isVoid: false },
           afterData: { isVoid: true, itemsCount: details.length },
           reason: reason.trim(),
+          idempotencyKey,
         }, tx);
       });
 
@@ -207,9 +245,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       if ('errorResponse' in auth) return auth.errorResponse;
       const actor = auth.user.username || 'system';
 
-      if (!existingHeader.isvoid) {
-        return apiError('CONFLICT', 'Transaksi ini tidak dalam status VOID.', 409);
-      }
       if (!reason || !reason.trim()) {
         return apiError('VALIDATION_ERROR', 'Alasan pengaktifan kembali (unvoid) transaksi wajib diisi.', 400);
       }
@@ -219,9 +254,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       });
 
       await prisma.$transaction(async (tx) => {
-        // Mark header active
-        await tx.t_salesposheader.update({
-          where: { id: headerId },
+        // Atomic conditional update to prevent double unvoiding
+        const updateResult = await tx.t_salesposheader.updateMany({
+          where: { id: headerId, isvoid: true },
           data: {
             isvoid: false,
             status: 'COMPLETED',
@@ -229,6 +264,32 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             modifieddate: new Date(),
           },
         });
+
+        if (updateResult.count === 0) {
+          throw new Error('Transaksi ini tidak dalam status VOID atau statusnya telah berubah.');
+        }
+
+        // Validate stock availability before deducting
+        const invIds = details.map((d: any) => BigInt(d.inventoryid)).filter(Boolean);
+        const currentInventories = await tx.m_inventory.findMany({
+          where: { id: { in: invIds } },
+        });
+        const currentInvMap = new Map(currentInventories.map((i: any) => [Number(i.id), i]));
+
+        // Atomic check: verify all items have sufficient stock
+        for (const item of details) {
+          const invId = item.inventoryid;
+          const qty = Number(item.qty || 0);
+
+          if (invId && qty > 0) {
+            const currentItem = currentInvMap.get(invId);
+            const currentStock = Number(currentItem?.stokupdate || 0);
+            if (currentStock < qty) {
+              const itemName = currentItem?.inventoryname || `ID ${invId}`;
+              throw new Error(`Stok tidak mencukupi untuk unvoid item "${itemName}". Sisa stok: ${currentStock}, dibutuhkan: ${qty}`);
+            }
+          }
+        }
 
         // Deduct stock again
         for (const item of details) {
@@ -241,8 +302,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 inventoryid: invId,
                 stockdate: new Date(),
                 invoiceid: headerId,
-                invoicetype: 1,
-                invoicecode: existingHeader.salesposno,
+                invoicetype: 2, // Sales Out
+                invoicecode: `${existingHeader.salesposno}-UNVOID`,
                 qty: -qty,
                 whcode: 1,
                 createduser: actor,
@@ -269,6 +330,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           beforeData: { isVoid: true },
           afterData: { isVoid: false },
           reason: reason.trim(),
+          idempotencyKey,
         }, tx);
       });
 
@@ -288,7 +350,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const headerId = Number(id);
 
     const body = await req.json();
-    const { action, reason } = body;
+    const { action, reason, idempotencyKey } = body;
 
     if (action === 'REPRINT') {
       const auth = await requireCapability('REPRINT_RECEIPT');
@@ -310,6 +372,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         entityId: String(headerId),
         afterData: { invoiceNo: header.salesposno },
         reason: reason?.trim() || 'Cetak ulang nota',
+        idempotencyKey,
       });
 
       return apiSuccess({

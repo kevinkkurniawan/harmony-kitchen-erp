@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { apiError, apiSuccess } from '@/lib/api-response';
+import { getCurrentUser } from '@/lib/session';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
+    }
+
     const { id } = await params;
     const mr = await prisma.t_materialreceiveheader.findUnique({
       where: { id: Number(id) },
       include: { t_materialreceivedetail: true },
     });
-    if (!mr) return NextResponse.json({ success: false }, { status: 404 });
+
+    if (!mr) return apiError('NOT_FOUND', 'Penerimaan barang ekspress tidak ditemukan.', 404);
 
     const inventoryIds = mr.t_materialreceivedetail.map((d: any) => Number(d.inventoryid)).filter(Boolean);
     const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } } });
@@ -40,6 +48,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }),
     };
 
-    return NextResponse.json({ success: true, data: mapped });
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+    return apiSuccess(mapped);
+  } catch (error: any) {
+    console.error('Error fetching express receiving detail:', error);
+    return apiError('INTERNAL_ERROR', error.message || 'Gagal memuat detail penerimaan', 500);
+  }
 }

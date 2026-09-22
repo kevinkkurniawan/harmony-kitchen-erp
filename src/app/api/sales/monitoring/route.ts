@@ -1,16 +1,38 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { parseColumnFilters } from '@/lib/column-filter';
+import { parseBangkokStartOfDay, parseBangkokEndOfDay } from '@/lib/date-utils';
+import { apiError } from '@/lib/api-response';
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
-    const dateFrom = searchParams.get('dateFrom');
-    const dateTo = searchParams.get('dateTo');
+    const dateFrom = searchParams.get('dateFrom') || searchParams.get('startDate');
+    const dateTo = searchParams.get('dateTo') || searchParams.get('endDate');
     const paginationParams = getPaginationParams(req, 50);
 
-    const where: any = {};
+    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(searchParams, {
+      whitelist: ['salesposno', 'customername', 'paymenttypecode', 'status', 'isvoid', 'createduser', 'dateFrom', 'dateTo', 'startDate', 'endDate', 'page', 'limit'],
+      exactMatchFields: ['paymenttypecode', 'status'],
+      containsFields: ['salesposno', 'customername', 'createduser'],
+      booleanFields: ['isvoid'],
+    });
+
+    if (unsupportedFilters.length > 0) {
+      return apiError(
+        'BAD_REQUEST',
+        `Filter kolom tidak didukung: ${unsupportedFilters.join(', ')}`,
+        400,
+        unsupportedFilters.map((f) => ({ field: f, message: 'Filter kolom tidak didukung' }))
+      );
+    }
+
+    const where: any = {
+      ...columnWhere,
+    };
+
     if (q) {
       where.OR = [
         { salesposno: { contains: q, mode: 'insensitive' as const } },
@@ -20,12 +42,8 @@ export async function GET(req: Request) {
 
     if (dateFrom || dateTo) {
       where.salesposdate = {};
-      if (dateFrom) where.salesposdate.gte = new Date(dateFrom);
-      if (dateTo) {
-        const toD = new Date(dateTo);
-        toD.setHours(23, 59, 59, 999);
-        where.salesposdate.lte = toD;
-      }
+      if (dateFrom) where.salesposdate.gte = parseBangkokStartOfDay(dateFrom);
+      if (dateTo) where.salesposdate.lte = parseBangkokEndOfDay(dateTo);
     }
 
     const [total, transactions] = await Promise.all([

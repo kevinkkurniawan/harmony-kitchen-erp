@@ -1,29 +1,46 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
-import { canViewHpp } from '@/lib/erp-permissions';
+import { getCurrentUser } from '@/lib/session';
+import { hasCapability, requireCapability } from '@/lib/capabilities';
 import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
+import { parseColumnFilters } from '@/lib/column-filter';
+import { apiError, apiSuccess } from '@/lib/api-response';
 
 export async function GET(req: Request) {
   try {
+    const user = await getCurrentUser();
+    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+
     const { searchParams } = new URL(req.url);
     const paginationParams = getPaginationParams(req, 100, 2000);
     
-    // Parse filters
+    // Strict column filters
+    const { where: columnWhere } = parseColumnFilters(searchParams, {
+      whitelist: ['inventoryno', 'barcode', 'inventorybrandid', 'inventorycategoryid', 'inventoryproductid', 'uomid', 'wholesalecategoryid', 'isactive'],
+      exactMatchFields: ['inventoryno', 'barcode'],
+      numberFields: ['inventorybrandid', 'inventorycategoryid', 'inventoryproductid', 'uomid', 'wholesalecategoryid'],
+      booleanFields: ['isactive'],
+    });
+
+    const where: any = { ...columnWhere };
+
+    // Global search
     const query = searchParams.get('q') || '';
+    if (query.trim()) {
+      const trimmedQ = query.trim();
+      where.OR = [
+        { inventoryname: { contains: trimmedQ, mode: 'insensitive' } },
+        { barcode: { contains: trimmedQ, mode: 'insensitive' } },
+        { inventoryno: { contains: trimmedQ, mode: 'insensitive' } }
+      ];
+    }
+
+    // Legacy / quick filters
     const minusStock = searchParams.get('minusStock') === 'true';
     const status = searchParams.get('status');
     const onlyActive = searchParams.get('onlyActive') === 'true';
 
-    const where: any = {};
-    const mayViewHpp = await canViewHpp();
-    if (query) {
-      where.OR = [
-        { inventoryname: { contains: query, mode: 'insensitive' } },
-        { barcode: { contains: query, mode: 'insensitive' } },
-        { inventoryno: { contains: query, mode: 'insensitive' } }
-      ];
-    }
     if (minusStock) where.stokupdate = { lt: 0 };
     if (status === 'active' || (onlyActive && status !== 'all' && status !== 'inactive')) {
       where.isactive = true;
@@ -68,7 +85,6 @@ export async function GET(req: Request) {
       }
     }
     
-    // Create maps for O(1) lookups
     const categoryMap = new Map(categories.map((c: any) => [c.id, c.categoryname]));
     const productTypeMap = new Map(productTypes.map((p: any) => [p.id, p.productname]));
     const wholesaleMap = new Map(wholesaleCategories.map((wc: any) => [wc.id, wc]));
@@ -99,21 +115,19 @@ export async function GET(req: Request) {
         uom_name: i.m_uom?.uomname || 'Pcs',
         minStock: Number(i.minstock || 0),
         maxStock: Number(i.maxstock || 0),
-        kodeHarga: i.kodeharga || '',
+        kodeHarga: i.kodeharga || 'STD',
         description: i.description || '',
-        ...(mayViewHpp ? { hpp: Number(i.hpp || 0) } : {}),
-        price: i.price || 0,
-        priceBuy: i.pricebuy || 0,
-        grosir1: i.grosir1,
-        grosir2: i.grosir2,
-        grosir3: i.grosir3,
-        wholesaleCategoryId: i.wholesalecategoryid || null,
-        wholesaleCategoryName: wc ? wc.name : undefined,
+        hpp: mayViewHpp ? Number(i.hpp || 0) : 0,
+        price: Number(i.price || 0),
+        priceBuy: Number(i.pricebuy || 0),
+        grosir1: i.grosir1 ? Number(i.grosir1) : null,
+        grosir2: i.grosir2 ? Number(i.grosir2) : null,
+        grosir3: i.grosir3 ? Number(i.grosir3) : null,
+        wholesaleCategoryId: i.wholesalecategoryid ? Number(i.wholesalecategoryid) : null,
         wholesaleCategory: wc ? {
           id: wc.id,
           code: wc.code,
           name: wc.name,
-          version: wc.version,
           tier1_minqty: wc.tier1_minqty,
           tier2_minqty: wc.tier2_minqty,
           tier3_minqty: wc.tier3_minqty,
@@ -129,18 +143,29 @@ export async function GET(req: Request) {
         stokEtalase: stockData.etalase
       };
     });
+
     return createPaginatedResponse(mapped, total, paginationParams);
-  } catch (error: any) { return NextResponse.json({ success: false, error: error.message }, { status: 500 }); }
+  } catch (error: any) {
+    return apiError('INTERNAL_ERROR', error.message, 500);
+  }
 }
+
 export async function POST(req: Request) {
   try {
+    const auth = await requireCapability('INVENTORY_EDIT');
+    if ('errorResponse' in auth) return auth.errorResponse;
+
+    const user = auth.user;
+    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+
     const body = await req.json();
     const nameError = validateInventoryName(body.inventoryName || body.inventory_name);
-    if (nameError) return NextResponse.json({ success: false, error: nameError }, { status: 400 });
-    const mayViewHpp = await canViewHpp();
-    if (!mayViewHpp && body.hpp !== undefined) {
-      return NextResponse.json({ success: false, error: 'Anda tidak memiliki hak akses untuk mengubah HPP.' }, { status: 403 });
+    if (nameError) return apiError('VALIDATION_ERROR', nameError, 400);
+
+    if (!mayViewHpp && body.hpp !== undefined && Number(body.hpp) > 0) {
+      return apiError('FORBIDDEN', 'Anda tidak memiliki hak akses untuk mengubah HPP.', 403);
     }
+
     const data = {
       inventoryno: body.inventoryNo || body.inventory_no || '',
       inventoryname: normalizeInventoryName(body.inventoryName || body.inventory_name),
@@ -153,7 +178,7 @@ export async function POST(req: Request) {
       maxstock: Number(body.maxStock) || 0,
       kodeharga: body.kodeHarga || 'STD',
       description: body.description || '',
-      hpp: mayViewHpp ? Number(body.hpp) || 0 : 0,
+      hpp: mayViewHpp ? (Number(body.hpp) || 0) : 0,
       price: Number(body.price) || 0,
       pricebuy: Number(body.priceBuy) || 0,
       grosir1: body.grosir1 ? Number(body.grosir1) : null,
@@ -162,12 +187,13 @@ export async function POST(req: Request) {
       wholesalecategoryid: body.wholesaleCategoryId ? Number(body.wholesaleCategoryId) : (body.wholesalecategoryid ? Number(body.wholesalecategoryid) : null),
       isactive: body.isActive !== undefined ? Boolean(body.isActive) : true,
       stokawal: Number(body.stokAwal) || 0,
-      stokupdate: Number(body.stokAwal) || 0, // Initial stock
+      stokupdate: Number(body.stokAwal) || 0,
     };
+
     const created = await prisma.m_inventory.create({ data });
-    return NextResponse.json({ success: true, data: created });
+    return apiSuccess(created, 'Barang berhasil ditambahkan.', 201);
   } catch (error: any) {
     console.error('Create error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return apiError('INTERNAL_ERROR', error.message || 'Gagal menambahkan barang', 500);
   }
 }

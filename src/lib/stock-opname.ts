@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
 import { recordAuditEvent } from '@/lib/audit-event';
 
 export interface OpnameItemInput {
@@ -34,24 +33,29 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
   const opnameDate = params.date ? new Date(params.date) : new Date();
 
   return prisma.$transaction(async (tx) => {
-    // Check if header already exists
-    let header = await tx.t_opnameheader.findUnique({
+    // 1. Check existing header status
+    const existingHeader = await tx.t_opnameheader.findUnique({
       where: { notransaction: noTransaction },
     });
 
-    if (header && header.status === 'POSTED') {
-      if (action === 'post' && idempotencyKey && header.idempotencykey === idempotencyKey) {
-        // Idempotent return of already posted opname
-        return { header, alreadyPosted: true };
+    if (existingHeader) {
+      if (existingHeader.status === 'POSTED') {
+        if (action === 'post' && idempotencyKey && existingHeader.idempotencykey === idempotencyKey) {
+          return { header: existingHeader, alreadyPosted: true };
+        }
+        throw new Error(`Transaksi opname ${noTransaction} sudah diposting dan tidak dapat diubah.`);
       }
-      throw new Error(`Transaksi opname ${noTransaction} sudah diposting dan tidak dapat diedit.`);
+
+      if (existingHeader.status === 'REVERSED') {
+        throw new Error(`Transaksi opname ${noTransaction} telah dibatalkan (reversed).`);
+      }
     }
 
-    if (header && header.status === 'REVERSED') {
-      throw new Error(`Transaksi opname ${noTransaction} telah dibatalkan (reversed).`);
+    if (items.length === 0) {
+      throw new Error('Daftar item stock opname tidak boleh kosong.');
     }
 
-    // Resolve items and system quantities
+    // 2. Resolve items against current authoritative database stock
     const invIds = items.map((it) => Number(it.inventoryId)).filter(Boolean);
     const inventories = await tx.m_inventory.findMany({
       where: { id: { in: invIds } },
@@ -60,24 +64,31 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
 
     const processedItems = items.map((it) => {
       const inv = invMap.get(Number(it.inventoryId));
-      const sysQty = it.systemQty !== undefined ? Number(it.systemQty) : Number(inv?.stokupdate || 0);
+      if (!inv) {
+        throw new Error(`Barang dengan ID ${it.inventoryId} tidak ditemukan.`);
+      }
+
+      // At posting time, baseline is current live stock; for draft, baseline is current or provided
+      const currentLiveStock = Number(inv.stokupdate || 0);
+      const baselineSysQty = action === 'post' ? currentLiveStock : (it.systemQty !== undefined ? Number(it.systemQty) : currentLiveStock);
       const physQty = Number(it.physicalQty || 0);
-      const diffQty = physQty - sysQty;
-      const unitPrice = it.unitPrice !== undefined ? Number(it.unitPrice) : Number(inv?.hpp || inv?.price || 0);
+      const diffQty = physQty - baselineSysQty;
+      const unitPrice = it.unitPrice !== undefined ? Number(it.unitPrice) : Number(inv.hpp || inv.price || 0);
 
       return {
         notransaction: noTransaction,
         inventoryid: Number(it.inventoryId),
-        barcode: it.barcode || inv?.barcode || '',
-        systemqty: sysQty,
+        barcode: it.barcode || inv.barcode || '',
+        systemqty: baselineSysQty,
         physicalqty: physQty,
         differenceqty: diffQty,
         unitprice: unitPrice,
         notes: it.notes || '',
+        currentLiveStock,
       };
     });
 
-    // Delete existing draft details
+    // 3. Clear existing detail records
     await tx.t_opnamedetail.deleteMany({
       where: { notransaction: noTransaction },
     });
@@ -85,7 +96,7 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
       where: { notransaction: noTransaction },
     });
 
-    // Create details
+    // 4. Create new detail snapshots
     await tx.t_opnamedetail.createMany({
       data: processedItems.map((pi) => ({
         notransaction: pi.notransaction,
@@ -99,14 +110,14 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
       })),
     });
 
-    // Write to legacy t_opname for backwards compatibility
+    // Legacy t_opname table sync
     await tx.t_opname.createMany({
       data: processedItems.map((pi) => ({
         notransaction: pi.notransaction,
         inventoryid: pi.inventoryid,
         barcode: pi.barcode,
-        qty: Number(pi.physicalqty),
-        price: Number(pi.unitprice),
+        qty: pi.physicalqty,
+        price: pi.unitprice,
         description: pi.notes || '',
         opnamedate: opnameDate,
         createduser: actor,
@@ -117,19 +128,21 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
       })),
     });
 
+    let header;
+
     if (action === 'post') {
-      // POST: apply stock movements and update stock balance
+      // 5. POSTING: Apply stock movements and update stock balance atomically
       for (const pi of processedItems) {
         if (pi.differenceqty !== 0) {
           const isQtyIn = pi.differenceqty > 0;
           const qtyDelta = Math.abs(pi.differenceqty);
 
-          // Insert into s_flowinventory
+          // Flow header
           const flow = await tx.s_flowinventory.create({
             data: {
               stockdate: opnameDate,
               invoicecode: noTransaction,
-              invoicetype: 3, // Opname Adj
+              invoicetype: 3, // Opname Adjustment
               inventoryid: pi.inventoryid,
               whcode: params.whId || 1,
               qty: pi.differenceqty,
@@ -139,7 +152,7 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
             },
           });
 
-          // Insert into s_flowdetailinventory
+          // Flow detail
           await tx.s_flowdetailinventory.create({
             data: {
               flowinventoryid: Number(flow.id),
@@ -155,42 +168,54 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
             },
           });
 
-          // Update authoritative stock in m_inventory
+          // Set stock balance to EXACT physical quantity
           await tx.m_inventory.update({
-            where: { id: pi.inventoryid },
+            where: { id: BigInt(pi.inventoryid) },
             data: {
-              stokupdate: {
-                increment: pi.differenceqty,
-              },
+              stokupdate: pi.physicalqty,
             },
           });
         }
       }
 
-      header = await tx.t_opnameheader.upsert({
-        where: { notransaction: noTransaction },
-        update: {
-          opnamedate: opnameDate,
-          whid: params.whId || 1,
-          status: 'POSTED',
-          notes: notes || '',
-          posteduser: actor,
-          posteddate: new Date(),
-          idempotencykey: idempotencyKey,
-        },
-        create: {
-          notransaction: noTransaction,
-          opnamedate: opnameDate,
-          whid: params.whId || 1,
-          status: 'POSTED',
-          notes: notes || '',
-          createduser: actor,
-          createddate: new Date(),
-          posteduser: actor,
-          posteddate: new Date(),
-          idempotencykey: idempotencyKey,
-        },
-      });
+      // Conditional state transition for existing header
+      if (existingHeader) {
+        const transition = await tx.t_opnameheader.updateMany({
+          where: { notransaction: noTransaction, status: 'DRAFT' },
+          data: {
+            opnamedate: opnameDate,
+            whid: params.whId || 1,
+            status: 'POSTED',
+            notes: notes || '',
+            posteduser: actor,
+            posteddate: new Date(),
+            idempotencykey: idempotencyKey,
+          },
+        });
+
+        if (transition.count === 0) {
+          throw new Error(`Gagal memposting opname ${noTransaction}: status transaksi telah berubah.`);
+        }
+
+        header = await tx.t_opnameheader.findUnique({
+          where: { notransaction: noTransaction },
+        });
+      } else {
+        header = await tx.t_opnameheader.create({
+          data: {
+            notransaction: noTransaction,
+            opnamedate: opnameDate,
+            whid: params.whId || 1,
+            status: 'POSTED',
+            notes: notes || '',
+            createduser: actor,
+            createddate: new Date(),
+            posteduser: actor,
+            posteddate: new Date(),
+            idempotencykey: idempotencyKey,
+          },
+        });
+      }
 
       await recordAuditEvent(
         {
@@ -205,7 +230,7 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
         tx
       );
     } else {
-      // DRAFT: no stock change
+      // 6. DRAFT: Save without altering inventory stock balances
       header = await tx.t_opnameheader.upsert({
         where: { notransaction: noTransaction },
         update: {
@@ -250,6 +275,21 @@ export async function reverseOpnameTransaction(params: ReverseOpnameParams) {
       throw new Error(`Hanya opname berstatus POSTED yang dapat di-reversal. Status saat ini: ${header.status}`);
     }
 
+    // Atomic conditional transition from POSTED -> REVERSED
+    const transition = await tx.t_opnameheader.updateMany({
+      where: { notransaction: noTransaction, status: 'POSTED' },
+      data: {
+        status: 'REVERSED',
+        reverseduser: actor,
+        reverseddate: new Date(),
+        reversedreason: reason,
+      },
+    });
+
+    if (transition.count === 0) {
+      throw new Error(`Gagal membatalkan opname ${noTransaction}: status transaksi telah berubah atau sedang diproses oleh permintaan lain.`);
+    }
+
     const details = await tx.t_opnamedetail.findMany({
       where: { notransaction: noTransaction },
     });
@@ -261,7 +301,6 @@ export async function reverseOpnameTransaction(params: ReverseOpnameParams) {
     for (const d of details) {
       const diff = Number(d.differenceqty || 0);
       if (diff !== 0) {
-        // Reverse direction: if diff was > 0, we do qtyout = diff. If diff was < 0, we do qtyin = |diff|.
         const isQtyIn = diff < 0;
         const qtyDelta = Math.abs(diff);
 
@@ -294,9 +333,9 @@ export async function reverseOpnameTransaction(params: ReverseOpnameParams) {
           },
         });
 
-        // Restore stock balance by reversing the delta
+        // Restore stock balance by decrementing the posted difference
         await tx.m_inventory.update({
-          where: { id: d.inventoryid },
+          where: { id: BigInt(d.inventoryid) },
           data: {
             stokupdate: {
               decrement: diff,
@@ -306,14 +345,8 @@ export async function reverseOpnameTransaction(params: ReverseOpnameParams) {
       }
     }
 
-    const updatedHeader = await tx.t_opnameheader.update({
+    const updatedHeader = await tx.t_opnameheader.findUnique({
       where: { notransaction: noTransaction },
-      data: {
-        status: 'REVERSED',
-        reverseduser: actor,
-        reverseddate: revDate,
-        reversedreason: reason,
-      },
     });
 
     await recordAuditEvent(
