@@ -37,6 +37,7 @@ import StockOpnameManager from '@/components/StockOpnameManager';
 import SalesReportManager from '@/components/SalesReportManager';
 import UserAccessManager from '@/components/UserAccessManager';
 import TableColumnResizer from '@/components/TableColumnResizer';
+import BarcodePrintManager from '@/components/BarcodePrintManager';
 
 interface ERPDashboardProps {
   currentUser: AuthenticatedUser;
@@ -47,11 +48,12 @@ interface ERPDashboardProps {
 type TabKey = 
     | 'master-barang'
     | 'inventory-stok'
+    | 'stok-opname'
+    | 'cetak-barcode'
     | 'master-promo'
     | 'master-supplier'
     | 'penerimaan-barang'
     | 'penerimaan-barang-harga'
-    | 'stok-opname'
     | 'sales-monitoring'
     | 'laporan-penjualan'
     | 'user-management';
@@ -241,6 +243,34 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
                   </button>
                 )}
 
+                {canView('stok-opname') && (
+                  <button
+                    onClick={() => setActiveTab('stok-opname')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'stok-opname'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Package className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-left leading-snug">Stok Opname</span>
+                  </button>
+                )}
+
+                {canView('cetak-barcode') && (
+                  <button
+                    onClick={() => setActiveTab('cetak-barcode')}
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-3 transition-all cursor-pointer active:scale-98 text-left ${
+                      activeTab === 'cetak-barcode'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-bold'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800/80 hover:translate-x-0.5' : 'text-slate-700 hover:bg-slate-100 hover:translate-x-0.5'
+                    }`}
+                  >
+                    <Tag className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span className="text-left leading-snug">Cetak Barcode</span>
+                  </button>
+                )}
+
                 {canView('master-promo') && (
                   <button
                     onClick={() => setActiveTab('master-promo')}
@@ -379,16 +409,17 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewHpp={canViewHpp} canViewPrice={hasPermission('master-barang', 'canViewPrice')} />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp || hasPermission('master-barang', 'canViewPrice')} />}
           {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={hasPermission('inventory-stok', 'canViewPrice')} />}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
+          {activeTab === 'cetak-barcode' && <BarcodePrintManager isDark={isDark} />}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}
 
           {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
           {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} canViewPrice={hasPermission('penerimaan-barang', 'canViewPrice')} />}
-          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} canViewPrice={hasPermission('penerimaan-barang-harga', 'canViewPrice')} />}
+          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
 
           {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} canViewPrice={hasPermission('sales-monitoring', 'canViewPrice')} />}
 

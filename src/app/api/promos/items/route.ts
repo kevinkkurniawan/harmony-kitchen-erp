@@ -62,7 +62,6 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const promoName = body.promoName || body.promo_name;
-    const discountPct = body.discountPct ?? body.discount_pct ?? body.promoPercentage ?? 0;
     const qtyMin = body.qtyMin ?? 1;
     const qtyMax = body.qtyMax ?? 9999;
     const isPartial = body.isPartial ?? true;
@@ -78,13 +77,14 @@ export async function POST(req: Request) {
     const bundleId = (max._max.promobundle || 0) + 1;
     const grosirId = (max._max.promogrosir || 0) + 1;
 
+    // Strictly quantity-only model: prices remain in Master Barang, promo values/percentages are 0
     const created = await prisma.m_promo.create({
       data: {
         promobundle: bundleId,
         promogrosir: grosirId,
         promoname: promoName,
         promovalue: 0,
-        promopercentage: Number(discountPct || 0),
+        promopercentage: 0,
         qtymin: Number(qtyMin || 1),
         qtymax: Number(qtyMax || 9999),
         ispartial: Boolean(isPartial),
