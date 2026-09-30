@@ -48,13 +48,13 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
   const [includePrice, setIncludePrice] = useState<boolean>(true);
   const [includeStoreName, setIncludeStoreName] = useState<boolean>(true);
   const [storeName, setStoreName] = useState<string>('HARMONY KITCHEN');
-  const [labelSize, setLabelSize] = useState<'50x30' | '40x20'>('50x30');
+  const [labelSize] = useState<string>('108x18-3col');
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString();
+    const id = Date.now().toString() + '-' + Math.random().toString(36).slice(2, 6);
     setToasts((prev) => [...prev, { id, type, text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -66,6 +66,7 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     let isMounted = true;
     if (!debouncedSearch.trim()) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
     async function search() {
@@ -99,14 +100,27 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     addToast(`"${product.inventoryName}" ditambahkan ke antrian cetak (${qty} pcs)`, 'info');
   };
 
-  const handleUpdateQty = (productId: string, newQty: number) => {
-    if (newQty <= 0) {
-      setQueue((prev) => prev.filter((item) => item.product.id !== productId));
-    } else {
-      setQueue((prev) =>
-        prev.map((item) => (item.product.id === productId ? { ...item, printQty: newQty } : item))
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchResults.length > 0) {
+      e.preventDefault();
+      const q = searchQuery.trim().toLowerCase();
+      const exactMatch = searchResults.find(
+        (p) => (p.barcode || '').toLowerCase() === q || (p.inventoryNo || '').toLowerCase() === q
       );
+      const chosen = exactMatch || searchResults[0];
+      handleAddToQueue(chosen, 1);
+      setSearchQuery('');
+      setSearchResults([]);
+    } else if (e.key === 'Escape') {
+      setSearchResults([]);
     }
+  };
+
+  const handleUpdateQty = (productId: string, newQty: number) => {
+    const clampedQty = Math.max(1, Math.min(999, isNaN(newQty) ? 1 : newQty));
+    setQueue((prev) =>
+      prev.map((item) => (item.product.id === productId ? { ...item, printQty: clampedQty } : item))
+    );
   };
 
   const handleRemoveFromQueue = (productId: string) => {
@@ -152,6 +166,17 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     }
   });
 
+  // Group flattened labels into 3-column rows (AcrossThenDown: Col 1 -> Col 2 -> Col 3)
+  // Matches legacy Rpt_LabelBarcodePrice (PageWidth=1080 [108mm], ColumnCount=3, ColumnWidth=360 [36mm], Height=182 [18.2mm])
+  const labelRows: (ERPProduct | null)[][] = [];
+  for (let i = 0; i < flattenedLabels.length; i += 3) {
+    labelRows.push([
+      flattenedLabels[i] || null,
+      flattenedLabels[i + 1] || null,
+      flattenedLabels[i + 2] || null,
+    ]);
+  }
+
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-950'}`}>
       {/* 🔔 FLOATING TOASTS */}
@@ -178,11 +203,11 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         ))}
       </div>
 
-      {/* 🖨️ PRINT CSS STYLES FOR THERMAL PRINTER (50x30mm) */}
+      {/* 🖨️ PRINT CSS STYLES FOR 3-COLUMN THERMAL ROLL (108mm width = 3 x 36mm columns, 18.2mm row height) */}
       <style>{`
         @media print {
           @page {
-            size: 50mm 30mm;
+            size: 108mm 18.2mm;
             margin: 0;
           }
           body {
@@ -201,23 +226,34 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 50mm !important;
+            width: 108mm !important;
             margin: 0 !important;
             padding: 0 !important;
           }
-          .barcode-label-page {
-            width: 50mm !important;
-            height: 30mm !important;
-            max-height: 30mm !important;
+          .barcode-label-row {
+            width: 108mm !important;
+            height: 18.2mm !important;
+            max-height: 18.2mm !important;
             page-break-after: always !important;
             box-sizing: border-box !important;
-            padding: 2mm 2.5mm !important;
+            display: grid !important;
+            grid-template-columns: repeat(3, 36mm) !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .barcode-label-cell {
+            width: 36mm !important;
+            height: 18.2mm !important;
+            max-height: 18.2mm !important;
+            box-sizing: border-box !important;
+            padding: 1mm 1.5mm !important;
             display: flex !important;
             flex-direction: column !important;
             justify-content: space-between !important;
             align-items: center !important;
             text-align: center !important;
             font-family: monospace, sans-serif !important;
+            overflow: hidden !important;
           }
         }
       `}</style>
@@ -237,7 +273,12 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
           )}
           <div className="flex items-center gap-2">
             <Printer className="w-5 h-5 text-indigo-500" />
-            <h2 className="font-black text-sm">Generator & Cetak Barcode Label (50x30mm)</h2>
+            <div>
+              <h2 className="font-black text-sm">Generator & Cetak Barcode Label (3 Kolom / Baris)</h2>
+              <p className="text-[10px] text-slate-500 font-semibold">
+                Roll 108mm • 3 Label per Baris (@ 33×15mm / 36×18.2mm) • Urutan Kiri ke Kanan (Kolom 1 ➔ 2 ➔ 3)
+              </p>
+            </div>
           </div>
         </div>
 
@@ -276,7 +317,7 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
             className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs shadow-md flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
           >
             <Printer className="w-4 h-4" />
-            <span>Cetak {totalLabels} Label</span>
+            <span>Cetak {totalLabels} Label ({labelRows.length} Baris)</span>
           </button>
         </div>
       </div>
@@ -294,15 +335,19 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Cari barang untuk dicetak barcode (SKU / Barcode / Nama)..."
-                className={`w-full border-2 rounded-xl pl-9 pr-4 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 ${
+                className={`w-full border-2 rounded-xl pl-9 pr-9 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 ${
                   isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
                 }`}
               />
+              {isSearching && (
+                <RefreshCw className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin" />
+              )}
             </div>
 
             {/* Search Dropdown Results */}
-            {searchResults.length > 0 && (
+            {searchResults.length > 0 ? (
               <div className={`max-h-48 overflow-y-auto rounded-xl border-2 shadow-lg divide-y ${
                 isDark ? 'bg-slate-900 border-slate-700 divide-slate-800' : 'bg-white border-slate-300 divide-slate-200'
               }`}>
@@ -326,20 +371,28 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                       <span className="font-black text-indigo-600 dark:text-indigo-400">
                         Rp {(p.price || 0).toLocaleString('id-ID')}
                       </span>
-                      <button className="p-1 rounded-lg bg-indigo-600 text-white">
+                      <button type="button" className="p-1 rounded-lg bg-indigo-600 text-white">
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
+            ) : (
+              debouncedSearch.trim() && !isSearching && (
+                <div className={`p-3 rounded-xl border text-center text-xs font-bold text-slate-400 ${
+                  isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                }`}>
+                  Barang tidak ditemukan untuk kata kunci &ldquo;{debouncedSearch}&rdquo;.
+                </div>
+              )
             )}
           </div>
 
           {/* QUEUE TABLE */}
           <div className="flex-1 overflow-auto p-3.5 flex flex-col">
             <div className="text-xs font-black mb-2 flex items-center justify-between">
-              <span>Antrian Cetak ({queue.length} Jenis Barang - Total {totalLabels} Label)</span>
+              <span>Antrian Cetak ({queue.length} Jenis Barang - Total {totalLabels} Label / {labelRows.length} Baris)</span>
             </div>
 
             <div className={`flex-1 overflow-auto rounded-xl border-2 shadow-sm ${
@@ -350,7 +403,7 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                   <tr className="bg-slate-800 text-white font-black text-[11px] border-b border-slate-700">
                     <th className="p-2.5">Barang</th>
                     <th className="p-2.5 text-right">Harga Retail</th>
-                    <th className="p-2.5 text-center w-28">Jumlah Cetak</th>
+                    <th className="p-2.5 text-center w-36">Jumlah Cetak</th>
                     <th className="p-2.5 text-center w-12">Hapus</th>
                   </tr>
                 </thead>
@@ -374,20 +427,44 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                           Rp {(item.product.price || 0).toLocaleString('id-ID')}
                         </td>
                         <td className="p-2.5 text-center">
-                          <input
-                            type="number"
-                            min={1}
-                            max={999}
-                            value={item.printQty}
-                            onChange={(e) => handleUpdateQty(item.product.id, parseInt(e.target.value) || 0)}
-                            className={`w-16 border-2 rounded-lg px-2 py-1 text-center font-black outline-none ${
-                              isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                            }`}
-                          />
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQty(item.product.id, item.printQty - 1)}
+                              disabled={item.printQty <= 1}
+                              className="w-6 h-6 rounded border border-slate-300 dark:border-slate-700 font-black text-xs disabled:opacity-40 hover:bg-slate-200 dark:hover:bg-slate-800"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              value={item.printQty}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val)) {
+                                  handleUpdateQty(item.product.id, val);
+                                }
+                              }}
+                              className={`w-14 border-2 rounded-lg px-1.5 py-1 text-center font-black outline-none ${
+                                isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQty(item.product.id, item.printQty + 1)}
+                              className="w-6 h-6 rounded border border-slate-300 dark:border-slate-700 font-black text-xs hover:bg-slate-200 dark:hover:bg-slate-800"
+                            >
+                              +
+                            </button>
+                          </div>
                         </td>
                         <td className="p-2.5 text-center">
                           <button
+                            type="button"
                             onClick={() => handleRemoveFromQueue(item.product.id)}
+                            title="Hapus dari antrian"
                             className="p-1.5 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -402,61 +479,102 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
           </div>
         </div>
 
-        {/* RIGHT COLUMN: LIVE BROWSER PREVIEW OF 50x30mm LABELS */}
+        {/* RIGHT COLUMN: LIVE BROWSER PREVIEW OF 3-COLUMN ROLL (108mm x 18.2mm per row) */}
         <div className={`w-1/2 flex flex-col p-4 overflow-y-auto ${isDark ? 'bg-slate-900/50' : 'bg-slate-200/60'}`}>
           <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-300 dark:border-slate-800">
-            <span className="font-black text-xs uppercase tracking-wider">
-              Live Print Preview (Ukuran 50mm x 30mm)
+            <div>
+              <span className="font-black text-xs uppercase tracking-wider block">
+                Live Print Preview — 3 Barcode / Baris (Roll 108mm × 18.2mm)
+              </span>
+              <span className="text-[10px] text-slate-500 font-semibold">
+                1 label = Kolom 1 • 2 label = Kolom 1 &amp; 2 • 3 label = Kolom 1, 2, &amp; 3
+              </span>
+            </div>
+            <span className="text-[11px] text-indigo-500 font-black">
+              {flattenedLabels.length} Label ({labelRows.length} Baris)
             </span>
-            <span className="text-[11px] text-slate-500 font-bold">{flattenedLabels.length} Label Siap Dicetak</span>
           </div>
 
-          <div className="flex flex-wrap gap-4 items-start justify-center">
-            {flattenedLabels.length === 0 ? (
+          <div className="flex flex-col gap-3 items-center">
+            {labelRows.length === 0 ? (
               <div className="py-20 text-center text-slate-400 text-xs font-bold">
-                Preview label barcode akan muncul di sini setelah barang ditambahkan ke antrian.
+                Preview label barcode (3 kolom per baris) akan muncul di sini setelah barang ditambahkan ke antrian.
               </div>
             ) : (
-              flattenedLabels.map((prod, idx) => (
+              labelRows.map((rowSlots, rowIdx) => (
                 <div
-                  key={idx}
-                  style={{ width: '50mm', height: '30mm' }}
-                  className="bg-white text-black p-2 border-2 border-dashed border-slate-400 shadow-md flex flex-col justify-between items-center text-center font-mono select-none"
+                  key={rowIdx}
+                  data-testid={`barcode-preview-row-${rowIdx}`}
+                  className={`w-full max-w-[540px] p-2.5 rounded-xl border ${
+                    isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white/80 border-slate-300'
+                  }`}
                 >
-                  {includeStoreName && (
-                    <div className="text-[8px] font-black uppercase tracking-wider line-clamp-1">
-                      {storeName}
-                    </div>
-                  )}
-
-                  <div className="text-[9px] font-black leading-tight line-clamp-2 px-1">
-                    {prod.inventoryName}
+                  <div className="flex items-center justify-between mb-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                    <span>Baris {rowIdx + 1}</span>
+                    <span>Roll 108mm (3 × 36mm)</span>
                   </div>
-
-                  {/* Simulated standard barcode visual */}
-                  <div className="flex flex-col items-center w-full px-2">
-                    <div className="h-6 w-full flex items-center justify-center gap-0.5 overflow-hidden">
-                      {Array.from({ length: 28 }).map((_, i) => (
+                  <div className="grid grid-cols-3 gap-2">
+                    {rowSlots.map((prod, colIdx) =>
+                      prod ? (
                         <div
-                          key={i}
-                          className="bg-black h-full"
-                          style={{
-                            width: (i % 3 === 0 || i % 7 === 0) ? '2.5px' : '1.2px',
-                            opacity: (i % 5 === 0) ? 0.7 : 1,
-                          }}
-                        />
-                      ))}
-                    </div>
-                    <div className="text-[9px] font-black tracking-widest mt-0.5">
-                      {prod.barcode || prod.inventoryNo}
-                    </div>
-                  </div>
+                          key={colIdx}
+                          data-testid={`barcode-preview-cell-${rowIdx}-${colIdx}`}
+                          data-filled="true"
+                          className="bg-white text-black p-1.5 border-2 border-dashed border-slate-400 rounded shadow-sm flex flex-col justify-between items-center text-center font-mono select-none min-h-[88px]"
+                        >
+                          <div className="w-full flex items-center justify-between text-[7px] text-slate-400 font-sans font-bold">
+                            <span>KOLOM {colIdx + 1}</span>
+                            {includeStoreName && (
+                              <span className="text-black font-black uppercase truncate max-w-[90px]">
+                                {storeName}
+                              </span>
+                            )}
+                          </div>
 
-                  {includePrice && (
-                    <div className="text-[10px] font-black tracking-tight">
-                      Rp {(prod.price || 0).toLocaleString('id-ID')}
-                    </div>
-                  )}
+                          <div className="text-[8.5px] font-black leading-tight line-clamp-1 px-0.5 w-full">
+                            {prod.inventoryName}
+                          </div>
+
+                          {/* Simulated standard barcode visual */}
+                          <div className="flex flex-col items-center w-full px-1 my-0.5">
+                            <div className="h-5 w-full flex items-center justify-center gap-[1px] overflow-hidden">
+                              {Array.from({ length: 24 }).map((_, i) => (
+                                <div
+                                  key={i}
+                                  className="bg-black h-full"
+                                  style={{
+                                    width: (i % 3 === 0 || i % 7 === 0) ? '2px' : '1px',
+                                    opacity: (i % 5 === 0) ? 0.75 : 1,
+                                  }}
+                                />
+                              ))}
+                            </div>
+                            <div className="text-[8px] font-black tracking-wider mt-0.5 truncate max-w-full">
+                              {prod.barcode || prod.inventoryNo}
+                            </div>
+                          </div>
+
+                          {includePrice && (
+                            <div className="text-[9px] font-black tracking-tight">
+                              Rp {(prod.price || 0).toLocaleString('id-ID')}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          key={colIdx}
+                          data-testid={`barcode-preview-cell-${rowIdx}-${colIdx}`}
+                          data-filled="false"
+                          className={`p-1.5 border-2 border-dashed rounded flex flex-col items-center justify-center text-center min-h-[88px] ${
+                            isDark ? 'border-slate-800 text-slate-700 bg-slate-950/40' : 'border-slate-300 text-slate-400 bg-slate-100/60'
+                          }`}
+                        >
+                          <span className="text-[9px] font-bold uppercase">Kolom {colIdx + 1}</span>
+                          <span className="text-[8px]">Kosong</span>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -464,43 +582,51 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         </div>
       </div>
 
-      {/* 🖨️ HIDDEN PRINT TARGET CONTAINER (Visible only in print media) */}
+      {/* 🖨️ HIDDEN PRINT TARGET CONTAINER (Visible only in print media: 3 columns per row on 108mm roll) */}
       <div id="print-label-area" className="hidden print:block">
-        {flattenedLabels.map((prod, idx) => (
-          <div key={idx} className="barcode-label-page bg-white text-black">
-            {includeStoreName && (
-              <div style={{ fontSize: '7pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                {storeName}
-              </div>
-            )}
+        {labelRows.map((rowSlots, rowIdx) => (
+          <div key={rowIdx} className="barcode-label-row bg-white text-black">
+            {rowSlots.map((prod, colIdx) => (
+              <div key={colIdx} className="barcode-label-cell bg-white text-black">
+                {prod ? (
+                  <>
+                    {includeStoreName && (
+                      <div style={{ fontSize: '5.5pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1 }}>
+                        {storeName}
+                      </div>
+                    )}
 
-            <div style={{ fontSize: '8pt', fontWeight: 'bold', lineHeight: '1.1', maxHeight: '16px', overflow: 'hidden' }}>
-              {prod.inventoryName}
-            </div>
+                    <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: '1.05', maxHeight: '14px', overflow: 'hidden', width: '100%' }}>
+                      {prod.inventoryNo} - {prod.inventoryName}
+                    </div>
 
-            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '1mm 0' }}>
-              <div style={{ height: '7mm', width: '90%', display: 'flex', justifyContent: 'center', gap: '1px' }}>
-                {Array.from({ length: 30 }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      backgroundColor: 'black',
-                      height: '100%',
-                      width: (i % 3 === 0 || i % 7 === 0) ? '2px' : '1px',
-                    }}
-                  />
-                ))}
-              </div>
-              <div style={{ fontSize: '7.5pt', fontWeight: 'bold', letterSpacing: '1px' }}>
-                {prod.barcode || prod.inventoryNo}
-              </div>
-            </div>
+                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.5mm 0' }}>
+                      <div style={{ height: '5.5mm', width: '92%', display: 'flex', justifyContent: 'center', gap: '1px' }}>
+                        {Array.from({ length: 26 }).map((_, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              backgroundColor: 'black',
+                              height: '100%',
+                              width: (i % 3 === 0 || i % 7 === 0) ? '2px' : '1px',
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <div style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.5px', lineHeight: 1 }}>
+                        {prod.barcode || prod.inventoryNo}
+                      </div>
+                    </div>
 
-            {includePrice && (
-              <div style={{ fontSize: '9pt', fontWeight: 'bold' }}>
-                Rp {(prod.price || 0).toLocaleString('id-ID')}
+                    {includePrice && (
+                      <div style={{ fontSize: '7pt', fontWeight: 'bold', lineHeight: 1 }}>
+                        Rp {(prod.price || 0).toLocaleString('id-ID')}
+                      </div>
+                    )}
+                  </>
+                ) : null}
               </div>
-            )}
+            ))}
           </div>
         ))}
       </div>

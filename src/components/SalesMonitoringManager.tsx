@@ -893,29 +893,29 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
               <div className="space-y-1 text-[11px]">
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
-                  <span>Rp {printData.header.subtotal.toLocaleString('id-ID')}</span>
+                  <span>Rp {(printData.header.subtotal || 0).toLocaleString('id-ID')}</span>
                 </div>
-                {printData.header.discValue > 0 && (
+                {(printData.header.discValue || 0) > 0 && (
                   <div className="flex justify-between text-rose-600">
                     <span>Diskon Promo:</span>
-                    <span>- Rp {printData.header.discValue.toLocaleString('id-ID')}</span>
+                    <span>- Rp {(printData.header.discValue || 0).toLocaleString('id-ID')}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span>Pajak (PB1 10%):</span>
-                  <span>+ Rp {printData.header.taxValue.toLocaleString('id-ID')}</span>
+                  <span>+ Rp {(printData.header.taxValue || 0).toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between font-black text-sm pt-2 border-t border-slate-400 text-slate-900">
                   <span>GRAND TOTAL:</span>
-                  <span className="text-emerald-600">Rp {printData.header.grandTotal.toLocaleString('id-ID')}</span>
+                  <span className="text-emerald-600">Rp {(printData.header.grandTotal || 0).toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between pt-1">
                   <span>Bayar:</span>
-                  <span>Rp {printData.header.paymentAmount.toLocaleString('id-ID')}</span>
+                  <span>Rp {(printData.header.paymentAmount || 0).toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between font-bold">
                   <span>Kembali:</span>
-                  <span>Rp {printData.header.changeAmount.toLocaleString('id-ID')}</span>
+                  <span>Rp {(printData.header.changeAmount || 0).toLocaleString('id-ID')}</span>
                 </div>
               </div>
 

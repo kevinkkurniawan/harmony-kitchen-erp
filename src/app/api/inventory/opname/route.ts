@@ -56,9 +56,7 @@ export async function GET(req: Request) {
 
       const items = details.map((d) => {
         const matched = invMap.get(d.inventoryid);
-        const sysQty = Number(d.systemqty ?? matched?.stokupdate ?? 0);
-        const physQty = Number(d.physicalqty ?? 0);
-        const diffQty = Number(d.differenceqty ?? (physQty - sysQty));
+        const itemQty = Number(d.physicalqty ?? 0);
 
         return {
           id: String(d.id),
@@ -68,16 +66,10 @@ export async function GET(req: Request) {
           inventory_no: matched?.inventoryno || '',
           inventoryName: matched?.inventoryname || '',
           inventory_name: matched?.inventoryname || '',
-          systemQty: sysQty,
-          system_qty: sysQty,
-          physicalQty: physQty,
-          physical_qty: physQty,
-          diffQty: diffQty,
-          diff_qty: diffQty,
-          qty: physQty,
+          qty: itemQty,
           price: Number(d.unitprice || matched?.price || 0),
           notes: d.notes || '',
-          description: diffQty === 0 ? 'Sesuai (Klop)' : diffQty > 0 ? `Surplus (+${diffQty})` : `Defisit (${diffQty})`,
+          description: d.notes || 'Stok Opname',
         };
       });
 
@@ -94,6 +86,7 @@ export async function GET(req: Request) {
         reversedUser: header?.reverseduser,
         reversedDate: header?.reverseddate,
         reversedReason: header?.reversedreason,
+        warehouse: 'Gudang Utama',
         whName: 'Gudang Utama',
         items,
       });
@@ -143,6 +136,7 @@ export async function GET(req: Request) {
         opnameDate: g.opnamedate || g.createddate,
         opname_date: g.opnamedate || g.createddate,
         status: 'POSTED',
+        warehouse: 'Gudang Utama',
         whName: 'Gudang Utama',
         totalItems: g._count.inventoryid,
         total_items: g._count.inventoryid,
@@ -174,6 +168,7 @@ export async function GET(req: Request) {
       postedDate: h.posteddate,
       reversedUser: h.reverseduser,
       reversedDate: h.reverseddate,
+      warehouse: 'Gudang Utama',
       whName: 'Gudang Utama',
       wh_name: 'Gudang Utama',
       totalItems: countMap.get(h.notransaction) || 0,
@@ -193,7 +188,8 @@ export async function POST(req: Request) {
     const user = await getCurrentUser();
     const actor = user?.username || 'system';
     const body = await req.json();
-    const action = body.action || (body.isDraft ? 'draft' : 'post');
+    const rawAction = body.action || (body.isDraft ? 'draft' : 'post');
+    const action = rawAction === 'POST_DIRECT' || rawAction === 'post' ? 'post' : rawAction === 'reverse' ? 'reverse' : 'draft';
     const noTx = body.no_tx || body.noTransaction || body.opnameNo || `OPN-${Date.now()}`;
     const idempotencyKey = body.idempotencyKey || req.headers.get('x-idempotency-key') || undefined;
 
@@ -227,12 +223,13 @@ export async function POST(req: Request) {
     if (!items && body.inventoryId !== undefined) {
       const inv = await prisma.m_inventory.findUnique({ where: { id: Number(body.inventoryId) } });
       if (inv) {
-        const physQty = Number(body.qtyOpname ?? body.qty ?? body.physicalQty ?? inv.stokupdate);
+        const currentQty = Number(inv.stokupdate || 0);
+        const rawQty = Number(body.qtyOpname ?? body.qty ?? body.physicalQty ?? currentQty);
+        const finalQty = body.mode === 'add' ? currentQty + rawQty : rawQty;
         items = [{
           inventoryId: inv.id,
           barcode: inv.barcode || '',
-          systemQty: Number(inv.stokupdate || 0),
-          physicalQty: physQty,
+          qty: finalQty,
           unitPrice: Number(inv.hpp || inv.price || 0),
         }];
       }
@@ -246,12 +243,11 @@ export async function POST(req: Request) {
       noTransaction: noTx,
       date: body.date || body.opnameDate,
       whId: body.whId || 1,
-      notes: body.notes || '',
+      notes: body.notes || body.remarks || '',
       items: items.map((it: any) => ({
         inventoryId: Number(it.inventoryId || it.id),
         barcode: it.barcode,
-        systemQty: it.systemQty !== undefined ? Number(it.systemQty) : undefined,
-        physicalQty: Number(it.qty ?? it.physicalQty ?? 0),
+        qty: Number(it.qty ?? it.physicalQty ?? 0),
         unitPrice: it.price !== undefined ? Number(it.price) : undefined,
         notes: it.notes || it.description || '',
       })),

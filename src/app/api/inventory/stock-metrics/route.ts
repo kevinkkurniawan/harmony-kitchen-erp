@@ -1,70 +1,61 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getCurrentUser } from '@/lib/session';
+import { hasCapability } from '@/lib/capabilities';
 
 export async function GET(req: Request) {
   try {
+    const user = await getCurrentUser();
+    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+
     const { searchParams } = new URL(req.url);
     const warehouseId = searchParams.get('warehouseId');
-    const query = searchParams.get('q') || '';
+    const query = (searchParams.get('q') || '').trim();
+    const minusStock = searchParams.get('minusStock') === 'true';
 
-    // Build the where clause for the aggregate query
-    const where: any = { isactive: true };
+    const hasWarehouseFilter = Boolean(warehouseId && warehouseId !== 'ALL' && !isNaN(Number(warehouseId)));
+    const whNum = hasWarehouseFilter ? Number(warehouseId) : null;
 
-    if (query) {
-      where.OR = [
-        { inventoryname: { contains: query, mode: 'insensitive' } },
-        { barcode: { contains: query, mode: 'insensitive' } },
-        { inventoryno: { contains: query, mode: 'insensitive' } }
-      ];
-    }
+    const sql = `
+      WITH stock_agg AS (
+        SELECT inventoryid, SUM(qtytotal) AS total_qty
+        FROM public.s_stockinventory
+        WHERE inventoryid IS NOT NULL ${hasWarehouseFilter ? `AND whcode = ${whNum}` : ''}
+        GROUP BY inventoryid
+      ),
+      inv_stock AS (
+        SELECT
+          i.id,
+          COALESCE(i.hpp, 0) AS hpp,
+          COALESCE(i.minstock, 0) AS minstock,
+          ${hasWarehouseFilter ? 'COALESCE(s.total_qty, 0)' : 'COALESCE(i.stokupdate, s.total_qty, 0)'} AS stock
+        FROM public.m_inventory i
+        ${hasWarehouseFilter ? 'INNER JOIN' : 'LEFT JOIN'} stock_agg s ON s.inventoryid = i.id
+        WHERE i.isactive = true
+          ${minusStock ? 'AND i.stokupdate < 0' : ''}
+          ${query ? 'AND (i.inventoryname ILIKE $1 OR i.barcode ILIKE $1 OR i.inventoryno ILIKE $1)' : ''}
+      )
+      SELECT
+        COUNT(*)::int AS "totalItems",
+        COALESCE(SUM(CASE WHEN stock > 0 THEN stock * hpp ELSE 0 END), 0)::float8 AS "totalValue",
+        COUNT(*) FILTER (WHERE stock <= 0)::int AS "outOfStockCount",
+        COUNT(*) FILTER (WHERE stock > 0 AND stock <= minstock)::int AS "lowStockCount"
+      FROM inv_stock
+    `;
 
-    const totalItems = await prisma.m_inventory.count({ where });
+    const rows = query
+      ? await prisma.$queryRawUnsafe<any[]>(sql, `%${query}%`)
+      : await prisma.$queryRawUnsafe<any[]>(sql);
 
-    const items = await prisma.m_inventory.findMany({
-      where,
-      select: {
-        id: true,
-        hpp: true,
-        minstock: true,
-      }
-    });
-
-    const inventoryIds = items.map((i) => Number(i.id));
-    const stocks = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT inventoryid, SUM(qtytotal) as total_qty FROM public.s_stockinventory WHERE inventoryid IN (${inventoryIds.length > 0 ? inventoryIds.join(',') : '0'}) GROUP BY inventoryid`
-    );
-
-    const stockMap = new Map();
-    for (const st of stocks) {
-      stockMap.set(String(st.inventoryid), Number(st.total_qty || 0));
-    }
-
-    let totalValue = 0;
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-
-    items.forEach((item) => {
-      const stock = stockMap.get(String(item.id)) || 0;
-      const minStock = Number(item.minstock || 0);
-      const hpp = Number(item.hpp || 0);
-
-      if (stock > 0) {
-        totalValue += (stock * hpp);
-      }
-      if (stock <= 0) {
-        outOfStockCount++;
-      } else if (stock <= minStock) {
-        lowStockCount++;
-      }
-    });
+    const row = rows[0] || { totalItems: 0, totalValue: 0, lowStockCount: 0, outOfStockCount: 0 };
 
     return NextResponse.json({
       success: true,
       data: {
-        totalItems,
-        totalValue,
-        lowStockCount,
-        outOfStockCount,
+        totalItems: Number(row.totalItems || 0),
+        totalValue: mayViewHpp ? Number(row.totalValue || 0) : 0,
+        lowStockCount: Number(row.lowStockCount || 0),
+        outOfStockCount: Number(row.outOfStockCount || 0),
       }
     });
   } catch (error: any) {

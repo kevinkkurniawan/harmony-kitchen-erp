@@ -183,41 +183,47 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
       const res = await fetch(`/api/purchasing/priced/${id}`);
       const json = await res.json();
       if (json.success) {
+        const rawDate = json.data.mr_date || json.data.mrDate;
+        const parsedDate = rawDate ? new Date(rawDate) : new Date();
+        const formattedDate = isNaN(parsedDate.getTime())
+          ? String(rawDate || '-')
+          : parsedDate.toISOString().slice(0, 10);
+
         setPrintData({
           header: {
             id: String(json.data.id),
-            mrNo: json.data.mr_no,
-            mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
+            mrNo: json.data.mr_no || json.data.mrNo,
+            mrDate: formattedDate,
             supplierId: '0',
-            supplierName: json.data.supplier_name,
-            doNo: json.data.do_no,
-            poNo: json.data.po_no,
-            driverName: json.data.driver_name,
-            vehicleNo: json.data.vehicle_no,
-            whName: json.data.wh_name || 'Gudang Utama',
-            paymentType: json.data.payment_type || '-',
-            dueDate: json.data.due_date || '-',
-            downPayment: json.data.down_payment || 0,
-            discPercentage: json.data.disc_percentage || 0,
-            discValue: json.data.disc_value || 0,
-            ppnPercentage: json.data.ppn_percentage || 0,
-            ppnValue: json.data.tax || 0,
-            grandTotal: json.data.grand_total || 0,
+            supplierName: json.data.supplier_name || json.data.supplierName,
+            doNo: json.data.do_no || json.data.doNo || '-',
+            poNo: json.data.po_no || json.data.poNo || '-',
+            driverName: json.data.driver_name || json.data.driverName || '-',
+            vehicleNo: json.data.vehicle_no || json.data.vehicleNo || '-',
+            whName: json.data.wh_name || json.data.whName || 'Gudang Utama Dapur',
+            paymentType: json.data.payment_type || json.data.paymentType || '-',
+            dueDate: json.data.due_date || json.data.dueDate || '-',
+            downPayment: json.data.down_payment || json.data.downPayment || 0,
+            discPercentage: json.data.disc_percentage || json.data.discPercentage || 0,
+            discValue: json.data.disc_value || json.data.discValue || 0,
+            ppnPercentage: json.data.ppn_percentage || json.data.ppnPercentage || 0,
+            ppnValue: json.data.tax || json.data.ppnValue || 0,
+            grandTotal: json.data.grand_total || json.data.grandTotal || 0,
             description: json.data.description || '-',
             isExpress: false,
             isVoid: false,
           },
-          items: json.data.items.map((it: any) => ({
-            inventoryId: it.id,
-            inventoryNo: it.inventory_no,
-            inventoryName: it.inventory_name,
-            uomName: '-',
-            qty: it.qty,
-            price: it.price || 0,
-            discPercentage: it.disc_percentage || 0,
-            subtotal: it.subtotal || 0,
-            barcode: it.barcode,
-            description: it.description,
+          items: (json.data.items || []).map((it: any) => ({
+            inventoryId: String(it.id || it.inventoryId),
+            inventoryNo: it.inventory_no || it.inventoryNo || '-',
+            inventoryName: it.inventory_name || it.inventoryName || '-',
+            uomName: it.uom_name || it.uomName || 'PCS',
+            qty: Number(it.qty) || 0,
+            price: Number(it.price || it.unit_price) || 0,
+            discPercentage: Number(it.disc_percentage || it.discPercentage) || 0,
+            subtotal: Number(it.subtotal) || 0,
+            barcode: it.barcode || '',
+            description: it.description || '',
           })),
         });
         setIsPrintModalOpen(true);
@@ -237,7 +243,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
         if (isMounted && json.success && Array.isArray(json.data)) {
           setSuppliersList(json.data);
           if (json.data.length > 0) {
-            setSelectedSupplierId(json.data[0].id);
+            setSelectedSupplierId(String(json.data[0].id));
             setSelectedSupplierName(json.data[0].supplierName);
           }
         }
@@ -256,7 +262,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
       setSearchResults([]);
       return;
     }
-    const timer = setTimeout(async () => {
+    const runSearch = async () => {
       setIsSearchingProduct(true);
       try {
         const res = await fetch(`/api/inventory?q=${encodeURIComponent(debouncedProductSearch)}`);
@@ -269,19 +275,18 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
       } finally {
         if (isMounted) setIsSearchingProduct(false);
       }
-    }, 200);
-
+    };
+    runSearch();
     return () => {
       isMounted = false;
-      clearTimeout(timer);
     };
-  }, [productSearch]);
+  }, [debouncedProductSearch]);
 
   // Add Product to Receipt Line Items
   const handleAddProductToItems = (prod: ERPProduct) => {
     const initialPrice = prod.priceBuy > 0 ? prod.priceBuy : (prod.hpp > 0 ? prod.hpp : 10000);
     setItems((prev) => {
-      const existingIndex = prev.findIndex((i) => i.inventoryId === prod.id);
+      const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex].qty += 1;
@@ -291,7 +296,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
       return [
         ...prev,
         {
-          inventoryId: prod.id,
+          inventoryId: String(prod.id),
           barcode: prod.barcode || '',
           inventoryNo: prod.inventoryNo || '',
           inventoryName: prod.inventoryName,
@@ -312,9 +317,11 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
       if (e.key === 'Escape') {
         setIsPrintModalOpen(false);
-      } else if (e.key === '/' && viewMode === 'create') {
+      } else if (e.key === '/' && viewMode === 'create' && !isInputFocused) {
         e.preventDefault();
         barcodeInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n' && viewMode === 'list') {
@@ -727,7 +734,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                   onChange={(e) => {
                     const id = e.target.value;
                     setSelectedSupplierId(id);
-                    const found = suppliersList.find((s) => s.id === id);
+                    const found = suppliersList.find((s) => String(s.id) === String(id));
                     if (found) setSelectedSupplierName(found.supplierName);
                   }}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
@@ -852,6 +859,14 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                   const val = e.target.value;
                   setProductSearch(val);
                   if (!val.trim()) setSearchResults([]);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (searchResults.length > 0) {
+                      handleAddProductToItems(searchResults[0]);
+                    }
+                  }
                 }}
                 className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
                   isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'

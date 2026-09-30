@@ -63,7 +63,7 @@ interface InventoryStockManagerProps {
   isDark: boolean;
 }
 
-export default function InventoryStockManager({ isDark }: InventoryStockManagerProps) {
+export default function InventoryStockManager({ isDark, canViewPrice = true }: InventoryStockManagerProps) {
   // State
   const [metrics, setMetrics] = useState<StockMetrics | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -80,6 +80,8 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [ledgerData, setLedgerData] = useState<MovementLedger[]>([]);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
+  const [fullLedgerItem, setFullLedgerItem] = useState<InventoryItem | null>(null);
+  const [ledgerSearch, setLedgerSearch] = useState('');
 
   // Sorting State
   const [sortField, setSortField] = useState<string>('');
@@ -97,34 +99,44 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
     }
   };
 
-  // Fetch Metrics
+  // Fetch Metrics (guarded against out-of-order responses)
+  const metricsReqIdRef = React.useRef(0);
   const fetchMetrics = useCallback(async () => {
+    const reqId = ++metricsReqIdRef.current;
     try {
-      const res = await fetch(`/api/inventory/stock-metrics?warehouseId=${warehouseId}&q=${encodeURIComponent(debouncedSearchQuery)}`);
+      let url = `/api/inventory/stock-metrics?warehouseId=${warehouseId}&q=${encodeURIComponent(debouncedSearchQuery)}`;
+      if (minusStockOnly) url += '&minusStock=true';
+      const res = await fetch(url);
       const json = await res.json();
-      if (json.success) setMetrics(json.data);
+      if (reqId === metricsReqIdRef.current && json.success) {
+        setMetrics(json.data);
+      }
     } catch (e) {
       console.error('Failed to fetch metrics', e);
     }
-  }, [warehouseId, debouncedSearchQuery]);
+  }, [warehouseId, debouncedSearchQuery, minusStockOnly]);
 
-  // Fetch Items
+  // Fetch Items (guarded against out-of-order responses)
+  const itemsReqIdRef = React.useRef(0);
   const fetchItems = useCallback(async () => {
+    const reqId = ++itemsReqIdRef.current;
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=100`;
+      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=100&onlyActive=true`;
       if (minusStockOnly) url += '&minusStock=true';
       if (warehouseId !== 'ALL') url += `&warehouseId=${warehouseId}`;
       
       const res = await fetch(url);
       const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
+      if (reqId === itemsReqIdRef.current && json.success && Array.isArray(json.data)) {
         setItems(json.data);
       }
     } catch (e) {
       console.error('Failed to fetch inventory items', e);
     } finally {
-      setIsLoading(false);
+      if (reqId === itemsReqIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [debouncedSearchQuery, warehouseId, minusStockOnly]);
 
@@ -141,22 +153,30 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
   }, []);
 
   useEffect(() => {
+    fetchWarehouses();
+  }, [fetchWarehouses]);
+
+  useEffect(() => {
     fetchMetrics();
     fetchItems();
-    fetchWarehouses();
-  }, [fetchMetrics, fetchItems, fetchWarehouses]);
+  }, [fetchMetrics, fetchItems]);
 
-  // Handle Drill-down
-  const toggleRowExpand = async (inventoryId: string) => {
-    if (expandedRow === inventoryId) {
-      setExpandedRow(null);
-      return;
-    }
-    
-    setExpandedRow(inventoryId);
+  const sortedItems = React.useMemo(() => {
+    return [...items].sort((a, b) => {
+      if (!sortField) return 0;
+      let valA: any = a[sortField as keyof InventoryItem];
+      let valB: any = b[sortField as keyof InventoryItem];
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [items, sortField, sortOrder]);
+
+  const fetchLedgerForItem = async (inventoryId: string) => {
     setIsLoadingLedger(true);
     setLedgerData([]);
-    
     try {
       const res = await fetch(`/api/inventory/${inventoryId}/movement`);
       const json = await res.json();
@@ -168,6 +188,54 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
     } finally {
       setIsLoadingLedger(false);
     }
+  };
+
+  // Handle Drill-down
+  const toggleRowExpand = async (inventoryId: string) => {
+    if (expandedRow === inventoryId) {
+      setExpandedRow(null);
+      return;
+    }
+    setExpandedRow(inventoryId);
+    await fetchLedgerForItem(inventoryId);
+  };
+
+  const handleRefresh = async () => {
+    await Promise.all([fetchMetrics(), fetchItems()]);
+    if (expandedRow) {
+      await fetchLedgerForItem(expandedRow);
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Kode Barang', 'Barcode', 'Nama Barang', 'Kategori', 'Stok Gudang', 'Stok Etalase', 'Stok Akhir', 'Min Stock', 'Status'];
+    const rows = sortedItems.map((item) => {
+      const onHand = Number(item.stokAkhir || 0);
+      const stokGudang = Number(item.stokGudang || 0);
+      const stokEtalase = Number(item.stokEtalase || 0);
+      const status = onHand <= 0 ? 'KOSONG' : onHand <= item.minStock ? 'TIPIS' : 'TERSEDIA';
+      return [
+        `"${(item.inventoryNo || '').replace(/"/g, '""')}"`,
+        `"${(item.barcode || '').replace(/"/g, '""')}"`,
+        `"${(item.inventoryName || '').replace(/"/g, '""')}"`,
+        `"${(item.categoryName || '').replace(/"/g, '""')}"`,
+        stokGudang,
+        stokEtalase,
+        onHand,
+        Number(item.minStock || 0),
+        status,
+      ].join(',');
+    });
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `kartu-stok-inventory-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -191,7 +259,9 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
           </div>
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Nilai Persediaan</p>
-            <h3 className="text-xl font-black text-emerald-500">Rp {metrics ? metrics.totalValue.toLocaleString('id-ID') : '...'}</h3>
+            <h3 className="text-xl font-black text-emerald-500">
+              {canViewPrice ? `Rp ${metrics ? metrics.totalValue.toLocaleString('id-ID') : '...'}` : 'Rp ••••••••'}
+            </h3>
           </div>
         </div>
 
@@ -264,13 +334,23 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
         </div>
 
         <div className="flex items-center gap-2">
-          <button className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}>
+          <button
+            onClick={handleExportCSV}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
+          >
             <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Excel
           </button>
-          <button className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}>
+          <button
+            onClick={() => window.print()}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
+          >
             <Printer className="w-4 h-4 text-indigo-500" /> Cetak
           </button>
-          <button onClick={fetchItems} className={`p-2 rounded-xl border transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}>
+          <button
+            onClick={handleRefresh}
+            title="Refresh Data"
+            className={`p-2 rounded-xl border transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
+          >
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -278,7 +358,7 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
 
       {/* 📋 DATA GRID */}
       <div className="flex-1 min-h-0 overflow-auto p-5">
-        <div className={`rounded-2xl border shadow-sm overflow-hidden ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <div className={`rounded-2xl border shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-20">
               <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
@@ -307,16 +387,7 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
                   </td>
                 </tr>
               ) : (
-                [...items].sort((a, b) => {
-                  if (!sortField) return 0;
-                  let valA: any = a[sortField as keyof InventoryItem];
-                  let valB: any = b[sortField as keyof InventoryItem];
-                  if (typeof valA === 'string') valA = valA.toLowerCase();
-                  if (typeof valB === 'string') valB = valB.toLowerCase();
-                  if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-                  if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-                  return 0;
-                }).map((item) => {
+                sortedItems.map((item) => {
                   const onHand = Number(item.stokAkhir || 0);
                   const stokEtalase = Number(item.stokEtalase || 0);
                   const stokGudang = Number(item.stokGudang || 0);
@@ -371,8 +442,17 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
                                 <h4 className="text-sm font-black flex items-center gap-2">
                                   <History className="w-4 h-4 text-indigo-500" />
                                   Buku Besar Kartu Stok - <span className="text-amber-500">{item.inventoryName}</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-bold">
+                                    {ledgerData.length} Mutasi
+                                  </span>
                                 </h4>
-                                <button className="px-3 py-1 rounded border text-[10px] font-bold border-indigo-500/30 text-indigo-500 hover:bg-indigo-500 hover:text-white transition-all">
+                                <button
+                                  onClick={() => {
+                                    setLedgerSearch('');
+                                    setFullLedgerItem(item);
+                                  }}
+                                  className="px-3 py-1 rounded border text-[10px] font-bold border-indigo-500/30 text-indigo-500 hover:bg-indigo-500 hover:text-white transition-all"
+                                >
                                   Lihat Kartu Lengkap
                                 </button>
                               </div>
@@ -403,7 +483,7 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
                                         </td>
                                       </tr>
                                     ) : (
-                                      ledgerData.map((movement, idx) => (
+                                      ledgerData.slice(0, 10).map((movement, idx) => (
                                         <tr key={movement.id || idx} className={`hover:bg-slate-500/5 transition-colors ${movement.qtyIn > 0 ? (isDark ? 'bg-emerald-500/5' : 'bg-emerald-50') : movement.qtyOut > 0 ? (isDark ? 'bg-rose-500/5' : 'bg-rose-50') : ''}`}>
                                           <td className="px-4 py-2 text-[11px] whitespace-nowrap">
                                             {new Date(movement.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -437,6 +517,111 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
           </table>
         </div>
       </div>
+
+      {/* 📖 FULL KARTU STOK MODAL */}
+      {fullLedgerItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-4xl max-h-[85vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+              <div>
+                <h3 className="text-base font-black flex items-center gap-2">
+                  <History className="w-5 h-5 text-indigo-500" />
+                  Kartu Stok Lengkap — <span className="text-amber-500">{fullLedgerItem.inventoryName}</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Kode: <span className="font-mono font-bold">{fullLedgerItem.inventoryNo}</span> • Barcode: <span className="font-mono">{fullLedgerItem.barcode}</span> • Kategori: {fullLedgerItem.categoryName}
+                </p>
+              </div>
+              <button
+                onClick={() => setFullLedgerItem(null)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
+              >
+                Tutup
+              </button>
+            </div>
+
+            <div className={`px-6 py-3 border-b grid grid-cols-3 gap-4 ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-100/70 border-slate-200'}`}>
+              <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                <p className="text-[10px] font-bold uppercase text-slate-500">Total Masuk (In)</p>
+                <p className="text-lg font-black text-emerald-500 font-mono">
+                  +{ledgerData.reduce((acc, m) => acc + (m.qtyIn || 0), 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5">
+                <p className="text-[10px] font-bold uppercase text-slate-500">Total Keluar (Out)</p>
+                <p className="text-lg font-black text-rose-500 font-mono">
+                  -{ledgerData.reduce((acc, m) => acc + (m.qtyOut || 0), 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl border border-indigo-500/20 bg-indigo-500/5">
+                <p className="text-[10px] font-bold uppercase text-slate-500">Stok Akhir Saat Ini</p>
+                <p className="text-lg font-black text-indigo-500 font-mono">
+                  {Number(fullLedgerItem.stokAkhir || 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="px-6 py-3 border-b flex items-center justify-between gap-4 border-slate-700/30">
+              <div className="relative flex-1 max-w-xs">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Filter No. Dokumen / Transaksi..."
+                  value={ledgerSearch}
+                  onChange={(e) => setLedgerSearch(e.target.value)}
+                  className={`w-full pl-8 pr-3 py-1.5 rounded-lg border text-xs font-semibold outline-none ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
+                />
+              </div>
+              <span className="text-xs font-bold text-slate-500">
+                Total {ledgerData.length} Riwayat Mutasi
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6">
+              <div className={`rounded-xl border overflow-hidden ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+                <table className="w-full text-left">
+                  <thead className={`text-[10px] font-bold uppercase ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
+                    <tr>
+                      <th className="px-4 py-2">Tanggal</th>
+                      <th className="px-4 py-2">No. Dokumen</th>
+                      <th className="px-4 py-2">Keterangan Transaksi</th>
+                      <th className="px-4 py-2 text-right">Masuk (In)</th>
+                      <th className="px-4 py-2 text-right">Keluar (Out)</th>
+                      <th className="px-4 py-2 text-right">Saldo Akhir</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y text-xs font-medium ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
+                    {ledgerData
+                      .filter((m) =>
+                        !ledgerSearch.trim() ||
+                        m.transactionNo.toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+                        m.type.toLowerCase().includes(ledgerSearch.toLowerCase())
+                      )
+                      .map((movement, idx) => (
+                        <tr key={movement.id || idx} className="hover:bg-slate-500/5">
+                          <td className="px-4 py-2 text-[11px] whitespace-nowrap">
+                            {new Date(movement.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-2 font-mono text-indigo-400">{movement.transactionNo}</td>
+                          <td className="px-4 py-2">{movement.type}</td>
+                          <td className="px-4 py-2 text-right font-mono font-bold text-emerald-500">
+                            {movement.qtyIn > 0 ? `+${movement.qtyIn.toLocaleString()}` : '-'}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono font-bold text-rose-500">
+                            {movement.qtyOut > 0 ? `-${movement.qtyOut.toLocaleString()}` : '-'}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono font-black">
+                            {movement.balance.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

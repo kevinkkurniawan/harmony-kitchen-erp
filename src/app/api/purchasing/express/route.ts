@@ -36,6 +36,9 @@ export async function GET(req: Request) {
       where.OR = [
         { mrno: { contains: q, mode: 'insensitive' as const } },
         { suppliername: { contains: q, mode: 'insensitive' as const } },
+        { dono: { contains: q, mode: 'insensitive' as const } },
+        { drivername: { contains: q, mode: 'insensitive' as const } },
+        { vehicleno: { contains: q, mode: 'insensitive' as const } },
       ];
     }
 
@@ -52,43 +55,60 @@ export async function GET(req: Request) {
 
     const inventoryIds = Array.from(new Set(
       receives.flatMap((r: any) => r.t_materialreceivedetail.map((d: any) => Number(d.inventoryid)))
-    )).filter(Boolean) as number[];
-    const inventories = await prisma.m_inventory.findMany({ 
-      where: { id: { in: inventoryIds } }
-    });
-    const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
+    )).filter((n) => !isNaN(n) && n > 0) as number[];
+    const inventories = inventoryIds.length > 0
+      ? await prisma.m_inventory.findMany({
+          where: { id: { in: inventoryIds.map((id) => BigInt(id)) } },
+          include: { m_uom: true },
+        })
+      : [];
+    const inventoryMap = new Map(inventories.map((i: any) => [Number(i.id), i]));
     
-    const whIds = Array.from(new Set(receives.map(r => r.whid).filter(Boolean))) as number[];
-    const warehouses = await prisma.m_warehouse.findMany({ where: { id: { in: whIds } } });
-    const whMap = new Map(warehouses.map((w: any) => [w.id, w.whname]));
+    const whIds = Array.from(new Set(receives.map((r: any) => Number(r.whid)).filter((n) => !isNaN(n) && n > 0)));
+    const warehouses = whIds.length > 0
+      ? await prisma.m_warehouse.findMany({ where: { id: { in: whIds.map((id) => BigInt(id)) } } })
+      : [];
+    const whMap = new Map(warehouses.map((w: any) => [Number(w.id), w.whname]));
 
     const mapped = receives.map((mr: any) => {
-      const totalQty = mr.t_materialreceivedetail.reduce((sum: number, d: any) => sum + Number(d.qty), 0);
+      const totalQty = mr.t_materialreceivedetail.reduce((sum: number, d: any) => sum + Number(d.qty || 0), 0);
       return {
-        id: mr.id,
-        mr_no: mr.mrno,
-        mr_date: mr.mrdate,
-        po_no: '-',
+        id: Number(mr.id),
+        mrNo: mr.mrno || '-',
+        mr_no: mr.mrno || '-',
+        mrDate: mr.mrdate ? new Date(mr.mrdate).toISOString().slice(0, 10) : '-',
+        mr_date: mr.mrdate ? new Date(mr.mrdate).toISOString().slice(0, 10) : '-',
+        poNo: mr.pono || '-',
+        po_no: mr.pono || '-',
+        doNo: mr.dono || '-',
         do_no: mr.dono || '-',
+        supplierId: mr.supplierid ? String(mr.supplierid) : '',
         supplier_id: mr.supplierid,
-        supplier_name: mr.suppliername,
+        supplierName: mr.suppliername || '-',
+        supplier_name: mr.suppliername || '-',
+        driverName: mr.drivername || '-',
         driver_name: mr.drivername || '-',
+        vehicleNo: mr.vehicleno || '-',
         vehicle_no: mr.vehicleno || '-',
         transporter: mr.transporter || '-',
-        wh_name: whMap.get(mr.whid) || '-',
+        wh_name: whMap.get(Number(mr.whid)) || '-',
         wh_id: mr.whid,
         description: mr.description || '-',
+        isExpress: true,
         is_express: true,
-        is_void: mr.isvoid,
+        isVoid: Boolean(mr.isvoid),
+        is_void: Boolean(mr.isvoid),
+        totalQty,
         total_qty: totalQty,
         items: mr.t_materialreceivedetail.map((d: any) => {
           const inv = inventoryMap.get(Number(d.inventoryid));
           return {
-            id: d.id,
+            id: Number(d.id),
             barcode: inv?.barcode || '',
             inventory_no: inv?.inventoryno || '',
             inventory_name: inv?.inventoryname || '',
-            qty: Number(d.qty),
+            uom_name: inv?.m_uom?.uomname || inv?.m_uom?.uomcode || 'PCS',
+            qty: Number(d.qty || 0),
             description: d.description || '',
           };
         }),
@@ -97,35 +117,73 @@ export async function GET(req: Request) {
     });
 
     return createPaginatedResponse(mapped, total, paginationParams);
-  } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
+  } catch (error: any) {
+    console.error("GET /api/purchasing/express error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { mr_no, mr_date, do_no, supplier_id, supplier_name, driver_name, vehicle_no, transporter, wh_id, description, items } = body;
+    const { mr_no, mr_date, do_no, supplier_id, driver_name, vehicle_no, transporter, wh_id, description, items } = body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ success: false, error: 'Minimal 1 item barang wajib diisi' }, { status: 400 });
+    }
 
     const supplierIdNum = Number(supplier_id);
     if (!supplierIdNum) {
       return NextResponse.json({ success: false, error: 'Supplier ID is required' }, { status: 400 });
     }
-    const supplier = await prisma.m_supplier.findUnique({ where: { id: supplierIdNum } });
+    const supplier = await prisma.m_supplier.findUnique({ where: { id: BigInt(supplierIdNum) } });
     if (!supplier) {
       return NextResponse.json({ success: false, error: 'Supplier not found' }, { status: 404 });
     }
 
     const inventoryNos = items.map((it: any) => it.inventory_no || it.inventoryNo).filter(Boolean);
-    const inventories = await prisma.m_inventory.findMany({ where: { inventoryno: { in: inventoryNos } } });
-    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i]));
+    const inventoryIds = items
+      .map((it: any) => Number(it.inventory_id || it.inventoryId))
+      .filter((n: number) => !isNaN(n) && n > 0)
+      .map((n: number) => BigInt(n));
 
+    const orFilters: any[] = [];
+    if (inventoryIds.length > 0) orFilters.push({ id: { in: inventoryIds } });
+    if (inventoryNos.length > 0) orFilters.push({ inventoryno: { in: inventoryNos } });
+
+    const inventories = orFilters.length > 0
+      ? await prisma.m_inventory.findMany({ where: { OR: orFilters } })
+      : [];
+    const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i]));
+    const invMapById = new Map(inventories.map((i: any) => [String(i.id), i]));
+
+    // Resolve and deduplicate items by inventory ID
+    const mergedItemsMap = new Map<string, { inv: any; qty: number; description: string | null }>();
     for (const it of items) {
-      const invNo = it.inventory_no || it.inventoryNo;
-      if (!invMapByNo.has(invNo)) {
-        return NextResponse.json({ success: false, error: `Inventory item ${invNo} not found` }, { status: 404 });
+      const inv =
+        invMapById.get(String(it.inventory_id || it.inventoryId)) ||
+        invMapByNo.get(it.inventory_no || it.inventoryNo);
+      if (!inv) {
+        return NextResponse.json(
+          { success: false, error: `Inventory item ${it.inventory_no || it.inventoryNo || it.inventoryId} not found` },
+          { status: 404 }
+        );
+      }
+      const key = String(inv.id);
+      const qtyNum = Math.max(1, Number(it.qty) || 1);
+      const existing = mergedItemsMap.get(key);
+      if (existing) {
+        existing.qty += qtyNum;
+      } else {
+        mergedItemsMap.set(key, {
+          inv,
+          qty: qtyNum,
+          description: it.description || null,
+        });
       }
     }
 
-    const generatedMrNo = mr_no || `MR-EXP-${new Date().getTime().toString().slice(-6)}`;
+    const generatedMrNo = mr_no || `MR-EXP-${Date.now().toString().slice(-6)}`;
     const authUser = req.headers.get('x-user') || 'admin';
 
     const created = await prisma.t_materialreceiveheader.create({
@@ -133,14 +191,14 @@ export async function POST(req: Request) {
         mrno: generatedMrNo,
         mrdate: mr_date ? new Date(mr_date) : new Date(),
         poid: null,
-        dono: do_no,
+        dono: do_no || null,
         supplierid: Number(supplier.id),
         suppliername: supplier.suppliername,
-        drivername: driver_name,
-        vehicleno: vehicle_no,
-        transporter: transporter,
+        drivername: driver_name || null,
+        vehicleno: vehicle_no || null,
+        transporter: transporter || null,
         whid: Number(wh_id) || null,
-        description,
+        description: description || null,
         isvoid: false,
         ispaid: false,
         createduser: authUser,
@@ -148,37 +206,41 @@ export async function POST(req: Request) {
         modifieduser: authUser,
         modifieddate: new Date(),
         t_materialreceivedetail: {
-          create: items.map((it: any) => {
-            const inv = invMapByNo.get(it.inventory_no || it.inventoryNo);
-            return {
-              inventoryid: String(inv.id),
-              qty: Number(it.qty) || 0,
-              uomid: inv.uomid,
-              description: it.description || null,
-              isinventory: true,
-              createduser: authUser,
-              createddate: new Date(),
-              modifieduser: authUser,
-              modifieddate: new Date(),
-            };
-          }),
+          create: Array.from(mergedItemsMap.values()).map(({ inv, qty, description: itemDesc }) => ({
+            inventoryid: String(inv.id),
+            qty,
+            uomid: inv.uomid ? Number(inv.uomid) : null,
+            description: itemDesc,
+            isinventory: true,
+            createduser: authUser,
+            createddate: new Date(),
+            modifieduser: authUser,
+            modifieddate: new Date(),
+          })),
         },
       },
     });
 
     // Update inventory stock
-    for (const it of items) {
-      const inv = invMapByNo.get(it.inventory_no || it.inventoryNo);
-      if (inv) {
-        await prisma.m_inventory.update({
-          where: { id: inv.id },
-          data: { stokupdate: { increment: Number(it.qty) || 0 } },
-        });
-      }
+    for (const { inv, qty } of mergedItemsMap.values()) {
+      await prisma.m_inventory.update({
+        where: { id: inv.id },
+        data: { stokupdate: { increment: qty } },
+      });
     }
 
-    return NextResponse.json({ success: true, data: created });
-  } catch (error: any) { 
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 }); 
+    return NextResponse.json({
+      success: true,
+      id: String(created.id),
+      mrNo: created.mrno,
+      message: `Penerimaan Barang Ekspress ${created.mrno} berhasil disimpan & stok diperbarui!`,
+      data: {
+        id: Number(created.id),
+        mrNo: created.mrno,
+      },
+    });
+  } catch (error: any) {
+    console.error("POST /api/purchasing/express error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

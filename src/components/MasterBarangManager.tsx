@@ -115,6 +115,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   // Inline Expand States (Single Responsive Form)
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [hppHistory, setHppHistory] = useState<HppHistoryItem[]>([]);
   const [showHppHistory, setShowHppHistory] = useState<boolean>(false);
 
@@ -123,7 +124,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   const [opnameQty, setOpnameQty] = useState<number>(0);
   useEffect(() => {
     if (selectedProduct) setOpnameQty(selectedProduct.stokAkhir || 0);
-  }, [selectedProduct]);
+  }, [selectedProduct?.id, selectedProduct?.stokAkhir]);
 
   // Stock Report Modal State
   const [isStockReportModalOpen, setIsStockReportModalOpen] = useState(false);
@@ -159,6 +160,15 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
   }, []);
+
+  const extractErrorMessage = (json: any, fallback = 'Terjadi kesalahan'): string => {
+    if (!json?.error) return fallback;
+    if (typeof json.error === 'string') return json.error;
+    if (typeof json.error === 'object' && typeof json.error.message === 'string') {
+      return json.error.message;
+    }
+    return fallback;
+  };
 
   // Fetch Inventory List from PostgreSQL
   const fetchProducts = useCallback(async () => {
@@ -302,12 +312,14 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      const isTypingInInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
       if (e.key === 'Escape') {
         setExpandedRowId(null);
         setIsCreatingNew(false);
         setIsStockReportModalOpen(false);
         setContextMenu(null);
-      } else if (e.key === '/' && !expandedRowId) {
+      } else if (e.key === '/' && !expandedRowId && !isTypingInInput) {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
@@ -318,6 +330,11 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [expandedRowId, handleOpenCreateInline]);
+
+  // Reset to page 1 when filters or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchQuery, statusFilter, filterMinusStock, filterBrandId]);
 
   // Sort Handler
   const handleSort = (field: keyof ERPProduct) => {
@@ -431,6 +448,8 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   // Save Form (Create / Edit)
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       const isEdit = !isCreatingNew && selectedProduct;
       const url = isEdit ? `/api/inventory/${selectedProduct.id}` : `/api/inventory`;
@@ -449,11 +468,13 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
         addToast(isEdit ? 'Data barang berhasil diperbarui!' : 'Barang baru berhasil ditambahkan!', 'success');
         fetchProducts();
       } else {
-        addToast(`Gagal menyimpan: ${json.error || 'Terjadi kesalahan'}`, 'error');
+        addToast(`Gagal menyimpan: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       addToast(`Terjadi kesalahan: ${message}`, 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -467,7 +488,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
         addToast(`Barang "${product.inventoryName}" berhasil dihapus`, 'info');
         fetchProducts();
       } else {
-        addToast(`Gagal menghapus: ${json.error}`, 'error');
+        addToast(`Gagal menghapus: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -488,7 +509,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
         addToast(`Status "${product.inventoryName}" berhasil diubah`, 'success');
         fetchProducts();
       } else {
-        addToast(`Gagal merubah status: ${json.error}`, 'error');
+        addToast(`Gagal merubah status: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -514,9 +535,9 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       const json = await res.json();
       if (json.success) {
         addToast(`Stok "${selectedProduct.inventoryName}" berhasil di${opnameMode === 'add' ? 'tambah' : 'set'} sejumlah ${opnameQty}`, 'success');
-        fetchProducts();
+        await fetchProducts();
       } else {
-        addToast(`Gagal opname: ${json.error}`, 'error');
+        addToast(`Gagal opname: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -883,10 +904,11 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
           </button>
           <button
             type="submit"
-            className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs shadow-md cursor-pointer transition-all flex items-center gap-1.5"
+            disabled={isSaving}
+            className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs shadow-md cursor-pointer transition-all flex items-center gap-1.5"
           >
             <Check className="w-4 h-4" />
-            <span>Simpan Barang</span>
+            <span>{isSaving ? 'Menyimpan...' : 'Simpan Barang'}</span>
           </button>
         </div>
       </form>
@@ -1167,9 +1189,11 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
               <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Tier Grosir ({selectedProduct.wholesaleCategory?.name || selectedProduct.wholesaleCategoryName || 'Standard'})
               </div>
-              <div className="font-black text-xs text-amber-700 dark:text-amber-400">G1: Rp {(selectedProduct.grosir1 || 0).toLocaleString('id-ID')}</div>
+              <div className="font-black text-xs text-amber-700 dark:text-amber-400">
+                G1 (≥{selectedProduct.wholesaleCategory?.tier1_minqty ?? 3}): Rp {(selectedProduct.grosir1 || 0).toLocaleString('id-ID')}
+              </div>
               <div className="font-black text-xs text-slate-700 dark:text-slate-300">
-                G2: Rp {(selectedProduct.grosir2 || 0).toLocaleString('id-ID')} | G3: Rp {(selectedProduct.grosir3 || 0).toLocaleString('id-ID')}
+                G2 (≥{selectedProduct.wholesaleCategory?.tier2_minqty ?? 6}): Rp {(selectedProduct.grosir2 || 0).toLocaleString('id-ID')} | G3 (≥{selectedProduct.wholesaleCategory?.tier3_minqty ?? 12}): Rp {(selectedProduct.grosir3 || 0).toLocaleString('id-ID')}
               </div>
             </div>
 
@@ -1544,8 +1568,10 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                     ...rest,
                     inventoryNo: '',
                     barcode: '',
+                    stokAwal: 0,
+                    stokAkhir: 0,
                   });
-                  setExpandedRowId(null);
+                  setExpandedRowId('new');
                   setIsCreatingNew(true);
                   setContextMenu(null);
                   addToast(`Menduplikasi "${contextMenu.item.inventoryName}". Silakan isi SKU baru.`, 'info');

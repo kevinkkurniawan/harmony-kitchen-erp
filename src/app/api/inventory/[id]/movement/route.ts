@@ -31,7 +31,7 @@ export async function GET(
       const parent = flowParents.find(p => Number(p.id) === detail.flowinventoryid);
       
       return {
-        id: detail.id,
+        id: Number(detail.id),
         date: detail.invoicedate || parent?.stockdate || detail.createddate,
         transactionNo: detail.invoicecode || parent?.invoicecode || 'SYS-ADJ',
         type: mapInvoiceType(detail.invoicetype || parent?.invoicetype),
@@ -41,8 +41,12 @@ export async function GET(
       };
     });
 
-    // Calculate running balances (requires sorting by date ascending)
-    ledger.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Calculate running balances (requires sorting by date ascending, then id ascending)
+    ledger.sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return timeA !== timeB ? timeA - timeB : a.id - b.id;
+    });
     
     let currentBalance = 0;
     const ledgerWithBalance = ledger.map(entry => {
@@ -64,11 +68,15 @@ export async function GET(
   }
 }
 
-// Map the integer invoicetype to a readable string based on legacy conventions
+// Map the integer invoicetype to a readable string based on legacy & ERP conventions
 function mapInvoiceType(typeId?: number | null): string {
   switch (typeId) {
-    case 1: return 'Purchase In';
-    case 2: return 'Sales Out';
+    case 1:
+    case 81:
+      return 'Purchase In';
+    case 2:
+    case 39:
+      return 'Sales Out';
     case 3: return 'Opname Adj';
     case 4: return 'Transfer In';
     case 5: return 'Transfer Out';

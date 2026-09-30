@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
 
     const { searchParams } = new URL(req.url);
-    const paginationParams = getPaginationParams(req, 100, 2000);
+    const paginationParams = getPaginationParams(req, 100, 5000);
     
     // Strict column filters
     const { where: columnWhere } = parseColumnFilters(searchParams, {
@@ -40,12 +40,24 @@ export async function GET(req: Request) {
     const minusStock = searchParams.get('minusStock') === 'true';
     const status = searchParams.get('status');
     const onlyActive = searchParams.get('onlyActive') === 'true';
+    const warehouseId = searchParams.get('warehouseId');
 
     if (minusStock) where.stokupdate = { lt: 0 };
     if (status === 'active' || (onlyActive && status !== 'all' && status !== 'inactive')) {
       where.isactive = true;
     } else if (status === 'inactive') {
       where.isactive = false;
+    }
+
+    if (warehouseId && warehouseId !== 'ALL') {
+      const whNum = Number(warehouseId);
+      if (!isNaN(whNum)) {
+        const whRows = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT DISTINCT inventoryid FROM public.s_stockinventory WHERE whcode = ${whNum} AND inventoryid IS NOT NULL`
+        );
+        const whIds = whRows.map((r) => BigInt(r.inventoryid));
+        where.id = { in: whIds };
+      }
     }
 
     const [total, items, categories, productTypes, wholesaleCategories] = await Promise.all([
@@ -92,6 +104,7 @@ export async function GET(req: Request) {
     const mapped = items.map((i: any) => {
       const stockData = stockMap.get(String(i.id)) || { gudang: 0, etalase: 0 };
       const totalStock = stockData.gudang + stockData.etalase;
+      const liveStock = i.stokupdate !== null && i.stokupdate !== undefined ? Number(i.stokupdate) : totalStock;
       const wc = i.wholesalecategoryid ? wholesaleMap.get(i.wholesalecategoryid) : null;
       
       return {
@@ -124,6 +137,7 @@ export async function GET(req: Request) {
         grosir2: i.grosir2 ? Number(i.grosir2) : null,
         grosir3: i.grosir3 ? Number(i.grosir3) : null,
         wholesaleCategoryId: i.wholesalecategoryid ? Number(i.wholesalecategoryid) : null,
+        wholesaleCategoryName: wc ? wc.name : undefined,
         wholesaleCategory: wc ? {
           id: wc.id,
           code: wc.code,
@@ -132,9 +146,9 @@ export async function GET(req: Request) {
           tier2_minqty: wc.tier2_minqty,
           tier3_minqty: wc.tier3_minqty,
         } : null,
-        stock: totalStock,
+        stock: liveStock,
         stokAwal: Number(i.stokawal || 0),
-        stokAkhir: totalStock,
+        stokAkhir: liveStock,
         isActive: Boolean(i.isactive ?? true),
         is_active: Boolean(i.isactive ?? true),
         createdAt: i.createddate,

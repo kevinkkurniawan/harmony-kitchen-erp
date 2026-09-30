@@ -5,12 +5,16 @@ import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const q = searchParams.get('q') || '';
+    const q = (searchParams.get('q') || '').trim();
+    const onlyActive = searchParams.get('onlyActive') === 'true';
     const paginationParams = getPaginationParams(req, 50);
 
     const where: any = {};
     if (q) {
       where.promoname = { contains: q, mode: 'insensitive' as const };
+    }
+    if (onlyActive) {
+      where.isactive = true;
     }
 
     const [total, promos] = await Promise.all([
@@ -26,12 +30,13 @@ export async function GET(req: Request) {
     const mapped = promos.map((p: any) => ({
       id: String(p.id),
       promoCode: `PRM-${p.id}`,
+      promoName: p.promoname,
       groupName: p.promoname,
       group_name: p.promoname,
       description: p.description,
-      isActive: p.isactive,
-      promosCount: 0,
-      promos_count: 0,
+      isActive: Boolean(p.isactive),
+      promosCount: 1,
+      promos_count: 1,
       promos: [],
     }));
 
@@ -45,7 +50,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const groupName = body.groupName || body.group_name || body.promoName;
+    const groupName = (body.groupName || body.group_name || body.promoName || '').trim();
     const description = body.description || null;
     const isActive = body.isActive ?? true;
 
@@ -64,12 +69,12 @@ export async function POST(req: Request) {
         promoname: groupName,
         promovalue: 0,
         promopercentage: 0,
-        qtymin: 0,
-        qtymax: 0,
+        qtymin: 1,
+        qtymax: 9999,
         ispartial: false,
         isgroup: true,
         description,
-        isactive: isActive,
+        isactive: Boolean(isActive),
         createduser: 'system',
         createddate: new Date(),
         modifieduser: 'system',
@@ -77,7 +82,18 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, message: 'Group Promo berhasil ditambahkan', data: created });
+    return NextResponse.json({
+      success: true,
+      message: 'Group Promo berhasil ditambahkan',
+      data: {
+        ...created,
+        id: String(created.id),
+        promoCode: `PRM-${created.id}`,
+        promoName: created.promoname,
+        groupName: created.promoname,
+        isActive: Boolean(created.isactive),
+      },
+    });
   } catch (error: any) {
     console.error('Error in POST /api/promos:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

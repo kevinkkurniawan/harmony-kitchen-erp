@@ -169,21 +169,26 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
     const load = async () => {
       setIsLoading(true);
       try {
-        if (promoTab === 'rules') {
-          let url = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
-          if (filterOnlyActive) url += `&onlyActive=true`;
-          const res = await fetch(url);
-          const json = await res.json();
-          if (isMounted && json.success && Array.isArray(json.data)) {
-            setPromoRules(json.data);
+        let rulesUrl = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
+        let groupsUrl = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
+        if (filterOnlyActive) {
+          rulesUrl += `&onlyActive=true`;
+          groupsUrl += `&onlyActive=true`;
+        }
+        const [rulesRes, groupsRes] = await Promise.all([
+          fetch(rulesUrl),
+          fetch(groupsUrl),
+        ]);
+        const [rulesJson, groupsJson] = await Promise.all([
+          rulesRes.json(),
+          groupsRes.json(),
+        ]);
+        if (isMounted) {
+          if (rulesJson.success && Array.isArray(rulesJson.data)) {
+            setPromoRules(rulesJson.data);
           }
-        } else {
-          let url = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
-          if (filterOnlyActive) url += `&onlyActive=true`;
-          const res = await fetch(url);
-          const json = await res.json();
-          if (isMounted && json.success && Array.isArray(json.data)) {
-            setPromoGroups(json.data);
+          if (groupsJson.success && Array.isArray(groupsJson.data)) {
+            setPromoGroups(groupsJson.data);
           }
         }
       } catch (err) {
@@ -194,7 +199,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
     };
     load();
     return () => { isMounted = false; };
-  }, [promoTab, debouncedSearchQuery, filterOnlyActive]);
+  }, [debouncedSearchQuery, filterOnlyActive]);
 
   // Open Rule Modal
   const handleOpenCreateRuleModal = useCallback(() => {
@@ -227,11 +232,18 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInputFocused =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable;
+
       if (e.key === 'Escape') {
         setIsRuleModalOpen(false);
         setIsGroupModalOpen(false);
         setContextMenu(null);
-      } else if (e.key === '/') {
+      } else if (e.key === '/' && !isInputFocused) {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
@@ -247,6 +259,12 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   // Handle Save Rule Form
   const handleSaveRuleForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    const minQty = Number(ruleFormData.qtyMin ?? 1);
+    const maxQty = Number(ruleFormData.qtyMax ?? 9999);
+    if (minQty > maxQty) {
+      addToast('Qty Minimum tidak boleh lebih besar dari Qty Maksimum', 'error');
+      return;
+    }
     try {
       const isEdit = modalMode === 'edit' && selectedRule;
       const url = isEdit ? `/api/promos/items/${selectedRule.id}` : `/api/promos/items`;
@@ -263,8 +281,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         setIsRuleModalOpen(false);
         addToast(isEdit ? 'Aturan promo diperbarui!' : 'Aturan promo baru dibuat!', 'success');
         fetchPromoRules();
+        fetchPromoGroups();
       } else {
-        addToast(`Gagal menyimpan: ${json.error}`, 'error');
+        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
+        addToast(`Gagal menyimpan: ${errMsg}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -291,8 +311,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         setIsGroupModalOpen(false);
         addToast(isEdit ? 'Kelompok promo diperbarui!' : 'Kelompok promo baru dibuat!', 'success');
         fetchPromoGroups();
+        fetchPromoRules();
       } else {
-        addToast(`Gagal menyimpan: ${json.error}`, 'error');
+        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
+        addToast(`Gagal menyimpan: ${errMsg}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -309,8 +331,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
       if (json.success) {
         addToast(`Promo "${rule.promoName}" berhasil dihapus`, 'info');
         fetchPromoRules();
+        fetchPromoGroups();
       } else {
-        addToast(`Gagal menghapus: ${json.error}`, 'error');
+        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
+        addToast(`Gagal menghapus: ${errMsg}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -320,15 +344,18 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
 
   // Handle Delete Group
   const handleDeleteGroup = async (group: PromoGroupItem) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus kelompok promo "${group.promoName}"?`)) return;
+    const gName = group.promoName || group.groupName || group.group_name || 'Kelompok Promo';
+    if (!confirm(`Apakah Anda yakin ingin menghapus kelompok promo "${gName}"?`)) return;
     try {
       const res = await fetch(`/api/promos/${group.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
-        addToast(`Kelompok promo "${group.promoName}" berhasil dihapus`, 'info');
+        addToast(`Kelompok promo "${gName}" berhasil dihapus`, 'info');
         fetchPromoGroups();
+        fetchPromoRules();
       } else {
-        addToast(`Gagal menghapus: ${json.error}`, 'error');
+        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
+        addToast(`Gagal menghapus: ${errMsg}`, 'error');
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -348,6 +375,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
       if (json.success) {
         addToast(`Status "${rule.promoName}" diubah menjadi ${!rule.isActive ? 'AKTIF' : 'NON-AKTIF'}`, 'info');
         fetchPromoRules();
+        fetchPromoGroups();
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -817,7 +845,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         onDoubleClick={() => {
                           setSelectedGroup(group);
                           setModalMode('edit');
-                          setGroupFormData({ ...group });
+                          setGroupFormData({
+                            ...group,
+                            promoName: group.promoName || group.groupName || group.group_name || '',
+                          });
                           setIsGroupModalOpen(true);
                         }}
                         onContextMenu={(e) => {
@@ -835,8 +866,12 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                         <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
                         <td className="py-3 px-3 text-center font-mono font-bold text-amber-400">{count} Promo</td>
                         <td className="py-3 px-3 text-center">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                            AKTIF
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            group.isActive !== false
+                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                          }`}>
+                            {group.isActive !== false ? 'AKTIF' : 'NON-AKTIF'}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center">
@@ -846,7 +881,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                                 e.stopPropagation();
                                 setSelectedGroup(group);
                                 setModalMode('edit');
-                                setGroupFormData({ ...group });
+                                setGroupFormData({
+                                  ...group,
+                                  promoName: group.promoName || group.groupName || group.group_name || '',
+                                });
                                 setIsGroupModalOpen(true);
                               }}
                               className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
@@ -899,7 +937,10 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
                 const group = contextMenu.item as PromoGroupItem;
                 setSelectedGroup(group);
                 setModalMode('edit');
-                setGroupFormData({ ...group });
+                setGroupFormData({
+                  ...group,
+                  promoName: group.promoName || group.groupName || group.group_name || '',
+                });
                 setIsGroupModalOpen(true);
               }
               setContextMenu(null);

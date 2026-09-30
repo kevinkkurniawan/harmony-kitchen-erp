@@ -4,8 +4,9 @@ import { recordAuditEvent } from '@/lib/audit-event';
 export interface OpnameItemInput {
   inventoryId: number;
   barcode?: string;
+  qty?: number;
   systemQty?: number;
-  physicalQty: number;
+  physicalQty?: number;
   unitPrice?: number;
   notes?: string;
 }
@@ -68,19 +69,18 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
         throw new Error(`Barang dengan ID ${it.inventoryId} tidak ditemukan.`);
       }
 
-      // At posting time, baseline is current live stock; for draft, baseline is current or provided
       const currentLiveStock = Number(inv.stokupdate || 0);
-      const baselineSysQty = action === 'post' ? currentLiveStock : (it.systemQty !== undefined ? Number(it.systemQty) : currentLiveStock);
-      const physQty = Number(it.physicalQty || 0);
-      const diffQty = physQty - baselineSysQty;
+      const targetQty = Number(it.qty ?? it.physicalQty ?? 0);
+      const diffQty = targetQty - currentLiveStock;
       const unitPrice = it.unitPrice !== undefined ? Number(it.unitPrice) : Number(inv.hpp || inv.price || 0);
 
       return {
         notransaction: noTransaction,
         inventoryid: Number(it.inventoryId),
         barcode: it.barcode || inv.barcode || '',
-        systemqty: baselineSysQty,
-        physicalqty: physQty,
+        qty: targetQty,
+        systemqty: currentLiveStock,
+        physicalqty: targetQty,
         differenceqty: diffQty,
         unitprice: unitPrice,
         notes: it.notes || '',
@@ -116,7 +116,7 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
         notransaction: pi.notransaction,
         inventoryid: pi.inventoryid,
         barcode: pi.barcode,
-        qty: pi.physicalqty,
+        qty: pi.qty,
         price: pi.unitprice,
         description: pi.notes || '',
         opnamedate: opnameDate,
@@ -167,15 +167,15 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
               modifieduser: actor,
             },
           });
-
-          // Set stock balance to EXACT physical quantity
-          await tx.m_inventory.update({
-            where: { id: BigInt(pi.inventoryid) },
-            data: {
-              stokupdate: pi.physicalqty,
-            },
-          });
         }
+
+        // Set stock balance to EXACT opname quantity
+        await tx.m_inventory.update({
+          where: { id: BigInt(pi.inventoryid) },
+          data: {
+            stokupdate: pi.qty,
+          },
+        });
       }
 
       // Conditional state transition for existing header

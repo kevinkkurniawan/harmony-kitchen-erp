@@ -55,11 +55,17 @@ export async function PUT(
       modifieddate: new Date(),
     };
 
+    const nextQtyMin = body.qtyMin !== undefined ? Number(body.qtyMin) : Number(existing.qtymin ?? 1);
+    const nextQtyMax = body.qtyMax !== undefined ? Number(body.qtyMax) : Number(existing.qtymax ?? 9999);
+    if (nextQtyMin > nextQtyMax) {
+      return apiError('VALIDATION_ERROR', 'Qty Minimum tidak boleh lebih besar dari Qty Maksimum', 400);
+    }
+
     if (body.promoName !== undefined || body.promo_name !== undefined) {
       dataToUpdate.promoname = body.promoName || body.promo_name;
     }
-    if (body.qtyMin !== undefined) dataToUpdate.qtymin = Number(body.qtyMin);
-    if (body.qtyMax !== undefined) dataToUpdate.qtymax = Number(body.qtyMax);
+    if (body.qtyMin !== undefined) dataToUpdate.qtymin = nextQtyMin;
+    if (body.qtyMax !== undefined) dataToUpdate.qtymax = nextQtyMax;
     if (body.isPartial !== undefined) dataToUpdate.ispartial = Boolean(body.isPartial);
     if (body.isGroup !== undefined) dataToUpdate.isgroup = Boolean(body.isGroup);
     if (body.description !== undefined) dataToUpdate.description = body.description || null;

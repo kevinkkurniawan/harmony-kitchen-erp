@@ -50,13 +50,34 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       };
     });
 
+    const subtotal = details.reduce((acc: number, d: any) => acc + Number(d.subtotal || 0), 0);
+    const discValue = details.reduce((acc: number, d: any) => acc + Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0), 0);
+    const grandTotal = Number(header.grandtotal || 0) || (subtotal - discValue);
+    const txDate = header.salesposdate
+      ? new Date(header.salesposdate).toLocaleString('id-ID', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '-';
+
     return apiSuccess({
       header: {
         id: String(header.id),
         invoiceNo: header.salesposno,
         salesposdate: header.salesposdate,
+        invoiceDate: txDate,
+        transactionDate: txDate,
         customerName: header.customername || 'Pelanggan Umum',
-        grandTotal: Number(header.grandtotal || 0),
+        cashierName: header.createduser || 'Kasir',
+        subtotal: subtotal,
+        discValue: discValue,
+        taxValue: 0,
+        grandTotal: grandTotal,
+        paymentAmount: grandTotal,
+        changeAmount: 0,
         isVoid: Boolean(header.isvoid),
         isOverrideGrosir1: Boolean(header.isoverridegrosir),
         manualDiscountAmount: Number(header.manualdiscountamount || 0),
@@ -64,6 +85,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         manualDiscountValue: Number(header.manualdiscountvalue || 0),
         manualDiscountReason: header.manualdiscountreason || null,
         paymentType: header.paymenttypecode || 'CASH',
+        bankName: header.paymenttypecode && header.paymenttypecode !== 'CASH' ? header.paymenttypecode : '',
       },
       items,
     });

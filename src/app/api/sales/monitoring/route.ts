@@ -13,8 +13,17 @@ export async function GET(req: Request) {
     const dateTo = searchParams.get('dateTo') || searchParams.get('endDate');
     const paginationParams = getPaginationParams(req, 50);
 
-    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(searchParams, {
-      whitelist: ['salesposno', 'customername', 'paymenttypecode', 'status', 'isvoid', 'createduser', 'dateFrom', 'dateTo', 'startDate', 'endDate', 'page', 'limit'],
+    const filteredParams = new URLSearchParams(searchParams);
+    filteredParams.delete('dateFrom');
+    filteredParams.delete('dateTo');
+    filteredParams.delete('startDate');
+    filteredParams.delete('endDate');
+    filteredParams.delete('q');
+    filteredParams.delete('page');
+    filteredParams.delete('limit');
+
+    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(filteredParams, {
+      whitelist: ['salesposno', 'customername', 'paymenttypecode', 'status', 'isvoid', 'createduser'],
       exactMatchFields: ['paymenttypecode', 'status'],
       containsFields: ['salesposno', 'customername', 'createduser'],
       booleanFields: ['isvoid'],
@@ -37,6 +46,8 @@ export async function GET(req: Request) {
       where.OR = [
         { salesposno: { contains: q, mode: 'insensitive' as const } },
         { customername: { contains: q, mode: 'insensitive' as const } },
+        { createduser: { contains: q, mode: 'insensitive' as const } },
+        { paymenttypecode: { contains: q, mode: 'insensitive' as const } },
       ];
     }
 
@@ -46,7 +57,12 @@ export async function GET(req: Request) {
       if (dateTo) where.salesposdate.lte = parseBangkokEndOfDay(dateTo);
     }
 
-    const [total, transactions] = await Promise.all([
+    const summaryWhere = {
+      ...where,
+      isvoid: false,
+    };
+
+    const [total, transactions, activeHeadersForSummary] = await Promise.all([
       prisma.t_salesposheader.count({ where }),
       prisma.t_salesposheader.findMany({
         where,
@@ -54,7 +70,44 @@ export async function GET(req: Request) {
         skip: paginationParams.skip,
         take: paginationParams.limit,
       }),
+      prisma.t_salesposheader.findMany({
+        where: summaryWhere,
+        select: {
+          grandtotal: true,
+          paymenttypecode: true,
+        },
+      }),
     ]);
+
+    let grossSales = 0;
+    const paymentBreakdown: Record<string, number> = {
+      CASH: 0,
+      QRIS: 0,
+      TRANSFER: 0,
+      DEBIT: 0,
+      TEMPO: 0,
+    };
+
+    for (const h of activeHeadersForSummary) {
+      const amt = Number(h.grandtotal || 0);
+      grossSales += amt;
+      const pt = (h.paymenttypecode || 'CASH').toUpperCase();
+      if (paymentBreakdown[pt] !== undefined) {
+        paymentBreakdown[pt] += amt;
+      } else {
+        paymentBreakdown[pt] = amt;
+      }
+    }
+
+    const totalCount = activeHeadersForSummary.length;
+    const avgBasket = totalCount > 0 ? Math.round(grossSales / totalCount) : 0;
+
+    const summary = {
+      grossSales,
+      totalCount,
+      avgBasket,
+      paymentBreakdown,
+    };
 
     const headerIds = transactions.map((t: any) => Number(t.id));
     const details = await prisma.t_salesposdetail.findMany({
@@ -64,18 +117,19 @@ export async function GET(req: Request) {
     // Attach details to headers
     const detailsByHeader = new Map<number, any[]>();
     details.forEach((d: any) => {
-      if (!detailsByHeader.has(d.salesposheaderid)) detailsByHeader.set(d.salesposheaderid, []);
-      detailsByHeader.get(d.salesposheaderid)!.push(d);
+      const hId = Number(d.salesposheaderid);
+      if (!detailsByHeader.has(hId)) detailsByHeader.set(hId, []);
+      detailsByHeader.get(hId)!.push(d);
     });
 
     const inventoryIds = Array.from(new Set(
-      details.map((d: any) => d.inventoryid)
+      details.map((d: any) => Number(d.inventoryid))
     )).filter(Boolean) as number[];
     const inventories = await prisma.m_inventory.findMany({ where: { id: { in: inventoryIds } }, include: { m_uom: true } });
-    const inventoryMap = new Map(inventories.map((i: any) => [i.id, i]));
+    const inventoryMap = new Map(inventories.map((i: any) => [Number(i.id), i]));
 
     const mapped = transactions.map((s: any) => {
-      const s_details = detailsByHeader.get(s.id) || [];
+      const s_details = detailsByHeader.get(Number(s.id)) || [];
       const txDate = s.salesposdate ? new Date(s.salesposdate).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
       const simpleDate = s.salesposdate ? new Date(s.salesposdate).toLocaleDateString('id-ID') : '-';
       
@@ -83,7 +137,7 @@ export async function GET(req: Request) {
       const discount = s_details.reduce((acc: number, item: any) => acc + Number(item.disc || 0) + Number(item.disc2 || 0) + Number(item.disc3 || 0), 0);
       
       return {
-        id: s.id,
+        id: Number(s.id),
         invoiceNo: s.salesposno,
         invoice_no: s.salesposno,
         salesPOSNo: s.salesposno,
@@ -94,8 +148,8 @@ export async function GET(req: Request) {
         sales_pos_date: simpleDate,
         customerName: s.customername || 'Pelanggan Umum',
         customer_name: s.customername || 'Pelanggan Umum',
-        cashierName: 'Kasir', // Cashier logic could be mapped to cashierid
-        cashier_name: 'Kasir',
+        cashierName: s.createduser || 'Kasir',
+        cashier_name: s.createduser || 'Kasir',
         paymentMethod: s.paymenttypecode || 'CASH',
         paymentType: s.paymenttypecode || 'CASH',
         payment_method: s.paymenttypecode || 'CASH',
@@ -118,11 +172,11 @@ export async function GET(req: Request) {
         isVoid: Boolean(s.isvoid),
         status: s.isvoid ? 'VOID' : (s.status || 'COMPLETED'),
         items: s_details.map((d: any) => {
-          const inv = inventoryMap.get(d.inventoryid);
+          const inv = inventoryMap.get(Number(d.inventoryid));
           return {
-            id: d.id,
-            productId: d.inventoryid,
-            product_id: d.inventoryid,
+            id: Number(d.id),
+            productId: Number(d.inventoryid),
+            product_id: Number(d.inventoryid),
             barcode: inv?.barcode || '',
             productName: inv?.inventoryname || '',
             product_name: inv?.inventoryname || '',
@@ -138,7 +192,7 @@ export async function GET(req: Request) {
       };
     });
 
-    return createPaginatedResponse(mapped, total, paginationParams);
+    return createPaginatedResponse(mapped, total, paginationParams, { summary });
   } catch (error: any) {
     console.error('Error in GET /api/sales/monitoring:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

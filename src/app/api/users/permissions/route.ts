@@ -46,32 +46,32 @@ export async function POST(request: Request) {
       const beforeCapabilities = await getUserCapabilities(userId);
       const afterCapabilities: Record<string, boolean> = {};
 
-      for (const cap of SENSITIVE_CAPABILITIES) {
-        if (cap.code in body.capabilities) {
-          const isGranted = Boolean(body.capabilities[cap.code]);
-          afterCapabilities[cap.code] = isGranted;
+      const upsertPromises = SENSITIVE_CAPABILITIES.filter((cap) => cap.code in body.capabilities).map((cap) => {
+        const isGranted = Boolean(body.capabilities[cap.code]);
+        afterCapabilities[cap.code] = isGranted;
 
-          await prisma.t_usercapability.upsert({
-            where: {
-              userid_capabilitycode: {
-                userid: userId,
-                capabilitycode: cap.code,
-              },
-            },
-            update: {
-              isgranted: isGranted,
-              grantedby: currentUser.username,
-              granteddate: new Date(),
-            },
-            create: {
+        return prisma.t_usercapability.upsert({
+          where: {
+            userid_capabilitycode: {
               userid: userId,
               capabilitycode: cap.code,
-              isgranted: isGranted,
-              grantedby: currentUser.username,
             },
-          });
-        }
-      }
+          },
+          update: {
+            isgranted: isGranted,
+            grantedby: currentUser.username,
+            granteddate: new Date(),
+          },
+          create: {
+            userid: userId,
+            capabilitycode: cap.code,
+            isgranted: isGranted,
+            grantedby: currentUser.username,
+          },
+        });
+      });
+
+      await Promise.all(upsertPromises);
 
       await recordAuditEvent({
         eventType: 'PERMISSION_CHANGE',

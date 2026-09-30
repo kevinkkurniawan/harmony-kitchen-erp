@@ -564,7 +564,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={perm.canView}
+                                checked={Boolean(perm.canView)}
                                 onChange={() => handleTogglePerm(perm.moduleCode, 'canView')}
                                 className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
                               />
@@ -576,7 +576,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={perm.canAdd}
+                                checked={Boolean(perm.canAdd)}
                                 onChange={() => handleTogglePerm(perm.moduleCode, 'canAdd')}
                                 className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
                               />
@@ -588,7 +588,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={perm.canEdit}
+                                checked={Boolean(perm.canEdit)}
                                 onChange={() => handleTogglePerm(perm.moduleCode, 'canEdit')}
                                 className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
                               />
@@ -600,7 +600,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={perm.canDelete}
+                                checked={Boolean(perm.canDelete)}
                                 onChange={() => handleTogglePerm(perm.moduleCode, 'canDelete')}
                                 className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
                               />
@@ -612,7 +612,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={perm.canPrint}
+                                checked={Boolean(perm.canPrint)}
                                 onChange={() => handleTogglePerm(perm.moduleCode, 'canPrint')}
                                 className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
                               />
@@ -624,7 +624,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                             <label className="flex items-center gap-1.5 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={perm.canViewPrice}
+                                checked={Boolean(perm.canViewPrice)}
                                 onChange={() => handleTogglePerm(perm.moduleCode, 'canViewPrice')}
                                 className="w-4 h-4 accent-amber-500 cursor-pointer rounded"
                               />

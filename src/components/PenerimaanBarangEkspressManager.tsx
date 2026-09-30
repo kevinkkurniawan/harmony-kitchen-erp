@@ -168,30 +168,36 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
       const res = await fetch(`/api/purchasing/express/${id}`);
       const json = await res.json();
       if (json.success) {
+        const rawDate = json.data.mr_date || json.data.mrDate;
+        const parsedDate = rawDate ? new Date(rawDate) : new Date();
+        const formattedDate = isNaN(parsedDate.getTime())
+          ? String(rawDate || '-')
+          : parsedDate.toISOString().slice(0, 10);
+
         setPrintData({
           header: {
             id: String(json.data.id),
-            mrNo: json.data.mr_no,
-            mrDate: new Date(json.data.mr_date).toISOString().replace('T', ' ').slice(0, 19),
+            mrNo: json.data.mr_no || json.data.mrNo,
+            mrDate: formattedDate,
             supplierId: '0',
-            supplierName: json.data.supplier_name,
-            doNo: json.data.do_no,
-            driverName: json.data.driver_name,
-            vehicleNo: json.data.vehicle_no,
-            wh_name: json.data.wh_name,
+            supplierName: json.data.supplier_name || json.data.supplierName,
+            doNo: json.data.do_no || json.data.doNo || '-',
+            driverName: json.data.driver_name || json.data.driverName || '-',
+            vehicleNo: json.data.vehicle_no || json.data.vehicleNo || '-',
+            wh_name: json.data.wh_name || 'Gudang Utama',
             transporter: json.data.transporter || '-',
             description: json.data.description || '-',
             isExpress: true,
             isVoid: false,
           },
-          items: json.data.items.map((it: any) => ({
-            inventoryId: it.id,
-            inventoryNo: it.inventory_no,
-            inventoryName: it.inventory_name,
-            uomName: '-',
-            qty: it.qty,
-            barcode: it.barcode,
-            description: it.description,
+          items: (json.data.items || []).map((it: any) => ({
+            inventoryId: String(it.id),
+            inventoryNo: it.inventory_no || it.inventoryNo || '-',
+            inventoryName: it.inventory_name || it.inventoryName || '-',
+            uomName: it.uom_name || it.uomName || 'PCS',
+            qty: Number(it.qty) || 0,
+            barcode: it.barcode || '',
+            description: it.description || '',
           })),
         });
         setIsPrintModalOpen(true);
@@ -243,7 +249,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
       setSearchResults([]);
       return;
     }
-    const timer = setTimeout(async () => {
+    const runSearch = async () => {
       setIsSearchingProduct(true);
       try {
         const res = await fetch(`/api/inventory?q=${encodeURIComponent(debouncedProductSearch)}`);
@@ -256,18 +262,17 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
       } finally {
         if (isMounted) setIsSearchingProduct(false);
       }
-    }, 200);
-
+    };
+    runSearch();
     return () => {
       isMounted = false;
-      clearTimeout(timer);
     };
-  }, [productSearch]);
+  }, [debouncedProductSearch]);
 
   // Add Product to Receipt Line Items
   const handleAddProductToItems = (prod: ERPProduct) => {
     setItems((prev) => {
-      const existingIndex = prev.findIndex((i) => i.inventoryId === prod.id);
+      const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex].qty += 1;
@@ -276,7 +281,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
       return [
         ...prev,
         {
-          inventoryId: prod.id,
+          inventoryId: String(prod.id),
           barcode: prod.barcode || '',
           inventoryNo: prod.inventoryNo || '',
           inventoryName: prod.inventoryName,
@@ -294,9 +299,11 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
       if (e.key === 'Escape') {
         setIsPrintModalOpen(false);
-      } else if (e.key === '/' && viewMode === 'create') {
+      } else if (e.key === '/' && viewMode === 'create' && !isInputFocused) {
         e.preventDefault();
         barcodeInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n' && viewMode === 'list') {
@@ -579,8 +586,13 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     if (sortField === 'mrNo') { valA = a.mrNo || a.mr_no || ''; valB = b.mrNo || b.mr_no || ''; }
                     else if (sortField === 'mrDate') { valA = a.mrDate || a.mr_date || ''; valB = b.mrDate || b.mr_date || ''; }
                     else if (sortField === 'supplierName') { valA = a.supplierName || a.supplier_name || ''; valB = b.supplierName || b.supplier_name || ''; }
-                    else if (sortField === 'poNo') { valA = a.poNo || a.po_no || ''; valB = b.poNo || b.po_no || ''; }
-                    else if (sortField === 'driverName') { valA = a.driverName ? `${a.driverName} (${a.vehicleNo || ''})` : ''; valB = b.driverName ? `${b.driverName} (${b.vehicleNo || ''})` : ''; }
+                    else if (sortField === 'poNo') { valA = a.doNo || a.do_no || a.poNo || a.po_no || ''; valB = b.doNo || b.do_no || b.poNo || b.po_no || ''; }
+                    else if (sortField === 'driverName') {
+                      const drvA = a.driverName || a.driver_name || '';
+                      const drvB = b.driverName || b.driver_name || '';
+                      valA = drvA && drvA !== '-' ? `${drvA} (${a.vehicleNo || a.vehicle_no || ''})` : '';
+                      valB = drvB && drvB !== '-' ? `${drvB} (${b.vehicleNo || b.vehicle_no || ''})` : '';
+                    }
                     else if (sortField === 'totalQty') { valA = a.totalQty ?? a.total_qty ?? (a.items ? a.items.length : 0); valB = b.totalQty ?? b.total_qty ?? (b.items ? b.items.length : 0); }
                     else if (sortField === 'status') { valA = a.isVoid ? 1 : 0; valB = b.isVoid ? 1 : 0; }
                     else return 0;
@@ -595,8 +607,10 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                     const mrNo = row.mrNo || row.mr_no || '-';
                     const mrDate = row.mrDate || row.mr_date || '-';
                     const supplier = row.supplierName || row.supplier_name || 'Supplier General';
-                    const poNo = row.poNo || row.po_no || '-';
-                    const driver = row.driverName ? `${row.driverName} (${row.vehicleNo || '-'})` : '-';
+                    const doNoDisplay = (row.doNo && row.doNo !== '-' ? row.doNo : row.do_no && row.do_no !== '-' ? row.do_no : row.poNo || row.po_no) || '-';
+                    const drvName = row.driverName || row.driver_name;
+                    const vehNo = row.vehicleNo || row.vehicle_no || '-';
+                    const driver = drvName && drvName !== '-' ? `${drvName} (${vehNo})` : '-';
                     const qty = row.totalQty ?? row.total_qty ?? (row.items ? row.items.length : 0);
 
                     return (
@@ -616,7 +630,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                         <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
                         <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
                         <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
-                        <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
+                        <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{doNoDisplay}</td>
                         <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{driver}</td>
                         <td className="py-3.5 px-4 text-center font-black text-emerald-400">{qty} Items</td>
                         <td className="py-3.5 px-4 text-center">
@@ -682,7 +696,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                   onChange={(e) => {
                     const id = e.target.value;
                     setSelectedSupplierId(id);
-                    const found = suppliersList.find((s) => s.id === id);
+                    const found = suppliersList.find((s) => String(s.id) === String(id));
                     if (found) setSelectedSupplierName(found.supplierName);
                   }}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
@@ -798,6 +812,14 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                   const val = e.target.value;
                   setProductSearch(val);
                   if (!val.trim()) setSearchResults([]);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (searchResults.length > 0) {
+                      handleAddProductToItems(searchResults[0]);
+                    }
+                  }
                 }}
                 className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
                   isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'

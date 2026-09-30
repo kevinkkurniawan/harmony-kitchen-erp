@@ -5,12 +5,16 @@ import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const q = searchParams.get('q') || '';
+    const q = (searchParams.get('q') || '').trim();
+    const onlyActive = searchParams.get('onlyActive') === 'true';
     const paginationParams = getPaginationParams(req, 50);
 
     const where: any = {};
     if (q) {
       where.promoname = { contains: q, mode: 'insensitive' as const };
+    }
+    if (onlyActive) {
+      where.isactive = true;
     }
 
     const [total, promos] = await Promise.all([
@@ -46,8 +50,8 @@ export async function GET(req: Request) {
       start_date: p.createddate,
       endDate: p.modifieddate,
       end_date: p.modifieddate,
-      isActive: p.isactive,
-      is_active: p.isactive,
+      isActive: Boolean(p.isactive),
+      is_active: Boolean(p.isactive),
       createdAt: p.createddate,
     }));
 
@@ -61,9 +65,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const promoName = body.promoName || body.promo_name;
-    const qtyMin = body.qtyMin ?? 1;
-    const qtyMax = body.qtyMax ?? 9999;
+    const promoName = (body.promoName || body.promo_name || '').trim();
+    const qtyMin = Number(body.qtyMin ?? 1);
+    const qtyMax = Number(body.qtyMax ?? 9999);
     const isPartial = body.isPartial ?? true;
     const isGroup = body.isGroup ?? true;
     const description = body.description;
@@ -71,6 +75,9 @@ export async function POST(req: Request) {
 
     if (!promoName) {
       return NextResponse.json({ success: false, error: 'Nama Promo wajib diisi' }, { status: 400 });
+    }
+    if (qtyMin > qtyMax) {
+      return NextResponse.json({ success: false, error: 'Qty Minimum tidak boleh lebih besar dari Qty Maksimum' }, { status: 400 });
     }
 
     const max = await prisma.m_promo.aggregate({ _max: { promobundle: true, promogrosir: true } });

@@ -35,16 +35,20 @@ export interface OpnameEntry {
   barcode: string;
   inventoryName: string;
   qty: number;
-  systemQty?: number;
   price: number;
   description: string;
 }
 
 export interface OpnameHistoryHeader {
-  id: number;
+  id: number | string;
   noTransaction: string;
+  opnameNo?: string;
+  opname_no?: string;
   opnameDate: string;
+  status?: string;
   warehouse: string;
+  whName?: string;
+  wh_name?: string;
   totalItems: number;
   totalQty: number;
   remarks: string;
@@ -96,7 +100,6 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
   // Table Filter & Search States
   const [tableSearch, setTableSearch] = useState<string>('');
-  const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'variance' | 'matched'>('all');
   const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -117,7 +120,6 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const [reversedReasonText, setReversedReasonText] = useState<string>('');
   const [isReverseModalOpen, setIsReverseModalOpen] = useState<boolean>(false);
   const [reverseReasonInput, setReverseReasonInput] = useState<string>('');
-  const [isBlindCount, setIsBlindCount] = useState<boolean>(false);
   const [auditorName, setAuditorName] = useState<string>('Super Administrator');
   const [isReconciling, setIsReconciling] = useState<boolean>(false);
 
@@ -126,10 +128,23 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const loadSeqRef = useRef<number>(0);
+
+  const isReadOnly = opnameStatus === 'POSTED' || opnameStatus === 'REVERSED';
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const extractErrorMessage = (err: unknown, fallback: string): string => {
+    if (!err) return fallback;
+    if (typeof err === 'string') return err;
+    if (typeof err === 'object') {
+      const maybeMsg = (err as { message?: unknown }).message;
+      if (typeof maybeMsg === 'string' && maybeMsg.trim()) return maybeMsg;
+    }
+    return fallback;
   };
 
   // Generate New Transaction No
@@ -148,63 +163,78 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       const json = await res.json();
       if (json.success && json.data.warehouses) {
         setWarehouses(json.data.warehouses);
-        if (json.data.warehouses.length > 0 && !warehouse) {
-          setWarehouse(json.data.warehouses[0].location);
+        if (json.data.warehouses.length > 0) {
+          setWarehouse((prev) => prev || json.data.warehouses[0].location);
         }
       }
     } catch (e) {
       console.error('Failed to fetch warehouses', e);
     }
-  }, [warehouse]);
+  }, []);
 
-  // Fetch Inventory Lookups & Opname History
+  // Refresh Inventory & History Lookups without clobbering current form state
+  const refreshLookupsAndHistory = useCallback(async () => {
+    const [invRes, histRes] = await Promise.all([
+      fetch('/api/inventory?limit=500'),
+      fetch('/api/inventory/opname'),
+    ]);
+    const invJson = await invRes.json();
+    const rawItems: InventoryLookupItem[] = invJson.data?.items || invJson.data || [];
+    const itemsArray: InventoryLookupItem[] = Array.isArray(rawItems)
+      ? rawItems.map((it) => ({ ...it, id: Number(it.id) }))
+      : [];
+    if (invJson.success && Array.isArray(itemsArray)) {
+      setInventoryList(itemsArray);
+    }
+
+    const histJson = await histRes.json();
+    const histArray = histJson.data?.items || histJson.data || [];
+    if (histJson.success && Array.isArray(histArray)) {
+      setHistoryList(histArray);
+    }
+    return itemsArray;
+  }, []);
+
+  // Fetch Inventory Lookups & Opname History on initial mount
   const loadInitialData = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     setIsLoading(true);
     try {
-      // 0. Fetch Warehouses
       await fetchWarehouses();
+      const itemsArray = await refreshLookupsAndHistory();
 
-      // 1. Fetch Inventory Items for Opname Input
-      const invRes = await fetch('/api/inventory?limit=2000');
-      const invJson = await invRes.json();
-      const itemsArray = invJson.data?.items || invJson.data || [];
-      if (invJson.success && Array.isArray(itemsArray)) {
-        setInventoryList(itemsArray);
+      if (seq !== loadSeqRef.current) return;
 
-        // Auto-populate all master inventory items on initial load for full opname worksheet
-        const allItems = itemsArray.map((item: InventoryLookupItem) => {
-          const sysQty = item.stokAkhir !== undefined ? item.stokAkhir : (item.stock || 0);
+      if (Array.isArray(itemsArray) && itemsArray.length > 0) {
+        const allItems: OpnameEntry[] = itemsArray.map((item: InventoryLookupItem) => {
+          const itemQty = item.stokAkhir !== undefined ? Number(item.stokAkhir) : Number(item.stock || 0);
           return {
-            inventoryId: item.id,
+            inventoryId: Number(item.id),
             inventoryNo: item.inventoryNo,
             barcode: item.barcode || item.inventoryNo,
             inventoryName: item.inventoryName,
-            qty: sysQty,
-            systemQty: sysQty,
-            price: item.price || 0,
+            qty: itemQty,
+            price: Number(item.price || 0),
             description: 'Stok Opname Catalog',
           };
         });
         setOpnameItems(allItems);
       }
 
-      // 2. Fetch Opname History
-      const histRes = await fetch('/api/inventory/opname');
-      const histJson = await histRes.json();
-      if (histJson.success && Array.isArray(histJson.data) && histJson.data.length > 0) {
-        setHistoryList(histJson.data);
-      }
-
-      // Generate fresh Tx No for New Opname session
       setNoTransaction(generateNewTxNo());
       setSelectedHistoryTx('');
+      setOpnameStatus('NEW');
+      setReversedReasonText('');
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       console.error('Failed to load opname data:', err);
       showToast('Gagal memuat data master opname', 'error');
     } finally {
-      setIsLoading(false);
+      if (seq === loadSeqRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [generateNewTxNo, fetchWarehouses]);
+  }, [generateNewTxNo, fetchWarehouses, refreshLookupsAndHistory]);
 
   useEffect(() => {
     loadInitialData();
@@ -212,6 +242,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
   // Handle New Opname Button
   const handleNewOpname = () => {
+    ++loadSeqRef.current;
+    setIsLoading(false);
     setNoTransaction(generateNewTxNo());
     setSelectedHistoryTx('');
     setOpnameStatus('NEW');
@@ -221,7 +253,6 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput('');
     setQtyInput(1);
     setDescInput('');
-    setIsBlindCount(false);
     showToast('Form Stok Opname Baru Siap Diisi', 'info');
   };
 
@@ -231,16 +262,19 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       showToast('Daftar barang inventori belum dimuat', 'info');
       return;
     }
-    const allItems = inventoryList.map((item) => {
-      const sysQty = item.stokAkhir !== undefined ? item.stokAkhir : (item.stock || 0);
+    if (isReadOnly) {
+      showToast('Transaksi yang sudah diposting/dibatalkan tidak dapat diubah. Klik "Baru" terlebih dahulu.', 'error');
+      return;
+    }
+    const allItems: OpnameEntry[] = inventoryList.map((item) => {
+      const itemQty = item.stokAkhir !== undefined ? Number(item.stokAkhir) : Number(item.stock || 0);
       return {
-        inventoryId: item.id,
+        inventoryId: Number(item.id),
         inventoryNo: item.inventoryNo,
         barcode: item.barcode || item.inventoryNo,
         inventoryName: item.inventoryName,
-        qty: sysQty,
-        systemQty: sysQty,
-        price: item.price || 0,
+        qty: itemQty,
+        price: Number(item.price || 0),
         description: 'Auto-Populate Opname Massal',
       };
     });
@@ -253,43 +287,64 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput(val);
     const found = inventoryList.find((item) => item.barcode === val || item.inventoryNo === val);
     if (found) {
-      setSelectedInvId(found.id);
+      setSelectedInvId(Number(found.id));
     }
   };
 
   // Handle Inventory Selection Change
   const handleInventorySelect = (idNum: number) => {
     setSelectedInvId(idNum);
-    const found = inventoryList.find((item) => item.id === idNum);
+    const found = inventoryList.find((item) => Number(item.id) === Number(idNum));
     if (found) {
       setBarcodeInput(found.barcode || found.inventoryNo);
     }
   };
 
   // Add Item to Pending Opname List
-  const handleAddItem = (e?: React.FormEvent) => {
+  const handleAddItem = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    let targetInvId = selectedInvId;
-
-    // Fallback: If no item selected via dropdown, lookup by scanned barcode or SKU
-    if (!targetInvId && barcodeInput.trim()) {
-      const q = barcodeInput.trim().toLowerCase();
-      const foundByScan = inventoryList.find(
-        (i) => (i.barcode && i.barcode.toLowerCase() === q) || (i.inventoryNo && i.inventoryNo.toLowerCase() === q)
-      );
-      if (foundByScan) {
-        targetInvId = foundByScan.id;
-      }
-    }
-
-    if (!targetInvId) {
-      alert('Pilih barang atau scan barcode yang valid terlebih dahulu!');
+    if (isReadOnly) {
+      showToast('Transaksi ini bersifat baca-saja. Klik "Baru" untuk membuat opname baru.', 'error');
       return;
     }
 
-    const found = inventoryList.find((i) => i.id === targetInvId);
-    if (!found) return;
+    let found: InventoryLookupItem | undefined = selectedInvId
+      ? inventoryList.find((i) => Number(i.id) === Number(selectedInvId))
+      : undefined;
+
+    // Fallback 1: If no item selected via dropdown, lookup in local list by scanned barcode or SKU
+    const rawScan = barcodeInput.trim();
+    if (!found && rawScan) {
+      const q = rawScan.toLowerCase();
+      found = inventoryList.find(
+        (i) => (i.barcode && i.barcode.toLowerCase() === q) || (i.inventoryNo && i.inventoryNo.toLowerCase() === q)
+      );
+    }
+
+    // Fallback 2: If item isn't in local list yet, query API directly by barcode/SKU
+    if (!found && rawScan) {
+      try {
+        const res = await fetch(`/api/inventory?q=${encodeURIComponent(rawScan)}&limit=20`);
+        const json = await res.json();
+        const remoteItems: InventoryLookupItem[] = json.data?.items || json.data || [];
+        const q = rawScan.toLowerCase();
+        const exactMatch = remoteItems.find(
+          (i) => (i.barcode && i.barcode.toLowerCase() === q) || (i.inventoryNo && i.inventoryNo.toLowerCase() === q)
+        ) || remoteItems[0];
+        if (exactMatch) {
+          found = { ...exactMatch, id: Number(exactMatch.id) };
+          setInventoryList((prev) => (prev.some((p) => Number(p.id) === Number(found!.id)) ? prev : [found!, ...prev]));
+        }
+      } catch (err) {
+        console.error('Fallback barcode lookup failed:', err);
+      }
+    }
+
+    if (!found) {
+      showToast('Pilih barang atau scan barcode yang valid terlebih dahulu!', 'error');
+      return;
+    }
 
     const qty = typeof qtyInput === 'number' ? qtyInput : 0;
     if (qty < 0) {
@@ -297,32 +352,41 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       return;
     }
 
-    const sysQty = found.stokAkhir !== undefined ? found.stokAkhir : (found.stock || 0);
+    const foundId = Number(found.id);
+    const noteText = descInput;
+    let wasExisting = false;
 
-    const existingIdx = opnameItems.findIndex((i) => i.inventoryId === found.id);
-    if (existingIdx >= 0) {
-      const updated = [...opnameItems];
-      const [itemToMove] = updated.splice(existingIdx, 1);
-      itemToMove.qty = qty;
-      itemToMove.description = descInput || 'Penyesuaian Opname';
-      // Move to top so user can see it immediately
-      updated.unshift(itemToMove);
-      setOpnameItems(updated);
-      showToast(`Qty "${found.inventoryName}" diperbarui menjadi ${qty}`, 'info');
-    } else {
-      setOpnameItems((prev) => [
-        {
-          inventoryId: found.id,
-          inventoryNo: found.inventoryNo,
-          barcode: found.barcode || found.inventoryNo,
-          inventoryName: found.inventoryName,
+    setOpnameItems((prev) => {
+      const existingIdx = prev.findIndex((i) => Number(i.inventoryId) === foundId);
+      if (existingIdx >= 0) {
+        wasExisting = true;
+        const updated = [...prev];
+        const [itemToMove] = updated.splice(existingIdx, 1);
+        const updatedItem = {
+          ...itemToMove,
           qty,
-          systemQty: sysQty,
-          price: found.price || 0,
-          description: descInput || 'Stok Fisik Opname',
+          description: noteText || 'Penyesuaian Opname',
+        };
+        updated.unshift(updatedItem);
+        return updated;
+      }
+      return [
+        {
+          inventoryId: foundId,
+          inventoryNo: found!.inventoryNo,
+          barcode: found!.barcode || found!.inventoryNo,
+          inventoryName: found!.inventoryName,
+          qty,
+          price: Number(found!.price || 0),
+          description: noteText || 'Stok Opname',
         },
         ...prev,
-      ]);
+      ];
+    });
+
+    if (wasExisting) {
+      showToast(`Qty "${found.inventoryName}" diperbarui menjadi ${qty}`, 'info');
+    } else {
       showToast(`"${found.inventoryName}" berhasil ditambahkan ke daftar`, 'success');
     }
 
@@ -331,7 +395,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setBarcodeInput('');
     setQtyInput(1);
     setDescInput('');
-    
+
     // Auto-focus back to barcode scanner for rapid entry muscle memory
     if (barcodeInputRef.current) {
       barcodeInputRef.current.focus();
@@ -345,20 +409,17 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       return;
     }
 
-    const headers = ['No', 'No. Barang / SKU', 'Barcode', 'Nama Barang', 'Stok Sistem', 'Qty Fisik', 'Selisih', 'Status', 'Catatan'];
+    const headers = ['No', 'No. Barang / SKU', 'Barcode', 'Nama Barang', 'Qty', 'Harga Satuan', 'Total Nilai', 'Catatan'];
     const rows = opnameItems.map((item, idx) => {
-      const sysQty = item.systemQty !== undefined ? item.systemQty : item.qty;
-      const diff = item.qty - sysQty;
-      const statusStr = diff === 0 ? 'Klop' : diff > 0 ? `Surplus (+${diff})` : `Defisit (${diff})`;
+      const totalItemValue = item.qty * (item.price || 0);
       return [
         idx + 1,
         `"${item.inventoryNo}"`,
         `"${item.barcode}"`,
         `"${item.inventoryName.replace(/"/g, '""')}"`,
-        sysQty,
         item.qty,
-        diff,
-        `"${statusStr}"`,
+        item.price || 0,
+        totalItemValue,
         `"${(item.description || '').replace(/"/g, '""')}"`,
       ].join(',');
     });
@@ -385,6 +446,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
   // Inline Qty Update Handler
   const handleInlineQtyChange = (invId: number, newQty: number) => {
+    if (isReadOnly) return;
     const validQty = Math.max(0, newQty);
     setOpnameItems((prev) =>
       prev.map((item) => (item.inventoryId === invId ? { ...item, qty: validQty } : item))
@@ -393,6 +455,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
   // Remove item from list
   const handleRemoveItem = (invId: number) => {
+    if (isReadOnly) return;
     setOpnameItems((prev) => prev.filter((i) => i.inventoryId !== invId));
   };
 
@@ -415,8 +478,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         const statusVal = payload?.status || json.header?.status || 'POSTED';
         setOpnameStatus(statusVal);
         setReversedReasonText(payload?.reversedReason || '');
-        if (payload?.whName || json.header?.whName) {
-          setWarehouse(payload?.whName || json.header?.whName);
+        if (payload?.warehouse || payload?.whName || json.header?.whName) {
+          setWarehouse(payload?.warehouse || payload?.whName || json.header?.whName);
         }
         setOpnameItems(
           detailItems.map((d: any) => ({
@@ -424,13 +487,14 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             inventoryNo: d.inventoryNo || d.inventory_no,
             barcode: d.barcode,
             inventoryName: d.inventoryName || d.inventory_name,
-            qty: d.qty !== undefined ? d.qty : (d.physical_qty || d.physicalQty || 0),
-            systemQty: d.systemQty !== undefined ? d.systemQty : (d.system_qty || 0),
-            price: d.price || 0,
-            description: d.description || '',
+            qty: d.qty !== undefined ? Number(d.qty) : Number(d.physical_qty ?? d.physicalQty ?? 0),
+            price: Number(d.price || 0),
+            description: d.description || d.notes || 'Stok Opname',
           }))
         );
         showToast(`Memuat Transaksi Opname ${txNo} (${statusVal})`, 'info');
+      } else {
+        showToast(extractErrorMessage(json.error, 'Gagal memuat detail transaksi opname'), 'error');
       }
     } catch (err) {
       console.error('Failed to load opname detail:', err);
@@ -446,37 +510,52 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       showToast('Tidak ada item opname yang dimasukkan!', 'error');
       return;
     }
+    if (isReadOnly) {
+      showToast('Transaksi yang sudah diposting/dibatalkan tidak dapat disimpan ulang.', 'error');
+      return;
+    }
     setIsReconciling(true);
   };
 
   // Submit Opname Transaction (action: 'draft' | 'post')
   const handleSubmitOpname = async (action: 'draft' | 'post' = 'post') => {
+    if (isSubmitting) return;
     setIsSubmitting(true);
+    const targetTxNo = noTransaction || generateNewTxNo();
     try {
       const res = await fetch('/api/inventory/opname', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          no_tx: noTransaction || generateNewTxNo(),
-          noTransaction: noTransaction || generateNewTxNo(),
-          opnameNo: noTransaction || generateNewTxNo(),
+          no_tx: targetTxNo,
+          noTransaction: targetTxNo,
+          opnameNo: targetTxNo,
           wh_name: warehouse,
           warehouse,
-          items: opnameItems,
+          items: opnameItems.map((it) => ({
+            inventoryId: it.inventoryId,
+            barcode: it.barcode,
+            qty: it.qty,
+            price: it.price,
+            description: it.description,
+            notes: it.description,
+          })),
           createdBy: auditorName,
-          remarks: `Stok Opname ${noTransaction} (Auditor: ${auditorName})`,
+          remarks: `Stok Opname ${targetTxNo} (Auditor: ${auditorName})`,
+          notes: `Stok Opname ${targetTxNo} (Auditor: ${auditorName})`,
           action,
         }),
       });
 
       const json = await res.json();
       if (json.success) {
-        showToast(json.message || (action === 'post' ? 'Stok Opname berhasil diposting!' : 'Draft Opname berhasil disimpan!'), 'success');
+        const successMsg = json.message || (action === 'post' ? 'Stok Opname berhasil diposting!' : 'Draft Opname berhasil disimpan!');
         setIsReconciling(false);
-        loadInitialData();
-        handleNewOpname();
+        await refreshLookupsAndHistory();
+        await handleSelectHistory(targetTxNo);
+        showToast(successMsg, 'success');
       } else {
-        showToast(json.error?.message || json.error || 'Gagal menyimpan stok opname', 'error');
+        showToast(extractErrorMessage(json.error, 'Gagal menyimpan stok opname'), 'error');
       }
     } catch (err) {
       console.error('Submit opname error:', err);
@@ -507,13 +586,14 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
       const json = await res.json();
       if (json.success) {
-        showToast(json.message || `Opname ${noTransaction} berhasil dibatalkan (reversed)!`, 'success');
+        const successMsg = json.message || `Opname ${noTransaction} berhasil dibatalkan (reversed)!`;
         setIsReverseModalOpen(false);
         setReverseReasonInput('');
-        loadInitialData();
-        handleSelectHistory(noTransaction);
+        await refreshLookupsAndHistory();
+        await handleSelectHistory(noTransaction);
+        showToast(successMsg, 'success');
       } else {
-        showToast(json.error?.message || json.error || 'Gagal membatalkan opname', 'error');
+        showToast(extractErrorMessage(json.error, 'Gagal membatalkan opname'), 'error');
       }
     } catch (err) {
       console.error('Reverse opname error:', err);
@@ -533,7 +613,6 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       noTransaction,
       warehouse,
       auditorName,
-      isBlindCount,
       opnameItems,
       savedAt: new Date().toISOString(),
     };
@@ -552,56 +631,50 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       setNoTransaction(draft.noTransaction);
       setWarehouse(draft.warehouse);
       setAuditorName(draft.auditorName || 'Super Administrator');
-      setIsBlindCount(draft.isBlindCount || false);
-      setOpnameItems(draft.opnameItems || []);
+      setOpnameStatus('DRAFT');
+      setSelectedHistoryTx('');
+      setReversedReasonText('');
+      setOpnameItems(
+        (draft.opnameItems || []).map((it: any) => ({
+          inventoryId: it.inventoryId,
+          inventoryNo: it.inventoryNo,
+          barcode: it.barcode,
+          inventoryName: it.inventoryName,
+          qty: Number(it.qty ?? 0),
+          price: Number(it.price ?? 0),
+          description: it.description || 'Draft Opname',
+        }))
+      );
       showToast(`Draft dimuat (Tersimpan pada: ${new Date(draft.savedAt).toLocaleString()})`, 'info');
     } catch (e) {
       showToast('Gagal memuat draft (Data corrupt)', 'error');
     }
   };
 
-  // Statistics Calculations
+  // Statistics Calculations (Single Unified Qty)
   const stats = useMemo(() => {
     const totalItems = opnameItems.length;
-    const totalPhysicalQty = opnameItems.reduce((acc, curr) => acc + curr.qty, 0);
-
-    let matchedCount = 0;
-    let varianceCount = 0;
+    let totalQty = 0;
     let totalValue = 0;
 
     opnameItems.forEach((item) => {
-      const sys = item.systemQty !== undefined ? item.systemQty : item.qty;
-      const diff = item.qty - sys;
-      if (diff === 0) {
-        matchedCount++;
-      } else {
-        varianceCount++;
-      }
+      totalQty += item.qty;
       totalValue += item.qty * (item.price || 0);
     });
 
-    return { totalItems, totalPhysicalQty, matchedCount, varianceCount, totalValue };
+    return { totalItems, totalQty, totalValue };
   }, [opnameItems]);
 
   // Filtered and Sorted Table Items
   const filteredTableItems = useMemo(() => {
     let filtered = opnameItems.filter((item) => {
-      // Search Query Filter
       const matchQuery =
         !tableSearch ||
         item.inventoryName.toLowerCase().includes(tableSearch.toLowerCase()) ||
         item.inventoryNo.toLowerCase().includes(tableSearch.toLowerCase()) ||
         item.barcode.toLowerCase().includes(tableSearch.toLowerCase());
 
-      if (!matchQuery) return false;
-
-      // Variance Tab Filter
-      const sys = item.systemQty !== undefined ? item.systemQty : item.qty;
-      const diff = item.qty - sys;
-
-      if (activeFilterTab === 'variance') return diff !== 0;
-      if (activeFilterTab === 'matched') return diff === 0;
-      return true;
+      return matchQuery;
     });
 
     if (sortField) {
@@ -615,17 +688,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         } else if (sortField === 'inventoryName') {
           aVal = a.inventoryName;
           bVal = b.inventoryName;
-        } else if (sortField === 'systemQty') {
-          aVal = a.systemQty !== undefined ? a.systemQty : a.qty;
-          bVal = b.systemQty !== undefined ? b.systemQty : b.qty;
         } else if (sortField === 'qty') {
           aVal = a.qty;
           bVal = b.qty;
-        } else if (sortField === 'diff') {
-          const aSys = a.systemQty !== undefined ? a.systemQty : a.qty;
-          const bSys = b.systemQty !== undefined ? b.systemQty : b.qty;
-          aVal = a.qty - aSys;
-          bVal = b.qty - bSys;
         } else if (sortField === 'description') {
           aVal = a.description;
           bVal = b.description;
@@ -643,7 +708,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
 
     return filtered;
-  }, [opnameItems, tableSearch, activeFilterTab, sortField, sortOrder]);
+  }, [opnameItems, tableSearch, sortField, sortOrder]);
 
   return (
     <div id="printable-opname-report" className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
@@ -708,7 +773,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         <div className="flex justify-between items-center pb-2">
           <div>
             <h1 className="text-xl font-black uppercase text-black">HARMONY KITCHEN ERP</h1>
-            <h2 className="text-sm font-bold text-slate-700">BERITA ACARA & LAPORAN STOK OPNAME FISIK GUDANG</h2>
+            <h2 className="text-sm font-bold text-slate-700">BERITA ACARA & LAPORAN STOK OPNAME GUDANG</h2>
           </div>
           <div className="text-right text-xs">
             <div><strong>No. Transaksi:</strong> {noTransaction}</div>
@@ -749,9 +814,25 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
               <PackageCheck className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-none">
-                Stok Opname
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-none">
+                  Stok Opname
+                </h1>
+                <span
+                  data-testid="opname-status-badge"
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    opnameStatus === 'POSTED'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : opnameStatus === 'REVERSED'
+                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      : opnameStatus === 'DRAFT'
+                      ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}
+                >
+                  {opnameStatus}
+                </span>
+              </div>
               <span className="text-[10px] font-bold text-amber-500 font-mono">
                 {noTransaction || 'OPN/NEW'}
               </span>
@@ -766,16 +847,21 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             <select
               value={selectedHistoryTx}
               onChange={(e) => handleSelectHistory(e.target.value)}
-              className={`p-1.5 rounded-lg border text-xs font-bold focus:outline-none cursor-pointer max-w-[220px] ${
+              className={`p-1.5 rounded-lg border text-xs font-bold focus:outline-none cursor-pointer max-w-[240px] ${
                 isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
               }`}
             >
               <option value="">-- Lihat Transaksi Opname --</option>
-              {historyList.map((h) => (
-                <option key={h.id} value={h.noTransaction}>
-                  {h.noTransaction} ({new Date(h.opnameDate).toLocaleDateString('id-ID')}) - {h.warehouse || (h as any).whName || (h as any).wh_name || 'Gudang'}
-                </option>
-              ))}
+              {historyList.map((h) => {
+                const txKey = h.noTransaction || h.opnameNo || h.opname_no || '';
+                const whLabel = h.warehouse || h.whName || h.wh_name || 'Gudang Utama';
+                const statusLabel = h.status ? ` [${h.status}]` : '';
+                return (
+                  <option key={h.id || txKey} value={txKey}>
+                    {txKey} ({new Date(h.opnameDate).toLocaleDateString('id-ID')}) - {whLabel}{statusLabel}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -807,25 +893,16 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
               value={auditorName}
               onChange={(e) => setAuditorName(e.target.value)}
               placeholder="Nama Auditor..."
-              className={`w-32 p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+              className={`w-36 p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
                 isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
               }`}
               title="Auditor Assignee"
             />
-            <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isBlindCount}
-                onChange={(e) => setIsBlindCount(e.target.checked)}
-                className="w-3.5 h-3.5 rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
-              />
-              <span className={isDark ? "text-slate-300" : "text-slate-700"}>Blind Count</span>
-            </label>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleNewOpname}
             className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
@@ -836,7 +913,12 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
           <button
             onClick={handlePopulateAll}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 active:scale-95 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
+            disabled={isReadOnly}
+            className={`px-3 py-1.5 rounded-xl border active:scale-95 font-black text-xs flex items-center gap-1.5 shadow-sm transition-all ${
+              isReadOnly
+                ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-500 border-slate-700'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border-slate-700 cursor-pointer'
+            }`}
             title="Muat seluruh barang master inventori ke tabel opname"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -883,9 +965,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
           <button
             onClick={handleSaveDraft}
-            disabled={opnameItems.length === 0}
+            disabled={opnameItems.length === 0 || isReadOnly}
             className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
-              opnameItems.length === 0
+              opnameItems.length === 0 || isReadOnly
                 ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
                 : isDark ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border-indigo-500/30' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200'
             }`}
@@ -906,13 +988,26 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             <span>Load</span>
           </button>
 
+          {opnameStatus === 'POSTED' && (
+            <button
+              type="button"
+              onClick={() => setIsReverseModalOpen(true)}
+              disabled={isSubmitting}
+              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+              title="Batalkan (Reverse) transaksi opname yang sudah diposting"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>Reverse Opname</span>
+            </button>
+          )}
+
           <button
             onClick={handleOpenReconciliation}
-            disabled={isSubmitting || opnameItems.length === 0}
-            className={`px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer ${
-              opnameItems.length === 0
+            disabled={isSubmitting || opnameItems.length === 0 || isReadOnly}
+            className={`px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${
+              opnameItems.length === 0 || isReadOnly
                 ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-50'
-                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer'
             }`}
           >
             <Save className="w-3.5 h-3.5" />
@@ -921,7 +1016,18 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
       </div>
 
-      {/* 📊 SUMMARY METRICS CARDS (1:1 with SyncStock) */}
+      {/* Reversed Banner if transaction is REVERSED */}
+      {opnameStatus === 'REVERSED' && (
+        <div className="px-5 py-2 bg-rose-500/15 border-b border-rose-500/30 flex items-center justify-between text-xs font-bold text-rose-400 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Transaksi Opname ini telah dibatalkan (REVERSED).{reversedReasonText ? ` Alasan: ${reversedReasonText}` : ''}</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-black">Read-Only</span>
+        </div>
+      )}
+
+      {/* 📊 SUMMARY METRICS CARDS (Unified Single Qty) */}
       <div className={`px-5 py-3.5 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm shrink-0 ${
         isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
       }`}>
@@ -943,12 +1049,12 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-            <CheckCircle className="w-5 h-5" />
+            <Layers className="w-5 h-5" />
           </div>
           <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Barang Klop (Sesuai)</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Qty</div>
             <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              {stats.matchedCount} Item
+              {stats.totalQty} Unit
             </div>
           </div>
         </div>
@@ -956,13 +1062,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}>
-          <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400">
-            <AlertTriangle className="w-5 h-5" />
+          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
+            <CheckCircle className="w-5 h-5" />
           </div>
           <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Barang Ada Selisih</div>
-            <div className={`text-lg font-black ${isDark ? 'text-rose-300' : 'text-rose-950'}`}>
-              {stats.varianceCount} Item
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Status Transaksi</div>
+            <div className={`text-lg font-black ${isDark ? 'text-indigo-300' : 'text-indigo-950'}`}>
+              {opnameStatus}
             </div>
           </div>
         </div>
@@ -974,7 +1080,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             <DollarSign className="w-5 h-5" />
           </div>
           <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Nilai Fisik</div>
+            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Nilai Opname</div>
             <div className={`text-sm font-black font-mono ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
               Rp {stats.totalValue.toLocaleString('id-ID')}
             </div>
@@ -982,7 +1088,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
       </div>
 
-      {/* 📥 INLINE FAST SCAN ENTRY ROW (Height: 48px) */}
+      {/* 📥 INLINE FAST SCAN ENTRY ROW */}
       <div
         className={`px-5 py-2.5 border-b flex flex-wrap items-center gap-3 shrink-0 ${
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-amber-50/50 border-amber-200/60'
@@ -999,6 +1105,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             ref={barcodeInputRef}
             type="text"
             value={barcodeInput}
+            disabled={isReadOnly}
             onChange={(e) => handleBarcodeChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -1017,13 +1124,14 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         <div className="flex-1 min-w-[220px]">
           <select
             value={selectedInvId}
+            disabled={isReadOnly}
             onChange={(e) => handleInventorySelect(Number(e.target.value))}
             className={`w-full px-3 py-1.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
               isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
             }`}
           >
             <option value="">-- Pilih Barang Catalog --</option>
-            {inventoryList.map((inv) => (
+            {inventoryList.slice(0, 300).map((inv) => (
               <option key={inv.id} value={inv.id}>
                 {inv.inventoryName} ({inv.inventoryNo})
               </option>
@@ -1031,12 +1139,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           </select>
         </div>
 
-        {/* Qty Counted */}
+        {/* Qty */}
         <div className="w-24 flex items-center gap-1">
           <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty:</span>
           <input
             type="number"
             min="0"
+            disabled={isReadOnly}
             value={qtyInput}
             onChange={(e) => setQtyInput(e.target.value === '' ? '' : parseInt(e.target.value) || 0)}
             className={`w-full py-1 text-center font-black text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
@@ -1049,6 +1158,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         <div className="w-44">
           <input
             type="text"
+            disabled={isReadOnly}
             value={descInput}
             onChange={(e) => setDescInput(e.target.value)}
             placeholder="Catatan Opname..."
@@ -1061,150 +1171,109 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         <button
           type="button"
           onClick={handleAddItem}
-          className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs cursor-pointer shadow transition-all shrink-0 flex items-center gap-1"
+          disabled={isReadOnly}
+          className={`px-4 py-1.5 rounded-xl font-black text-xs shadow transition-all shrink-0 flex items-center gap-1 ${
+            isReadOnly
+              ? 'bg-slate-700 text-slate-400 opacity-50 cursor-not-allowed'
+              : 'bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 cursor-pointer'
+          }`}
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Tambah</span>
         </button>
       </div>
 
-      {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT (1:1 with SyncStock) */}
+      {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
-        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+        <div className={`flex-1 min-h-0 flex flex-col rounded-2xl border-2 shadow-lg overflow-hidden ${
           isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
-          {/* Table Toolbar (Tabs & Search) */}
-          <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 sticky top-0 z-30 ${
+          {/* Table Toolbar (Item Count & Live Search) */}
+          <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
           }`}>
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setActiveFilterTab('all')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeFilterTab === 'all'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Semua ({opnameItems.length})
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-lg text-xs font-black bg-amber-500 text-slate-950 shadow-sm">
+                Semua ({opnameItems.length})
+              </span>
+              {tableSearch && (
+                <span className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Menampilkan {filteredTableItems.length} dari {opnameItems.length} barang
+                </span>
+              )}
+            </div>
 
-            <button
-              onClick={() => setActiveFilterTab('variance')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                activeFilterTab === 'variance'
-                  ? 'bg-rose-600 text-white shadow-sm'
-                  : isDark ? 'bg-slate-800 text-rose-400 hover:bg-slate-700' : 'bg-white text-rose-600 hover:bg-slate-200'
-              }`}
-            >
-              <AlertTriangle className="w-3 h-3" />
-              <span>Selisih ({stats.varianceCount})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveFilterTab('matched')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                activeFilterTab === 'matched'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : isDark ? 'bg-slate-800 text-emerald-400 hover:bg-slate-700' : 'bg-white text-emerald-600 hover:bg-slate-200'
-              }`}
-            >
-              <Check className="w-3 h-3" />
-              <span>Klop ({stats.matchedCount})</span>
-            </button>
+            {/* Table Live Search */}
+            <div className="relative min-w-[220px]">
+              <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
+              <input
+                type="text"
+                placeholder="Filter tabel opname..."
+                value={tableSearch}
+                onChange={(e) => setTableSearch(e.target.value)}
+                className={`w-full pl-8 pr-3 py-1 rounded-lg border text-xs font-semibold focus:outline-none ${
+                  isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+                }`}
+              />
+            </div>
           </div>
 
-          {/* Table Live Search */}
-          <div className="relative min-w-[220px]">
-            <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-            <input
-              type="text"
-              placeholder="Filter tabel opname..."
-              value={tableSearch}
-              onChange={(e) => setTableSearch(e.target.value)}
-              className={`w-full pl-8 pr-3 py-1 rounded-lg border text-xs font-semibold focus:outline-none ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-              }`}
-            />
-          </div>
-        </div>
-
-        {/* FULL-HEIGHT AUTO-EXPANDING TABLE */}
-        <table className="w-full text-left border-separate border-spacing-0">
-            <thead className="sticky top-0 z-20">
-              <tr
-                className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
-              >
-                <th className="py-2.5 px-4 w-12 text-center">No.</th>
-                <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                  <div className="flex items-center gap-1">
-                    <span>Kode Barang</span>
-                    {sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                  </div>
-                </th>
-                <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                  <div className="flex items-center gap-1">
-                    <span>Nama Barang</span>
-                    {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                  </div>
-                </th>
-                {!isBlindCount && (
-                  <th onClick={() => handleSort('systemQty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Qty Sistem</span>
-                      {sortField === 'systemQty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+          {/* SCROLLABLE TABLE AREA */}
+          <div className="flex-1 min-h-0 overflow-auto relative">
+            <table className="w-full text-left border-separate border-spacing-0">
+              <thead className="sticky top-0 z-20">
+                <tr
+                  className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
+                >
+                  <th className="py-2.5 px-4 w-12 text-center">No.</th>
+                  <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Kode Barang</span>
+                      {sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                )}
-                <th onClick={() => handleSort('qty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors min-w-[150px]">
-                  <div className="flex items-center justify-center gap-1">
-                    <span>Qty Fisik</span>
-                    {sortField === 'qty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                  </div>
-                </th>
-                {!isBlindCount && (
-                  <th onClick={() => handleSort('diff')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Selisih</span>
-                      {sortField === 'diff' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                  <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Nama Barang</span>
+                      {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                )}
-                <th onClick={() => handleSort('description')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                  <div className="flex items-center gap-1">
-                    <span>Keterangan</span>
-                    {sortField === 'description' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                  </div>
-                </th>
-                <th className="py-2.5 px-4 text-center w-16">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/30 text-xs">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={8} className="py-24">
-                    <div className="flex flex-col items-center justify-center animate-pulse">
-                      <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                      <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat riwayat Stok Opname dari ERP Database</p>
+                  <th onClick={() => handleSort('qty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors min-w-[150px]">
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Qty</span>
+                      {sortField === 'qty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
-                  </td>
+                  </th>
+                  <th onClick={() => handleSort('description')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
+                    <div className="flex items-center gap-1">
+                      <span>Keterangan</span>
+                      {sortField === 'description' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
+                    </div>
+                  </th>
+                  <th className="py-2.5 px-4 text-center w-16">Aksi</th>
                 </tr>
-              ) : filteredTableItems.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className={`py-20 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                    {opnameItems.length === 0
-                      ? 'Belum ada item opname. Gunakan form Quick Scan di atas atau klik "Populasi Semua".'
-                      : 'Tidak ada item yang sesuai dengan filter.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredTableItems.map((item, idx) => {
-                  const sysQty = item.systemQty !== undefined ? item.systemQty : item.qty;
-                  const diff = item.qty - sysQty;
-
-                  return (
+              </thead>
+              <tbody className="divide-y divide-slate-800/30 text-xs">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="py-24">
+                      <div className="flex flex-col items-center justify-center animate-pulse">
+                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
+                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
+                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat riwayat Stok Opname dari ERP Database</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredTableItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className={`py-20 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                      {opnameItems.length === 0
+                        ? 'Belum ada item opname. Gunakan form Quick Scan di atas atau klik "Load Data".'
+                        : 'Tidak ada item yang sesuai dengan filter.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTableItems.slice(0, 100).map((item, idx) => (
                     <tr
                       key={item.inventoryId}
                       className={"transition-colors " + (isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800')}
@@ -1218,21 +1287,17 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         {item.inventoryName}
                       </td>
 
-                      {/* System Stock */}
-                      {!isBlindCount && (
-                        <td className={`py-2.5 px-4 text-center font-mono font-bold text-sm ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                          {sysQty}
-                        </td>
-                      )}
-
-                      {/* Physical Stock - INLINE STEPPER EDIT */}
+                      {/* Unified Qty - INLINE STEPPER EDIT */}
                       <td className="py-2.5 px-4 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
+                            disabled={isReadOnly}
                             onClick={() => handleInlineQtyChange(item.inventoryId, item.qty - 1)}
-                            className={`p-1 rounded-lg border transition-all active:scale-90 cursor-pointer ${
-                              isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                            className={`p-1 rounded-lg border transition-all active:scale-90 ${
+                              isReadOnly
+                                ? 'opacity-40 cursor-not-allowed border-slate-700 text-slate-500'
+                                : isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 cursor-pointer' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700 cursor-pointer'
                             }`}
                             title="Kurangi 1"
                           >
@@ -1241,6 +1306,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                           <input
                             type="number"
                             min="0"
+                            disabled={isReadOnly}
                             value={item.qty}
                             onChange={(e) => handleInlineQtyChange(item.inventoryId, parseInt(e.target.value) || 0)}
                             className={`w-16 py-1 text-center font-black text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
@@ -1249,9 +1315,12 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                           />
                           <button
                             type="button"
+                            disabled={isReadOnly}
                             onClick={() => handleInlineQtyChange(item.inventoryId, item.qty + 1)}
-                            className={`p-1 rounded-lg border transition-all active:scale-90 cursor-pointer ${
-                              isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                            className={`p-1 rounded-lg border transition-all active:scale-90 ${
+                              isReadOnly
+                                ? 'opacity-40 cursor-not-allowed border-slate-700 text-slate-500'
+                                : isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 cursor-pointer' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700 cursor-pointer'
                             }`}
                             title="Tambah 1"
                           >
@@ -1260,191 +1329,239 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         </div>
                       </td>
 
-                      {/* Variance Status Badge */}
-                      {!isBlindCount && (
-                        <td className="py-2.5 px-4 text-center">
-                          {diff === 0 ? (
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase tracking-wider">
-                              <CheckCircle className="w-3 h-3" /> Klop
-                            </div>
-                          ) : diff > 0 ? (
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-500 text-[10px] font-black uppercase tracking-wider">
-                              <ArrowUpRight className="w-3 h-3" /> Surplus (+{diff})
-                            </div>
-                          ) : (
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[10px] font-black uppercase tracking-wider">
-                              <ArrowDownRight className="w-3 h-3" /> Defisit ({diff})
-                            </div>
-                          )}
-                        </td>
-                      )}
-
                       <td className={`py-2.5 px-4 italic ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.description}</td>
 
                       <td className="py-2.5 px-4 text-center">
                         <button
                           onClick={() => handleRemoveItem(item.inventoryId)}
-                          className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                          disabled={isReadOnly}
+                          className={`p-1.5 rounded-lg text-rose-400 transition-colors ${
+                            isReadOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-rose-500/20 cursor-pointer'
+                          }`}
                           title="Hapus Item"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-
-        {/* COMPACT WORKBENCH FOOTER STATS BAR */}
-        <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-3 shrink-0 ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
-        }`}>
-          <div className="flex items-center gap-4 text-xs font-bold">
-            <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Barang: <strong className="text-slate-900 dark:text-white">{stats.totalItems} SKU</strong>
-            </span>
-            <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Qty Fisik: <strong className="text-amber-500">{stats.totalPhysicalQty} Unit</strong>
-            </span>
-            <span className="text-emerald-500">
-              Klop: <strong>{stats.matchedCount}</strong>
-            </span>
-            <span className="text-rose-500">
-              Selisih: <strong>{stats.varianceCount}</strong>
-            </span>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-            Total Nilai Fisik: <strong className="text-emerald-400 font-mono text-sm">Rp {stats.totalValue.toLocaleString('id-ID')}</strong>
-          </div>
-        </div>
-      </div>
-
-      {/* 🖨️ OFFICIAL SIGNATURE BOX (VISIBLE ONLY ON PRINT) */}
-      <div className="print-signatures grid grid-cols-3 gap-6 text-center text-xs pt-8">
-        <div>
-          <div className="font-bold mb-12">Petugas Gudang:</div>
-          <div className="border-b border-black w-36 mx-auto mb-1"></div>
-          <div className="text-[10px] text-slate-500">Staf Opname Fisik</div>
-        </div>
-        <div>
-          <div className="font-bold mb-12">Diperiksa Oleh:</div>
-          <div className="border-b border-black w-36 mx-auto mb-1"></div>
-          <div className="text-[10px] text-slate-500">Supervisor Gudang</div>
-        </div>
-        <div>
-          <div className="font-bold mb-12">Disetujui Oleh:</div>
-          <div className="border-b border-black w-36 mx-auto mb-1"></div>
-          <div className="text-[10px] text-slate-500">Kepala Logistik & Gudang</div>
-        </div>
-      </div>
-      {/* 🔮 RECONCILIATION PREVIEW MODAL */}
-      {isReconciling && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className={`w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${
-            isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+          {/* COMPACT WORKBENCH FOOTER STATS BAR */}
+          <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-3 shrink-0 ${
+            isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
           }`}>
-            {/* Modal Header */}
-            <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500">
-                  <AlertTriangle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h2 className={`text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                    Reconciliation Preview
-                  </h2>
-                  <p className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Konfirmasi Penyesuaian Stok Gudang
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsReconciling(false)}
-                className={`p-2 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
+            <div className="flex items-center gap-4 text-xs font-bold">
+              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
+                Total Barang: <strong className="text-slate-900 dark:text-white">{stats.totalItems} SKU</strong>
+              </span>
+              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
+                Total Qty: <strong className="text-amber-500">{stats.totalQty} Unit</strong>
+              </span>
+              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
+                Status: <strong className="text-indigo-400">{opnameStatus}</strong>
+              </span>
             </div>
 
-            {/* Modal Body: Variance List */}
-            <div className={`flex-1 overflow-auto p-6 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
-              <div className={`p-4 rounded-2xl mb-6 flex items-center justify-between border ${isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
-                <div>
-                  <h3 className={`font-bold ${isDark ? 'text-white' : 'text-amber-900'}`}>Peringatan Opname!</h3>
-                  <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-amber-700'}`}>
-                    Tindakan ini akan <strong>menimpa data stok sistem secara permanen</strong> dengan qty fisik yang Anda masukkan. 
-                    Barang dengan <strong>selisih (variance)</strong> akan disesuaikan secara otomatis.
-                  </p>
-                </div>
-                <div className="text-right">
-                  <div className={`text-2xl font-black ${stats.varianceCount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                    {stats.varianceCount} Selisih
+            <div className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+              Total Nilai Opname: <strong className="text-emerald-400 font-mono text-sm">Rp {stats.totalValue.toLocaleString('id-ID')}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* 🖨️ OFFICIAL SIGNATURE BOX (VISIBLE ONLY ON PRINT) */}
+        <div className="print-signatures grid grid-cols-3 gap-6 text-center text-xs pt-8">
+          <div>
+            <div className="font-bold mb-12">Petugas Gudang:</div>
+            <div className="border-b border-black w-36 mx-auto mb-1"></div>
+            <div className="text-[10px] text-slate-500">Staf Opname Gudang</div>
+          </div>
+          <div>
+            <div className="font-bold mb-12">Diperiksa Oleh:</div>
+            <div className="border-b border-black w-36 mx-auto mb-1"></div>
+            <div className="text-[10px] text-slate-500">Supervisor Gudang</div>
+          </div>
+          <div>
+            <div className="font-bold mb-12">Disetujui Oleh:</div>
+            <div className="border-b border-black w-36 mx-auto mb-1"></div>
+            <div className="text-[10px] text-slate-500">Kepala Logistik & Gudang</div>
+          </div>
+        </div>
+
+        {/* 🔮 OPNAME CONFIRMATION PREVIEW MODAL */}
+        {isReconciling && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className={`w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${
+              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+            }`}>
+              {/* Modal Header */}
+              <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500">
+                    <AlertTriangle className="w-6 h-6" />
                   </div>
-                  <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
-                    Dari Total {stats.totalItems} Item
+                  <div>
+                    <h2 className={`text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      Konfirmasi Simpan Stok Opname
+                    </h2>
+                    <p className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Pratinjau Penyesuaian Qty Gudang ({noTransaction})
+                    </p>
                   </div>
                 </div>
+                <button
+                  onClick={() => setIsReconciling(false)}
+                  className={`p-2 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
               </div>
 
-              {stats.varianceCount > 0 && (
+              {/* Modal Body: Summary + Item List */}
+              <div className={`flex-1 overflow-auto p-6 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+                <div className={`p-4 rounded-2xl mb-6 flex items-center justify-between border ${isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
+                  <div>
+                    <h3 className={`font-bold ${isDark ? 'text-white' : 'text-amber-900'}`}>Konfirmasi Stok Opname</h3>
+                    <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-amber-700'}`}>
+                      Posting opname akan memperbarui stok akhir gudang dengan <strong>Qty</strong> yang tertera di bawah ini.
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 ml-4">
+                    <div className="text-xl font-black text-amber-500">
+                      {stats.totalQty} Unit
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Dari Total {stats.totalItems} Barang
+                    </div>
+                  </div>
+                </div>
+
                 <table className="w-full text-left border-separate border-spacing-0 border rounded-xl overflow-hidden">
                   <thead className={isDark ? 'bg-slate-800' : 'bg-slate-200'}>
                     <tr className="text-[11px] font-black uppercase text-slate-500">
+                      <th className="px-4 py-2">Kode Barang</th>
                       <th className="px-4 py-2">Nama Barang</th>
-                      <th className="px-4 py-2 text-center">Stok Sistem</th>
-                      <th className="px-4 py-2 text-center">Stok Fisik</th>
-                      <th className="px-4 py-2 text-center">Selisih</th>
+                      <th className="px-4 py-2 text-center">Qty</th>
+                      <th className="px-4 py-2 text-right">Harga Satuan</th>
+                      <th className="px-4 py-2 text-right">Total Nilai</th>
                     </tr>
                   </thead>
                   <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                    {opnameItems.filter((i) => i.qty - (i.systemQty ?? i.qty) !== 0).map((item) => {
-                      const sys = item.systemQty ?? item.qty;
-                      const diff = item.qty - sys;
-                      return (
-                        <tr key={item.inventoryId} className={isDark ? 'bg-slate-900' : 'bg-white'}>
-                          <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>
-                          <td className="px-4 py-2 text-center font-mono">{sys}</td>
-                          <td className="px-4 py-2 text-center font-mono">{item.qty}</td>
-                          <td className="px-4 py-2 text-center">
-                            {diff > 0 ? (
-                              <span className="text-indigo-400 font-bold">+{diff} Surplus</span>
-                            ) : (
-                              <span className="text-rose-500 font-bold">{diff} Defisit</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {opnameItems.slice(0, 100).map((item) => (
+                      <tr key={item.inventoryId} className={isDark ? 'bg-slate-900' : 'bg-white'}>
+                        <td className="px-4 py-2 font-mono font-bold text-slate-400">{item.inventoryNo}</td>
+                        <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>
+                        <td className="px-4 py-2 text-center font-mono font-black">{item.qty}</td>
+                        <td className="px-4 py-2 text-right font-mono">Rp {(item.price || 0).toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-2 text-right font-mono font-bold text-emerald-400">
+                          Rp {(item.qty * (item.price || 0)).toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
-              )}
-            </div>
+              </div>
 
-            {/* Modal Footer */}
-            <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-              <button
-                onClick={() => setIsReconciling(false)}
-                className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
-              >
-                Batal & Cek Ulang
-              </button>
-              <button
-                onClick={() => handleSubmitOpname('post')}
-                disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-amber-500/20"
-              >
-                <Save className="w-4 h-4" />
-                {isSubmitting ? 'Memproses...' : 'Confirm Post Adjustment'}
-              </button>
+              {/* Modal Footer */}
+              <div className={`px-6 py-4 border-t flex justify-between items-center gap-3 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <button
+                  onClick={() => setIsReconciling(false)}
+                  className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
+                >
+                  Batal & Cek Ulang
+                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleSubmitOpname('draft')}
+                    disabled={isSubmitting}
+                    className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer border ${
+                      isDark ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border-indigo-500/40' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                    }`}
+                  >
+                    Simpan Draft DB
+                  </button>
+                  <button
+                    onClick={() => handleSubmitOpname('post')}
+                    disabled={isSubmitting}
+                    className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-amber-500/20"
+                  >
+                    <Save className="w-4 h-4" />
+                    {isSubmitting ? 'Memproses...' : 'Confirm Post Adjustment'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
+        {/* 🔄 REVERSE OPNAME MODAL */}
+        {isReverseModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className={`w-full max-w-md flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${
+              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+            }`}>
+              <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-500">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className={`text-base font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      Batalkan (Reverse) Opname
+                    </h2>
+                    <p className="text-[11px] font-mono text-rose-400">{noTransaction}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsReverseModalOpen(false)}
+                  className={`p-1.5 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Pembatalan opname akan membuat jurnal pergerakan kompensasi dan mengembalikan saldo stok sebelum transaksi ini diposting.
+                </p>
+                <div>
+                  <label className={`block text-xs font-bold mb-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Alasan Pembatalan (Wajib)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={reverseReasonInput}
+                    onChange={(e) => setReverseReasonInput(e.target.value)}
+                    placeholder="Masukkan alasan pembatalan stok opname..."
+                    className={`w-full p-3 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500 ${
+                      isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <button
+                  onClick={() => setIsReverseModalOpen(false)}
+                  className={`px-4 py-2 rounded-xl font-bold text-xs cursor-pointer ${isDark ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-800'}`}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleReverseOpname}
+                  disabled={isSubmitting}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer transition-all shadow-lg shadow-rose-600/20"
+                >
+                  {isSubmitting ? 'Memproses...' : 'Konfirmasi Reverse'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
 }

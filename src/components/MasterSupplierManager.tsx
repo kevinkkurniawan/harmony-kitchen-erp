@@ -143,8 +143,13 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   // Open Create Modal
   const handleOpenCreateModal = useCallback(() => {
     setModalMode('create');
+    const maxCodeNum = suppliers.reduce((max, s) => {
+      const match = (s.supplierNo || '').match(/\d+/);
+      const num = match ? parseInt(match[0], 10) : 0;
+      return Math.max(max, isNaN(num) ? 0 : num, Number(s.id) || 0);
+    }, 0);
     setFormData({
-      supplierNo: `S${(suppliers.length + 1).toString().padStart(5, '0')}`,
+      supplierNo: `S${(maxCodeNum + 1).toString().padStart(5, '0')}`,
       supplierName: '',
       address: '',
       city: '',
@@ -159,15 +164,17 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
       isActive: true,
     });
     setIsModalOpen(true);
-  }, [suppliers.length]);
+  }, [suppliers]);
 
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
       if (e.key === 'Escape') {
         setIsModalOpen(false);
         setContextMenu(null);
-      } else if (e.key === '/') {
+      } else if (e.key === '/' && !isInputFocused) {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
@@ -182,6 +189,9 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
   // Handle Save Form (Create/Edit)
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.supplierNo?.trim() || !formData.supplierName?.trim()) {
+      return addToast('Kode Supplier dan Nama Supplier wajib diisi!', 'warning');
+    }
     try {
       const isEdit = modalMode === 'edit' && selectedSupplier;
       const url = isEdit ? `/api/suppliers/${selectedSupplier.id}` : `/api/suppliers`;
@@ -554,7 +564,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     </td>
                     <td className="py-3 px-4 font-bold">
                       {sup.contactPerson && sup.contactPerson !== '-' ? (
-                        <div className="flex items-center gap-1 text-slate-200">
+                        <div className={`flex items-center gap-1 ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
                           <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                           <span>{sup.contactPerson}</span>
                         </div>
