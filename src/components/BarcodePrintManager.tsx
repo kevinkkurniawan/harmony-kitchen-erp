@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
+import { searchInventory, lookupInventoryByScan } from '@/lib/inventory-lookup';
 
 interface BarcodeQueueItem {
   product: ERPProduct;
@@ -61,9 +62,10 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     }, 3500);
   }, []);
 
-  // Fetch search products
+  // Fetch search products (request-id guard drops out-of-order responses)
+  const searchReqIdRef = useRef(0);
   useEffect(() => {
-    let isMounted = true;
+    const reqId = ++searchReqIdRef.current;
     if (!debouncedSearch.trim()) {
       setSearchResults([]);
       setIsSearching(false);
@@ -71,21 +73,14 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     }
     async function search() {
       setIsSearching(true);
-      try {
-        const res = await fetch(`/api/inventory?q=${encodeURIComponent(debouncedSearch)}&limit=20&status=active`);
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setSearchResults(json.data);
-        }
-      } catch (err) {
-        console.error('Error searching products:', err);
-      } finally {
-        if (isMounted) setIsSearching(false);
-      }
+      const { items, error } = await searchInventory(debouncedSearch, 20);
+      if (reqId !== searchReqIdRef.current) return;
+      setSearchResults(items);
+      setIsSearching(false);
+      if (error) addToast(error, 'error');
     }
     search();
-    return () => { isMounted = false; };
-  }, [debouncedSearch]);
+  }, [debouncedSearch, addToast]);
 
   const handleAddToQueue = (product: ERPProduct, qty = 1) => {
     setQueue((prev) => {
@@ -100,17 +95,26 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     addToast(`"${product.inventoryName}" ditambahkan ke antrian cetak (${qty} pcs)`, 'info');
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchResults.length > 0) {
+  const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      const q = searchQuery.trim().toLowerCase();
-      const exactMatch = searchResults.find(
-        (p) => (p.barcode || '').toLowerCase() === q || (p.inventoryNo || '').toLowerCase() === q
-      );
-      const chosen = exactMatch || searchResults[0];
-      handleAddToQueue(chosen, 1);
+      const raw = searchQuery.trim();
+      if (!raw) return;
+      // Look up the current input directly: scanners press Enter before the debounced search returns
+      // Clear right away so a fast follow-up scan types into an empty input instead of appending
+      searchReqIdRef.current++;
       setSearchQuery('');
       setSearchResults([]);
+      setIsSearching(true);
+      const { item, error } = await lookupInventoryByScan(raw);
+      setIsSearching(false);
+      if (error) {
+        addToast(error, 'error');
+      } else if (item) {
+        handleAddToQueue(item, 1);
+      } else {
+        addToast(`Barang tidak ditemukan: ${raw}`, 'warning');
+      }
     } else if (e.key === 'Escape') {
       setSearchResults([]);
     }

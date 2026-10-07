@@ -149,11 +149,15 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
       const q = (url.searchParams.get('q') || '').toLowerCase();
       const status = url.searchParams.get('status') || 'active';
       const minusStock = url.searchParams.get('minusStock') === 'true';
+      const fName = (url.searchParams.get('f_inventoryname') || '').toLowerCase();
+      const fSku = (url.searchParams.get('f_inventoryno') || '').toLowerCase();
 
       let filtered = [...MOCK_PRODUCTS];
       if (status === 'active') filtered = filtered.filter((p) => p.isActive);
       if (status === 'inactive') filtered = filtered.filter((p) => !p.isActive);
       if (minusStock) filtered = filtered.filter((p) => p.stokAkhir < 0);
+      if (fName) filtered = filtered.filter((p) => p.inventoryName.toLowerCase().includes(fName));
+      if (fSku) filtered = filtered.filter((p) => p.inventoryNo.toLowerCase().includes(fSku));
       if (q) {
         filtered = filtered.filter(
           (p) =>
@@ -196,8 +200,6 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     await expect(headers.filter({ hasText: 'Inventory No' })).toBeVisible();
     await expect(headers.filter({ hasText: 'Barcode' })).toBeVisible();
     await expect(headers.filter({ hasText: 'Nama Barang' })).toBeVisible();
-    await expect(headers.filter({ hasText: 'Brand' })).toBeVisible();
-    await expect(headers.filter({ hasText: 'Product' })).toBeVisible();
     await expect(headers.filter({ hasText: 'UoM' })).toBeVisible();
     await expect(headers.filter({ hasText: 'Price (Retail)' })).toBeVisible();
     await expect(headers.filter({ hasText: 'HPP (Modal)' })).toBeVisible();
@@ -212,10 +214,12 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     // Obsolete fields MUST NOT be present
     await expect(headers.filter({ hasText: 'Category' })).toHaveCount(0);
     await expect(headers.filter({ hasText: 'Min/Max' })).toHaveCount(0);
+    await expect(headers.filter({ hasText: 'Brand' })).toHaveCount(0);
+    await expect(headers.filter({ hasText: 'Product' })).toHaveCount(0);
     await expect(page.locator('button', { hasText: 'List Barcode' })).toHaveCount(0);
   });
 
-  test('2. Search input, "/" shortcut, Status/Brand/Minus filters & Sorting', async ({ page }) => {
+  test('2. Search input, "/" shortcut, Status/Column/Minus filters & Sorting', async ({ page }) => {
     const searchInput = page.locator('input[placeholder*="Cari Barang"]');
 
     // Pressing "/" outside input focuses the search input
@@ -242,12 +246,14 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     await resetBtn.click();
     await expect(page.locator('tbody tr')).toHaveCount(2);
 
-    // Filter by Brand dropdown
-    const brandSelect = page.locator('select').filter({ hasText: 'Semua Brand' });
-    await brandSelect.selectOption('1'); // Maspion
+    // Per-column filter row (sent to the API as f_* params)
+    await expect(page.locator('select').filter({ hasText: 'Semua Brand' })).toHaveCount(0);
+    const nameFilter = page.locator('input[aria-label="Filter inventoryname"]');
+    await nameFilter.fill('maspion');
     await expect(page.locator('tbody tr')).toHaveCount(1);
     await expect(page.locator('tbody tr').first()).toContainText('Panci Maspion 24cm');
-    await brandSelect.selectOption('all');
+    await page.locator('button[title="Reset Filter"]').click();
+    await expect(nameFilter).toHaveValue('');
     await expect(page.locator('tbody tr')).toHaveCount(2);
 
     // Column sorting: Price (Retail) asc -> desc
@@ -303,9 +309,12 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
 
     // Verify single-workspace responsive form sections (no tabs)
     await expect(page.locator('h3', { hasText: 'Tambah Barang Baru' })).toBeVisible();
-    await expect(page.locator('text=1. Informasi Dasar Produk')).toBeVisible();
-    await expect(page.locator('text=2. Harga Jual Retail & Skema Tier Grosir')).toBeVisible();
-    await expect(page.locator('text=3. Harga Modal (HPP) & Pembelian')).toBeVisible();
+    // Compact form: no numbered section headings, no Brand / Product Type
+    await expect(page.locator('text=1. Informasi Dasar Produk')).toHaveCount(0);
+    await expect(page.locator('form label', { hasText: 'Brand' })).toHaveCount(0);
+    await expect(page.locator('form label', { hasText: 'Product Type' })).toHaveCount(0);
+    await expect(page.locator('form label', { hasText: 'Keterangan / Deskripsi' })).toBeVisible();
+    await expect(page.locator('form label', { hasText: 'HPP / Cost Modal' })).toBeVisible();
 
     const nameInput = page.locator('input[placeholder="Nama Barang Lengkap"]');
     await nameInput.fill('   panci   supra   20cm  ');
@@ -466,8 +475,8 @@ test.describe('Master Barang E2E Suite (Restricted Non-Admin Role without HPP Pe
 
     // Inline form MUST NOT show Section 3 (Harga Modal / HPP)
     await page.locator('button', { hasText: 'Tambah Barang' }).click();
-    await expect(page.locator('text=1. Informasi Dasar Produk')).toBeVisible();
-    await expect(page.locator('text=3. Harga Modal (HPP) & Pembelian')).toHaveCount(0);
+    await expect(page.locator('form label', { hasText: 'Nama Barang' })).toBeVisible();
+    await expect(page.locator('form label', { hasText: 'HPP / Cost Modal' })).toHaveCount(0);
   });
 });
 

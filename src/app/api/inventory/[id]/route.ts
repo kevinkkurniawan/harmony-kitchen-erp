@@ -117,12 +117,49 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     if ('errorResponse' in auth) return auth.errorResponse;
 
     const { id } = await params;
-    await prisma.m_inventory.delete({ where: { id: Number(id) } });
-    return apiSuccess(null, 'Barang berhasil dihapus.');
+    const inventoryId = Number(id);
+    if (!Number.isInteger(inventoryId)) return apiError('VALIDATION_ERROR', 'ID barang tidak valid.', 400);
+
+    // Transaction tables have no FK to m_inventory, so a hard delete would orphan the history.
+    // Items that were ever used are deactivated instead, keeping every transaction intact.
+    if (await hasTransactionHistory(inventoryId)) {
+      await prisma.m_inventory.update({
+        where: { id: inventoryId },
+        data: { isactive: false, modifieduser: auth.user?.username || 'system', modifieddate: new Date() },
+      });
+      return apiSuccess(
+        { deactivated: true },
+        'Barang memiliki riwayat transaksi, jadi dinonaktifkan (bukan dihapus) agar riwayat tetap utuh.'
+      );
+    }
+
+    await prisma.m_inventory.delete({ where: { id: inventoryId } });
+    return apiSuccess({ deactivated: false }, 'Barang berhasil dihapus.');
   } catch (error: any) { 
-    if (error?.code === 'P2003') {
-      return apiError('CONFLICT', 'Barang tidak bisa dihapus karena sudah memiliki riwayat transaksi. Silakan ubah status menjadi Non-Aktif.', 409);
+    if (error?.code === 'P2025') {
+      return apiError('NOT_FOUND', 'Barang tidak ditemukan.', 404);
     }
     return apiError('INTERNAL_ERROR', error.message || 'Gagal menghapus barang', 500);
   }
+}
+
+const HISTORY_TABLES = [
+  't_opname', 't_opnamedetail', 's_flowinventory', 's_stockinventory',
+  't_purchaseorderdetail', 't_purchaserequisitiondetail',
+  't_salesorderdetail', 't_salesposdetail', 't_salesgrosirdetail', 't_salesshippingdetail',
+  't_whtransferdetail', 't_memodetail', 't_invoicememodetail',
+];
+
+async function hasTransactionHistory(inventoryId: number): Promise<boolean> {
+  const checks = [
+    ...HISTORY_TABLES.map((t) => `SELECT 1 FROM public.${t} WHERE inventoryid = $1`),
+    // t_materialreceivedetail stores inventoryid as text
+    `SELECT 1 FROM public.t_materialreceivedetail WHERE inventoryid = $2`,
+  ];
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT EXISTS (${checks.join(' UNION ALL ')}) AS used`,
+    inventoryId,
+    String(inventoryId)
+  );
+  return Boolean(rows[0]?.used);
 }

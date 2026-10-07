@@ -20,6 +20,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import ColumnFilterRow, { columnFilterQuery } from '@/components/ColumnFilterRow';
 
 interface StockMetrics {
   totalItems: number;
@@ -73,6 +74,8 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const debouncedColumnFilters = useDebounce(columnFilters, 500);
   const [warehouseId, setWarehouseId] = useState('ALL');
   const [minusStockOnly, setMinusStockOnly] = useState(false);
 
@@ -104,7 +107,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   const fetchMetrics = useCallback(async () => {
     const reqId = ++metricsReqIdRef.current;
     try {
-      let url = `/api/inventory/stock-metrics?warehouseId=${warehouseId}&q=${encodeURIComponent(debouncedSearchQuery)}`;
+      let url = `/api/inventory/stock-metrics?warehouseId=${warehouseId}&q=${encodeURIComponent(debouncedSearchQuery)}${columnFilterQuery(debouncedColumnFilters)}`;
       if (minusStockOnly) url += '&minusStock=true';
       const res = await fetch(url);
       const json = await res.json();
@@ -114,7 +117,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
     } catch (e) {
       console.error('Failed to fetch metrics', e);
     }
-  }, [warehouseId, debouncedSearchQuery, minusStockOnly]);
+  }, [warehouseId, debouncedSearchQuery, debouncedColumnFilters, minusStockOnly]);
 
   // Fetch Items (guarded against out-of-order responses)
   const itemsReqIdRef = React.useRef(0);
@@ -122,7 +125,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
     const reqId = ++itemsReqIdRef.current;
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=100&onlyActive=true`;
+      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=100&onlyActive=true${columnFilterQuery(debouncedColumnFilters)}`;
       if (minusStockOnly) url += '&minusStock=true';
       if (warehouseId !== 'ALL') url += `&warehouseId=${warehouseId}`;
       
@@ -138,7 +141,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
         setIsLoading(false);
       }
     }
-  }, [debouncedSearchQuery, warehouseId, minusStockOnly]);
+  }, [debouncedSearchQuery, debouncedColumnFilters, warehouseId, minusStockOnly]);
 
   const fetchWarehouses = useCallback(async () => {
     try {
@@ -370,6 +373,12 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                 <th onClick={() => handleSort('minStock')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'minStock' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 <th className="py-1.5 px-2 text-center w-24">Aksi</th>
               </tr>
+              <ColumnFilterRow
+                cells={[{ key: 'inventoryno' }, { key: 'inventoryname' }, {}, {}, {}, {}, {}]}
+                values={columnFilters}
+                onChange={(key, value) => setColumnFilters((prev) => ({ ...prev, [key]: value }))}
+                isDark={isDark}
+              />
             </thead>
             <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
               {isLoading ? (

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ERPProduct, Supplier } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
+import { searchInventory, lookupInventoryByScan } from '@/lib/inventory-lookup';
 
 export interface PricedReceiptItem {
   inventoryId: string;
@@ -255,42 +256,56 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
     return () => { isMounted = false; };
   }, []);
 
-  // Live product search for Barcode / SKU input in create mode
+  // Live product search for Barcode / SKU input in create mode (request-id guard drops out-of-order responses)
+  const productSearchReqIdRef = useRef(0);
   useEffect(() => {
-    let isMounted = true;
+    const reqId = ++productSearchReqIdRef.current;
     if (!debouncedProductSearch.trim()) {
       setSearchResults([]);
+      setIsSearchingProduct(false);
       return;
     }
     const runSearch = async () => {
       setIsSearchingProduct(true);
-      try {
-        const res = await fetch(`/api/inventory?q=${encodeURIComponent(debouncedProductSearch)}`);
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setSearchResults(json.data.slice(0, 8));
-        }
-      } catch (err) {
-        console.error('Error searching products:', err);
-      } finally {
-        if (isMounted) setIsSearchingProduct(false);
-      }
+      const { items, error } = await searchInventory(debouncedProductSearch, 8);
+      if (reqId !== productSearchReqIdRef.current) return;
+      setSearchResults(items);
+      setIsSearchingProduct(false);
+      if (error) addToast(error, 'error');
     };
     runSearch();
-    return () => {
-      isMounted = false;
-    };
-  }, [debouncedProductSearch]);
+  }, [debouncedProductSearch, addToast]);
+
+  // Enter / barcode scan: look up the current input directly instead of waiting for the debounced dropdown
+  const handleProductSearchEnter = async () => {
+    const raw = productSearch.trim();
+    if (!raw) return;
+    // Clear right away so a fast follow-up scan types into an empty input instead of appending
+    productSearchReqIdRef.current++;
+    setProductSearch('');
+    setSearchResults([]);
+    setIsSearchingProduct(true);
+    const { item, error } = await lookupInventoryByScan(raw);
+    setIsSearchingProduct(false);
+    if (error) {
+      addToast(error, 'error');
+    } else if (item) {
+      handleAddProductToItems(item, true);
+    } else {
+      addToast(`Barang tidak ditemukan: ${raw}`, 'warning');
+    }
+  };
 
   // Add Product to Receipt Line Items
-  const handleAddProductToItems = (prod: ERPProduct) => {
+  const handleAddProductToItems = (prod: ERPProduct, keepSearch = false) => {
     const initialPrice = prod.priceBuy > 0 ? prod.priceBuy : (prod.hpp > 0 ? prod.hpp : 10000);
     setItems((prev) => {
       const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
       if (existingIndex >= 0) {
         const updated = [...prev];
-        updated[existingIndex].qty += 1;
-        updated[existingIndex].subtotal = updated[existingIndex].qty * updated[existingIndex].price * (1 - updated[existingIndex].discPercentage / 100);
+        const line = updated[existingIndex];
+        const qty = line.qty + 1;
+        updated[existingIndex] = { ...line, qty, subtotal: qty * line.price * (1 - line.discPercentage / 100) };
         return updated;
       }
       return [
@@ -309,8 +324,10 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
         },
       ];
     });
-    setProductSearch('');
-    setSearchResults([]);
+    if (!keepSearch) {
+      setProductSearch('');
+      setSearchResults([]);
+    }
     addToast(`"${prod.inventoryName}" ditambahkan`, 'info');
   };
 
@@ -863,9 +880,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (searchResults.length > 0) {
-                      handleAddProductToItems(searchResults[0]);
-                    }
+                    handleProductSearchEnter();
                   }
                 }}
                 className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${

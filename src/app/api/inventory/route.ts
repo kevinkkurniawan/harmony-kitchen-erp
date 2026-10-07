@@ -4,7 +4,7 @@ import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
 import { hasCapability, requireCapability } from '@/lib/capabilities';
 import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
-import { parseColumnFilters } from '@/lib/column-filter';
+import { parseColumnFilters, buildInventorySearchConditions } from '@/lib/column-filter';
 import { apiError, apiSuccess } from '@/lib/api-response';
 
 export async function GET(req: Request) {
@@ -25,16 +25,10 @@ export async function GET(req: Request) {
 
     const where: any = { ...columnWhere };
 
-    // Global search
-    const query = searchParams.get('q') || '';
-    if (query.trim()) {
-      const trimmedQ = query.trim();
-      where.OR = [
-        { inventoryname: { contains: trimmedQ, mode: 'insensitive' } },
-        { barcode: { contains: trimmedQ, mode: 'insensitive' } },
-        { inventoryno: { contains: trimmedQ, mode: 'insensitive' } }
-      ];
-    }
+    // Global search (tokenized) + per-column f_* filters
+    const query = (searchParams.get('q') || '').trim();
+    const searchConditions = buildInventorySearchConditions(searchParams);
+    if (searchConditions.length > 0) where.AND = searchConditions;
 
     // Legacy / quick filters
     const minusStock = searchParams.get('minusStock') === 'true';
@@ -60,7 +54,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const [total, items, categories, productTypes, wholesaleCategories] = await Promise.all([
+    const [total, items] = await Promise.all([
       prisma.m_inventory.count({ where }),
       prisma.m_inventory.findMany({ 
         where, 
@@ -72,9 +66,23 @@ export async function GET(req: Request) {
           m_uom: true,
         }
       }),
-      prisma.m_category.findMany(),
-      prisma.m_product.findMany(),
-      prisma.m_wholesalecategory.findMany()
+    ]);
+
+    // Scanner support: an exact barcode / SKU hit always comes first
+    if (query) {
+      const exactQ = query.toLowerCase();
+      const exactIdx = items.findIndex((i: any) =>
+        (i.barcode || '').trim().toLowerCase() === exactQ || (i.inventoryno || '').trim().toLowerCase() === exactQ
+      );
+      if (exactIdx > 0) items.unshift(...items.splice(exactIdx, 1));
+    }
+
+    // Only load the lookup rows these items actually reference
+    const uniqueIds = (values: any[]) => [...new Set(values.filter((v) => v !== null && v !== undefined))];
+    const [categories, productTypes, wholesaleCategories] = await Promise.all([
+      prisma.m_category.findMany({ where: { id: { in: uniqueIds(items.map((i: any) => i.inventorycategoryid)) } } }),
+      prisma.m_product.findMany({ where: { id: { in: uniqueIds(items.map((i: any) => i.inventoryproductid)) } } }),
+      prisma.m_wholesalecategory.findMany({ where: { id: { in: uniqueIds(items.map((i: any) => i.wholesalecategoryid)) } } }),
     ]);
     
     // Fetch stock for these items
@@ -97,8 +105,8 @@ export async function GET(req: Request) {
       }
     }
     
-    const categoryMap = new Map(categories.map((c: any) => [c.id, c.categoryname]));
-    const productTypeMap = new Map(productTypes.map((p: any) => [p.id, p.productname]));
+    const categoryMap = new Map(categories.map((c: any) => [Number(c.id), c.categoryname]));
+    const productTypeMap = new Map(productTypes.map((p: any) => [Number(p.id), p.productname]));
     const wholesaleMap = new Map(wholesaleCategories.map((wc: any) => [wc.id, wc]));
 
     const mapped = items.map((i: any) => {

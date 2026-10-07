@@ -26,6 +26,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
+import ColumnFilterRow, { columnFilterQuery, type ColumnFilterCell } from '@/components/ColumnFilterRow';
 import { useDebounce } from '@/hooks/useDebounce';
 import { normalizeInventoryName } from '@/lib/inventory-name';
 
@@ -84,7 +85,8 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   // 3-state Filter: 'active' | 'inactive' | 'all'
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [filterMinusStock, setFilterMinusStock] = useState<boolean>(mode === 'stock');
-  const [filterBrandId, setFilterBrandId] = useState<number | 'all'>('all');
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const debouncedColumnFilters = useDebounce(columnFilters, 500);
   const [showDetailPane, setShowDetailPane] = useState<boolean>(true);
 
   // Sorting State
@@ -174,7 +176,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000`;
+      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000${columnFilterQuery(debouncedColumnFilters)}`;
       if (filterMinusStock) url += `&minusStock=true`;
       if (statusFilter) url += `&status=${statusFilter}`;
       const res = await fetch(url);
@@ -191,7 +193,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearchQuery, filterMinusStock, statusFilter, addToast]);
+  }, [debouncedSearchQuery, debouncedColumnFilters, filterMinusStock, statusFilter, addToast]);
 
   // Initial load and filter change trigger
   useEffect(() => {
@@ -199,7 +201,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     const runFetch = async () => {
       setIsLoading(true);
       try {
-        let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000`;
+        let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000${columnFilterQuery(debouncedColumnFilters)}`;
         if (filterMinusStock) url += `&minusStock=true`;
         if (statusFilter) url += `&status=${statusFilter}`;
         const res = await fetch(url);
@@ -218,7 +220,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     };
     runFetch();
     return () => { isMounted = false; };
-  }, [debouncedSearchQuery, filterMinusStock, statusFilter]);
+  }, [debouncedSearchQuery, debouncedColumnFilters, filterMinusStock, statusFilter]);
 
   // Fetch Dropdown Lookups on Mount
   useEffect(() => {
@@ -334,7 +336,21 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   // Reset to page 1 when filters or search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearchQuery, statusFilter, filterMinusStock, filterBrandId]);
+  }, [debouncedSearchQuery, debouncedColumnFilters, statusFilter, filterMinusStock]);
+
+  // Per-column filter row: one cell per table column (expand, SKU, Barcode, Nama, UoM, Price, [HPP], Keterangan, G1-3, Stok, Status, Aksi)
+  const hasColumnFilters = Object.values(columnFilters).some((v) => v.trim());
+  const columnFilterCells: ColumnFilterCell[] = [
+    {},
+    { key: 'inventoryno' },
+    { key: 'barcode' },
+    { key: 'inventoryname' },
+    { key: 'uom' },
+    {},
+    ...(canViewPrice ? [{}] : []),
+    { key: 'description' },
+    {}, {}, {}, {}, {}, {},
+  ];
 
   // Sort Handler
   const handleSort = (field: keyof ERPProduct) => {
@@ -350,8 +366,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   };
 
   // Processed & Filtered & Sorted Products
-  const sortedProducts = [...products]
-    .filter(p => filterBrandId === 'all' || p.inventoryBrandId === filterBrandId);
+  const sortedProducts = [...products];
 
   const orderedProducts = sortField ? sortedProducts.sort((a, b) => {
       const valA = a[sortField] ?? '';
@@ -379,8 +394,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       'Inventory No',
       'Barcode',
       'Nama Barang',
-      'Brand',
-      'Product Type',
       'Satuan (UoM)',
       'Harga Retail',
       ...(canViewPrice ? ['HPP (Modal)', 'Harga Beli'] : []),
@@ -398,8 +411,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       p.inventoryNo || '',
       p.barcode || '',
       p.inventoryName || '',
-      p.brandName || '',
-      p.productName || '',
       p.uomName || 'PCS',
       p.price || 0,
       ...(canViewPrice ? [p.hpp || 0, p.priceBuy || 0] : []),
@@ -480,12 +491,14 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
 
   // Delete Item
   const handleDeleteProduct = async (product: ERPProduct) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus barang "${product.inventoryName}"?`)) return;
+    if (!confirm(`Hapus barang "${product.inventoryName}"?
+
+Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar riwayat tetap utuh.`)) return;
     try {
       const res = await fetch(`/api/inventory/${product.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
-        addToast(`Barang "${product.inventoryName}" berhasil dihapus`, 'info');
+        addToast(json.message || `Barang "${product.inventoryName}" berhasil dihapus`, json.data?.deactivated ? 'warning' : 'info');
         fetchProducts();
       } else {
         addToast(`Gagal menghapus: ${extractErrorMessage(json)}`, 'error');
@@ -580,12 +593,9 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       </div>
 
       <form onSubmit={handleSaveForm} className="space-y-4 text-xs font-black">
-        {/* Section 1: Informasi Produk (Grid) */}
-        <div className="space-y-2">
-          <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            1. Informasi Dasar Produk
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        {/* Section 1: Informasi Produk (2 rows) */}
+        <div>
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
             <div>
               <label className="block mb-1 text-slate-700 dark:text-slate-300">Inventory No (SKU) *</label>
               <input
@@ -613,7 +623,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
               />
             </div>
 
-            <div className="md:col-span-2">
+            <div className="md:col-span-4">
               <label className="block mb-1 text-slate-700 dark:text-slate-300">Nama Barang *</label>
               <input
                 type="text"
@@ -627,40 +637,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                 }`}
                 placeholder="Nama Barang Lengkap"
               />
-            </div>
-
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Brand</label>
-              <select
-                value={formData.inventoryBrandId || 1}
-                onChange={(e) => setFormData({ ...formData, inventoryBrandId: parseInt(e.target.value) })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black cursor-pointer outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              >
-                {lookups.brands.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.brandName}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Product Type</label>
-              <select
-                value={formData.inventoryProductId || 1}
-                onChange={(e) => setFormData({ ...formData, inventoryProductId: parseInt(e.target.value) })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black cursor-pointer outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              >
-                {lookups.productTypes.map((pt) => (
-                  <option key={pt.id} value={pt.id}>
-                    {pt.productName}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <div>
@@ -712,18 +688,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
         </div>
 
         {/* Section 2: Skema Harga & Grosir */}
-        <div className="space-y-2 pt-2 border-t border-slate-300 dark:border-slate-800">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              2. Harga Jual Retail & Skema Tier Grosir
-            </span>
-            {currentWholesaleCategory && (
-              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                Threshold: G1 (&ge;{currentWholesaleCategory.tier1_minqty || 3} pcs), G2 (&ge;{currentWholesaleCategory.tier2_minqty || 6} pcs), G3 (&ge;{currentWholesaleCategory.tier3_minqty || 12} pcs)
-              </span>
-            )}
-          </div>
-
+        <div className="pt-3 border-t border-slate-300 dark:border-slate-800">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
               <label className="block mb-1 text-slate-700 dark:text-slate-300">Harga Retail (Jual) *</label>
@@ -801,22 +766,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
 
         {/* Section 3: Cost / HPP & Purchase Price (If authorized) */}
         {canViewPrice && (
-          <div className="space-y-2 pt-2 border-t border-slate-300 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                3. Harga Modal (HPP) & Pembelian
-              </span>
-              {!isCreatingNew && (
-                <button
-                  type="button"
-                  onClick={() => setShowHppHistory(!showHppHistory)}
-                  className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                >
-                  {showHppHistory ? 'Sembunyikan Riwayat HPP Penerimaan' : `Lihat Riwayat Penerimaan (${hppHistory.length})`}
-                </button>
-              )}
-            </div>
-
+          <div className="space-y-2 pt-3 border-t border-slate-300 dark:border-slate-800">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block mb-1 text-emerald-800 dark:text-emerald-400">Harga Beli Terakhir</label>
@@ -843,7 +793,18 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
               </div>
 
               <div>
-                <label className="block mb-1 text-slate-700 dark:text-slate-300">Stok Awal</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-700 dark:text-slate-300">Stok Awal</label>
+                  {!isCreatingNew && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHppHistory(!showHppHistory)}
+                      className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      {showHppHistory ? 'Sembunyikan Riwayat' : `Lihat Riwayat Penerimaan (${hppHistory.length})`}
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   value={formData.stokAwal ?? 0}
@@ -1049,19 +1010,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
               </button>
             </div>
 
-            <select
-              value={filterBrandId}
-              onChange={(e) => setFilterBrandId(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-              className={`text-xs font-black rounded-lg px-2 py-1.5 cursor-pointer outline-none border ${
-                isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800 shadow-sm'
-              }`}
-            >
-              <option value="all">Semua Brand</option>
-              {lookups.brands.map((b) => (
-                <option key={b.id} value={b.id}>{b.brandName}</option>
-              ))}
-            </select>
-
             <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-black transition-colors px-1 ${
               isDark ? 'text-slate-300 hover:text-white' : 'text-slate-950 hover:text-black'
             }`}>
@@ -1074,10 +1022,10 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
               <span className={filterMinusStock ? 'text-rose-600 font-black' : ''}>Minus</span>
             </label>
 
-            {(filterBrandId !== 'all' || statusFilter !== 'active' || filterMinusStock || searchQuery) && (
+            {(hasColumnFilters || statusFilter !== 'active' || filterMinusStock || searchQuery) && (
               <button
                 onClick={() => {
-                  setFilterBrandId('all');
+                  setColumnFilters({});
                   setStatusFilter('active');
                   setFilterMinusStock(false);
                   setSearchQuery('');
@@ -1162,13 +1110,13 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
               <div className="font-mono text-slate-600 dark:text-slate-300 text-xs font-bold">{selectedProduct.barcode}</div>
             </div>
 
-            {/* Box 2: Brand & UoM */}
+            {/* Box 2: UoM & Keterangan */}
             <div className={`p-3 rounded-xl border-2 space-y-1 ${
               isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
             }`}>
-              <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Brand & Tipe</div>
-              <div className="font-black text-sm text-slate-900 dark:text-white">{selectedProduct.brandName || 'General'}</div>
-              <div className="text-slate-600 dark:text-slate-300 text-xs font-bold">{selectedProduct.productName || 'General'} ({selectedProduct.uomName || 'Pcs'})</div>
+              <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Satuan & Keterangan</div>
+              <div className="font-black text-sm text-slate-900 dark:text-white">{selectedProduct.uomName || 'Pcs'}</div>
+              <div className="text-slate-600 dark:text-slate-300 text-xs font-bold truncate" title={selectedProduct.description || ''}>{selectedProduct.description || '-'}</div>
             </div>
 
             {/* Box 3: Retail Price & HPP */}
@@ -1272,18 +1220,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                       {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
                     </div>
                   </th>
-                  <th onClick={() => handleSort('brandName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Brand</span>
-                      {sortField === 'brandName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('productName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Product</span>
-                      {sortField === 'productName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
                   <th onClick={() => handleSort('uomName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
                     <div className="flex items-center gap-1">
                       <span>UoM</span>
@@ -1337,18 +1273,24 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                   <th className="py-1.5 px-2 text-center">Status</th>
                   <th className="py-1.5 px-2 text-center">Aksi</th>
                 </tr>
+                <ColumnFilterRow
+                  cells={columnFilterCells}
+                  values={columnFilters}
+                  onChange={(key, value) => setColumnFilters((prev) => ({ ...prev, [key]: value }))}
+                  isDark={isDark}
+                />
               </thead>
               <tbody className={`divide-y text-[11px] ${isDark ? 'divide-slate-700' : 'divide-slate-300'}`}>
                 {isCreatingNew && expandedRowId === 'new' && (
                   <tr>
-                    <td colSpan={canViewPrice ? 16 : 15} className="p-0">
+                    <td colSpan={canViewPrice ? 14 : 13} className="p-0">
                       {renderSingleResponsiveForm()}
                     </td>
                   </tr>
                 )}
                 {isLoading ? (
                   <tr>
-                    <td colSpan={canViewPrice ? 16 : 15} className="py-24">
+                    <td colSpan={canViewPrice ? 14 : 13} className="py-24">
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
                         <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
@@ -1358,7 +1300,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                   </tr>
                 ) : paginatedProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={canViewPrice ? 16 : 15} className={`py-12 text-center font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                    <td colSpan={canViewPrice ? 14 : 13} className={`py-12 text-center font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
                       Tidak ada barang ditemukan.
                     </td>
                   </tr>
@@ -1390,8 +1332,6 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                         <td className={`py-1 px-2 font-mono text-[11px] font-black ${isDark ? 'text-amber-300' : 'text-slate-800'}`}>{item.inventoryNo}</td>
                         <td className={`py-1 px-2 font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.barcode}</td>
                         <td title={item.inventoryName} className={`py-1 px-2 font-black max-w-[280px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
-                        <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.brandName || '-'}</td>
-                        <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{item.productName || '-'}</td>
                         <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
                         <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
                         {canViewPrice && <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>}
@@ -1475,7 +1415,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
                       </tr>
                       {expandedRowId === item.id.toString() && (
                         <tr>
-                          <td colSpan={canViewPrice ? 16 : 15} className="p-0">
+                          <td colSpan={canViewPrice ? 14 : 13} className="p-0">
                             {renderSingleResponsiveForm()}
                           </td>
                         </tr>

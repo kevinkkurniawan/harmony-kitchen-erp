@@ -172,3 +172,47 @@ export function parseColumnFilters(
 
   return { where, unsupportedFilters };
 }
+
+/** Splits a free-text search into non-empty whitespace-separated tokens. */
+export function tokenizeSearch(value: string | null | undefined): string[] {
+  return (value || '').trim().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Per-column "contains" filters (f_* params) plus the tokenized global search (q) for m_inventory.
+ * Returns Prisma conditions to be combined with AND; shared by the inventory list and stock metrics routes.
+ */
+export function buildInventorySearchConditions(searchParams: URLSearchParams): Record<string, any>[] {
+  const conditions: Record<string, any>[] = [];
+  const contains = (v: string) => ({ contains: v, mode: 'insensitive' });
+
+  // Every token must match name, barcode or SKU (so "onyx sambal" finds "Onyx Tempat Sambal")
+  for (const token of tokenizeSearch(searchParams.get('q'))) {
+    conditions.push({
+      OR: [
+        { inventoryname: contains(token) },
+        { barcode: contains(token) },
+        { inventoryno: contains(token) },
+      ],
+    });
+  }
+
+  const textColumns: Record<string, string> = {
+    f_inventoryno: 'inventoryno',
+    f_barcode: 'barcode',
+    f_description: 'description',
+  };
+  for (const [param, column] of Object.entries(textColumns)) {
+    const v = normalizeFilterValue(searchParams.get(param) || '');
+    if (v) conditions.push({ [column]: contains(v) });
+  }
+
+  for (const token of tokenizeSearch(searchParams.get('f_inventoryname'))) {
+    conditions.push({ inventoryname: contains(token) });
+  }
+
+  const uom = normalizeFilterValue(searchParams.get('f_uom') || '');
+  if (uom) conditions.push({ m_uom: { uomname: contains(uom) } });
+
+  return conditions;
+}

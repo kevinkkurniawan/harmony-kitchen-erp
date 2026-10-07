@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/session';
 import { hasCapability } from '@/lib/capabilities';
+import { buildInventorySearchConditions } from '@/lib/column-filter';
 
 export async function GET(req: Request) {
   try {
@@ -10,11 +11,16 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const warehouseId = searchParams.get('warehouseId');
-    const query = (searchParams.get('q') || '').trim();
     const minusStock = searchParams.get('minusStock') === 'true';
 
     const hasWarehouseFilter = Boolean(warehouseId && warehouseId !== 'ALL' && !isNaN(Number(warehouseId)));
     const whNum = hasWarehouseFilter ? Number(warehouseId) : null;
+
+    // Same tokenized search + column filters as /api/inventory; resolved to ids so the raw SQL stays simple
+    const searchConditions = buildInventorySearchConditions(searchParams);
+    const matchedIds = searchConditions.length > 0
+      ? (await prisma.m_inventory.findMany({ where: { AND: searchConditions }, select: { id: true } })).map((r) => r.id)
+      : null;
 
     const sql = `
       WITH stock_agg AS (
@@ -33,7 +39,7 @@ export async function GET(req: Request) {
         ${hasWarehouseFilter ? 'INNER JOIN' : 'LEFT JOIN'} stock_agg s ON s.inventoryid = i.id
         WHERE i.isactive = true
           ${minusStock ? 'AND i.stokupdate < 0' : ''}
-          ${query ? 'AND (i.inventoryname ILIKE $1 OR i.barcode ILIKE $1 OR i.inventoryno ILIKE $1)' : ''}
+          ${matchedIds ? 'AND i.id = ANY($1::bigint[])' : ''}
       )
       SELECT
         COUNT(*)::int AS "totalItems",
@@ -43,8 +49,8 @@ export async function GET(req: Request) {
       FROM inv_stock
     `;
 
-    const rows = query
-      ? await prisma.$queryRawUnsafe<any[]>(sql, `%${query}%`)
+    const rows = matchedIds
+      ? await prisma.$queryRawUnsafe<any[]>(sql, matchedIds)
       : await prisma.$queryRawUnsafe<any[]>(sql);
 
     const row = rows[0] || { totalItems: 0, totalValue: 0, lowStockCount: 0, outOfStockCount: 0 };
