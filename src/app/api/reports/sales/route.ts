@@ -57,31 +57,21 @@ export async function GET(request: Request) {
         lte: endDate,
       },
       isvoid: false, // Active non-void transactions for reporting
+      // Unpaid POS drafts are not sales (legacy rows have no status)
       ...columnWhere,
+      AND: [{ OR: [{ status: null }, { status: { not: 'DRAFT' } }] }],
     };
 
-    if (paymentMethodParam && paymentMethodParam !== 'All') {
-      const pm = paymentMethodParam.toUpperCase();
-      if (pm === 'CASH') {
-        where.paymenttypecode = { in: ['CASH', 'Cash', 'TUNAI', 'Tunai'] };
-      } else if (pm === 'QRIS') {
-        where.paymenttypecode = { in: ['QRIS', 'qris'] };
-      } else if (pm === 'TRANSFER') {
-        where.paymenttypecode = { in: ['TRANSFER', 'Transfer'] };
-      } else if (pm === 'CARD') {
-        where.paymenttypecode = { in: ['DEBIT', 'Debit', 'EDC BCA', 'EDC MANDIRI', 'CARD', 'Card'] };
-      }
-    }
-
-    const sales = await prisma.t_salesposheader.findMany({
+    const allSales = await prisma.t_salesposheader.findMany({
       where,
       orderBy: { salesposdate: 'desc' },
     });
 
-    const headerIds = sales.map((s: any) => Number(s.id));
-    const details = await prisma.t_salesposdetail.findMany({
-      where: { salesposheaderid: { in: headerIds } },
-    });
+    const headerIds = allSales.map((s: any) => Number(s.id));
+    const [details, payments] = await Promise.all([
+      prisma.t_salesposdetail.findMany({ where: { salesposheaderid: { in: headerIds } } }),
+      prisma.t_salespayment.findMany({ where: { salesposid: { in: headerIds } } }),
+    ]);
 
     const detailsByHeader = new Map<number, any[]>();
     details.forEach((d: any) => {
@@ -89,6 +79,25 @@ export async function GET(request: Request) {
       if (!detailsByHeader.has(hid)) detailsByHeader.set(hid, []);
       detailsByHeader.get(hid)!.push(d);
     });
+    const paymentsByHeader = new Map<number, any[]>();
+    payments.forEach((pm: any) => {
+      const hid = Number(pm.salesposid);
+      if (!paymentsByHeader.has(hid)) paymentsByHeader.set(hid, []);
+      paymentsByHeader.get(hid)!.push(pm);
+    });
+
+    const normalized = new Map<number, NormalizedSale>();
+    allSales.forEach((s: any) => {
+      normalized.set(
+        Number(s.id),
+        normalizeSale(s, detailsByHeader.get(Number(s.id)) || [], paymentsByHeader.get(Number(s.id)) || [])
+      );
+    });
+
+    const pmFilter = paymentMethodParam && paymentMethodParam !== 'All' ? paymentMethodParam.toUpperCase() : null;
+    const sales = pmFilter
+      ? allSales.filter((s: any) => normalized.get(Number(s.id))!.payGroup === pmFilter)
+      : allSales;
 
     // 1. DAILY REPORT
     if (type === 'daily') {
@@ -113,21 +122,7 @@ export async function GET(request: Request) {
           };
         }
 
-        const net = Number(s.grandtotal) || 0;
-        let disc = Number(s.manualdiscountamount || 0);
-        let itemsCount = 0;
-        let hppSum = 0;
-
-        const s_details = detailsByHeader.get(Number(s.id)) || [];
-        s_details.forEach((d: any) => {
-          disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
-          const qty = Number(d.qty || 0);
-          itemsCount += qty;
-
-          const lineHpp = Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
-          hppSum += lineHpp;
-        });
-
+        const { net, disc, items: itemsCount, hpp: hppSum, payGroup } = normalized.get(Number(s.id))!;
         const gross = net + disc;
         const entry = dailyMap[dStr];
 
@@ -137,18 +132,11 @@ export async function GET(request: Request) {
         entry.totalDiscount += disc;
         entry.netSales += net;
 
-        const payType = (s.paymenttypecode || s.remarks || 'CASH').toUpperCase();
-        if (payType === 'CASH' || payType.includes('TUNAI')) {
-          entry.cashSales += net;
-        } else if (payType === 'QRIS' || payType.includes('QRIS')) {
-          entry.qrisSales += net;
-        } else if (payType === 'TRANSFER' || payType.includes('TRANSFER')) {
-          entry.transferSales += net;
-        } else if (payType.includes('EDC') || payType.includes('DEBIT') || payType.includes('CARD') || payType === 'BCA' || payType === 'MANDIRI') {
-          entry.cardSales += net;
-        } else {
-          entry.otherSales += net;
-        }
+        if (payGroup === 'CASH') entry.cashSales += net;
+        else if (payGroup === 'QRIS') entry.qrisSales += net;
+        else if (payGroup === 'TRANSFER') entry.transferSales += net;
+        else if (payGroup === 'CARD') entry.cardSales += net;
+        else entry.otherSales += net;
 
         if (canViewProfit) {
           entry.totalHpp += hppSum;
@@ -184,21 +172,7 @@ export async function GET(request: Request) {
           };
         }
 
-        const net = Number(s.grandtotal) || 0;
-        let disc = Number(s.manualdiscountamount || 0);
-        let itemsCount = 0;
-        let hppSum = 0;
-
-        const s_details = detailsByHeader.get(Number(s.id)) || [];
-        s_details.forEach((d: any) => {
-          disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
-          const qty = Number(d.qty || 0);
-          itemsCount += qty;
-
-          const lineHpp = Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
-          hppSum += lineHpp;
-        });
-
+        const { net, disc, items: itemsCount, hpp: hppSum, payGroup } = normalized.get(Number(s.id))!;
         const gross = net + disc;
         const entry = monthlyMap[mStr];
 
@@ -208,18 +182,11 @@ export async function GET(request: Request) {
         entry.totalDiscount += disc;
         entry.netSales += net;
 
-        const payType = (s.paymenttypecode || s.remarks || 'CASH').toUpperCase();
-        if (payType === 'CASH' || payType.includes('TUNAI')) {
-          entry.cashSales += net;
-        } else if (payType === 'QRIS' || payType.includes('QRIS')) {
-          entry.qrisSales += net;
-        } else if (payType === 'TRANSFER' || payType.includes('TRANSFER')) {
-          entry.transferSales += net;
-        } else if (payType.includes('EDC') || payType.includes('DEBIT') || payType.includes('CARD') || payType === 'BCA' || payType === 'MANDIRI') {
-          entry.cardSales += net;
-        } else {
-          entry.otherSales += net;
-        }
+        if (payGroup === 'CASH') entry.cashSales += net;
+        else if (payGroup === 'QRIS') entry.qrisSales += net;
+        else if (payGroup === 'TRANSFER') entry.transferSales += net;
+        else if (payGroup === 'CARD') entry.cardSales += net;
+        else entry.otherSales += net;
 
         if (canViewProfit) {
           entry.totalHpp += hppSum;
@@ -307,20 +274,7 @@ export async function GET(request: Request) {
       let totalCost = 0;
 
       sales.forEach((s: any) => {
-        const net = Number(s.grandtotal) || 0;
-        let disc = Number(s.manualdiscountamount || 0);
-        let s_items = 0;
-        let s_hpp = 0;
-
-        const s_details = detailsByHeader.get(Number(s.id)) || [];
-        s_details.forEach((d: any) => {
-          disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
-          const qty = Number(d.qty || 0);
-          s_items += qty;
-          const lineHpp = Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
-          s_hpp += lineHpp;
-        });
-
+        const { net, disc, items: s_items, hpp: s_hpp, payGroup } = normalized.get(Number(s.id))!;
         const gross = net + disc;
         totalItemsSold += s_items;
         grossSales += gross;
@@ -328,16 +282,10 @@ export async function GET(request: Request) {
         netSales += net;
         totalCost += s_hpp;
 
-        const payType = (s.paymenttypecode || s.remarks || 'CASH').toUpperCase();
-        if (payType === 'CASH' || payType.includes('TUNAI')) {
-          cashSales += net;
-        } else if (payType === 'QRIS' || payType.includes('QRIS')) {
-          qrisSales += net;
-        } else if (payType === 'TRANSFER' || payType.includes('TRANSFER')) {
-          transferSales += net;
-        } else if (payType.includes('EDC') || payType.includes('DEBIT') || payType.includes('CARD') || payType === 'BCA' || payType === 'MANDIRI') {
-          cardSales += net;
-        }
+        if (payGroup === 'CASH') cashSales += net;
+        else if (payGroup === 'QRIS') qrisSales += net;
+        else if (payGroup === 'TRANSFER') transferSales += net;
+        else if (payGroup === 'CARD') cardSales += net;
       });
 
       const profit = netSales - totalCost;
@@ -366,4 +314,69 @@ export async function GET(request: Request) {
     console.error('Error generating sales report:', err);
     return apiError('INTERNAL_ERROR', err.message || 'Gagal membuat laporan penjualan', 500);
   }
+}
+
+type PayGroup = 'CASH' | 'QRIS' | 'TRANSFER' | 'CARD' | 'OTHER';
+
+interface NormalizedSale {
+  net: number;
+  disc: number;
+  items: number;
+  hpp: number;
+  payGroup: PayGroup;
+}
+
+// m_paymenttype.code as written by the legacy POS into t_salespayment.paymenttypeid:
+// 0 Cash, 1 Debit, 2 Credit Card, 3 Qris, 4 Shopee, 5 Tokopedia, 6 Transfer, 7 EDC Mandiri
+const LEGACY_PAYMENT_GROUP: Record<number, PayGroup> = {
+  0: 'CASH',
+  1: 'CARD',
+  2: 'CARD',
+  3: 'QRIS',
+  4: 'OTHER',
+  5: 'OTHER',
+  6: 'TRANSFER',
+  7: 'CARD',
+};
+
+function payGroupFromText(text: string): PayGroup {
+  const t = text.toUpperCase();
+  if (t === 'CASH' || t.includes('TUNAI')) return 'CASH';
+  if (t.includes('QRIS')) return 'QRIS';
+  if (t.includes('TRANSFER')) return 'TRANSFER';
+  if (t.includes('EDC') || t.includes('DEBIT') || t.includes('CARD') || t === 'BCA' || t === 'MANDIRI') return 'CARD';
+  return 'OTHER';
+}
+
+/**
+ * One shape for both sources. New POS sales carry grandtotal + paymenttypecode on the header;
+ * legacy (Module Manager) sales leave grandtotal at 0 and keep the amount and payment type
+ * in t_salespayment, so reading the header alone reports them as Rp 0.
+ */
+function normalizeSale(header: any, details: any[], payments: any[]): NormalizedSale {
+  let disc = Number(header.manualdiscountamount || 0);
+  let items = 0;
+  let hpp = 0;
+  let lineTotal = 0;
+  details.forEach((d: any) => {
+    disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
+    const qty = Number(d.qty || 0);
+    items += qty;
+    lineTotal += Number(d.subtotal ?? Number(d.price || 0) * qty);
+    hpp += Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
+  });
+
+  const paidTotal = payments.reduce((sum, pm) => sum + Number(pm.transactionvalue || 0), 0);
+  const net = Number(header.grandtotal) || paidTotal || lineTotal;
+
+  let payGroup: PayGroup;
+  if (header.paymenttypecode) {
+    payGroup = payGroupFromText(header.paymenttypecode);
+  } else if (payments.length > 0) {
+    payGroup = LEGACY_PAYMENT_GROUP[Number(payments[0].paymenttypeid)] ?? 'OTHER';
+  } else {
+    payGroup = 'CASH';
+  }
+
+  return { net, disc, items, hpp, payGroup };
 }

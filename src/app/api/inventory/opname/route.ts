@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
 import { requireCapability } from '@/lib/capabilities';
-import { saveOpnameTransaction, reverseOpnameTransaction } from '@/lib/stock-opname';
+import { saveOpnameTransaction, reverseOpnameTransaction, opnameModeOf } from '@/lib/stock-opname';
 import { apiError, apiSuccess } from '@/lib/api-response';
 
 export async function GET(req: Request) {
@@ -16,6 +16,7 @@ export async function GET(req: Request) {
     const paginationParams = getPaginationParams(req, 50);
 
     if (noTx) {
+      const mode = opnameModeOf(noTx);
       const header = await prisma.t_opnameheader.findUnique({
         where: { notransaction: noTx },
       });
@@ -37,9 +38,10 @@ export async function GET(req: Request) {
           notransaction: ld.notransaction,
           inventoryid: ld.inventoryid,
           barcode: ld.barcode,
+          // Legacy OPM rows hold the +/- difference, SCO (stock check) rows the counted qty
           systemqty: new Prisma.Decimal(0),
-          physicalqty: new Prisma.Decimal(ld.qty || 0),
-          differenceqty: new Prisma.Decimal(0),
+          physicalqty: new Prisma.Decimal(mode === 'ADJUST' ? 0 : ld.qty || 0),
+          differenceqty: new Prisma.Decimal(mode === 'ADJUST' ? ld.qty || 0 : 0),
           unitprice: new Prisma.Decimal(ld.price || 0),
           notes: ld.description,
           rowguid: ld.rowguid,
@@ -56,7 +58,8 @@ export async function GET(req: Request) {
 
       const items = details.map((d) => {
         const matched = invMap.get(d.inventoryid);
-        const itemQty = Number(d.physicalqty ?? 0);
+        // Adjustment documents are entered and shown as +/- changes
+        const itemQty = mode === 'ADJUST' ? Number(d.differenceqty ?? 0) : Number(d.physicalqty ?? 0);
 
         return {
           id: String(d.id),
@@ -67,6 +70,8 @@ export async function GET(req: Request) {
           inventoryName: matched?.inventoryname || '',
           inventory_name: matched?.inventoryname || '',
           qty: itemQty,
+          systemQty: Number(d.systemqty ?? 0),
+          differenceQty: Number(d.differenceqty ?? 0),
           price: Number(d.unitprice || matched?.price || 0),
           notes: d.notes || '',
           description: d.notes || 'Stok Opname',
@@ -75,6 +80,7 @@ export async function GET(req: Request) {
 
       return apiSuccess({
         noTransaction: noTx,
+        mode,
         no_tx: noTx,
         opnameNo: noTx,
         date: header?.opnamedate || new Date(),
@@ -190,11 +196,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const rawAction = body.action || (body.isDraft ? 'draft' : 'post');
     const action = rawAction === 'POST_DIRECT' || rawAction === 'post' ? 'post' : rawAction === 'reverse' ? 'reverse' : 'draft';
-    const noTx = body.no_tx || body.noTransaction || body.opnameNo || `OPN-${Date.now()}`;
+    // Empty for a new document: the server assigns the legacy-style OPM-/SCO- number
+    const noTx: string | undefined = body.no_tx || body.noTransaction || body.opnameNo || undefined;
+    const docMode = body.opnameMode === 'ADJUST' ? 'ADJUST' : 'COUNT';
     const idempotencyKey = body.idempotencyKey || req.headers.get('x-idempotency-key') || undefined;
 
     // Handle reversal
     if (action === 'reverse') {
+      if (!noTx) {
+        return apiError('VALIDATION_ERROR', 'Nomor transaksi opname wajib diisi.', 400);
+      }
       const auth = await requireCapability('OPNAME_REVERSE');
       if ('errorResponse' in auth) return auth.errorResponse;
 
@@ -241,6 +252,7 @@ export async function POST(req: Request) {
 
     const result = await saveOpnameTransaction({
       noTransaction: noTx,
+      mode: docMode,
       date: body.date || body.opnameDate,
       whId: body.whId || 1,
       notes: body.notes || body.remarks || '',
@@ -248,6 +260,7 @@ export async function POST(req: Request) {
         inventoryId: Number(it.inventoryId || it.id),
         barcode: it.barcode,
         qty: Number(it.qty ?? it.physicalQty ?? 0),
+        adjustQty: it.adjustQty !== undefined ? Number(it.adjustQty) : undefined,
         unitPrice: it.price !== undefined ? Number(it.price) : undefined,
         notes: it.notes || it.description || '',
       })),
@@ -256,9 +269,10 @@ export async function POST(req: Request) {
       idempotencyKey,
     });
 
+    const savedNo = result.header?.notransaction || noTx;
     const msg = action === 'post'
-      ? `Stock Opname ${noTx} berhasil diposting & pergerakan stok telah dicatat.`
-      : `Draft Stock Opname ${noTx} berhasil disimpan.`;
+      ? `Stock Opname ${savedNo} berhasil diposting & pergerakan stok telah dicatat.`
+      : `Draft Stock Opname ${savedNo} berhasil disimpan.`;
 
     return apiSuccess(result, msg);
   } catch (error: any) {

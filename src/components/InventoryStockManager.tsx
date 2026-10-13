@@ -82,6 +82,8 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   // Drill-down State
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [ledgerData, setLedgerData] = useState<MovementLedger[]>([]);
+  const [ledgerTotal, setLedgerTotal] = useState(0);
+  const [lastOpnameDate, setLastOpnameDate] = useState<string | null>(null);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
   const [fullLedgerItem, setFullLedgerItem] = useState<InventoryItem | null>(null);
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -180,11 +182,15 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   const fetchLedgerForItem = async (inventoryId: string) => {
     setIsLoadingLedger(true);
     setLedgerData([]);
+    setLedgerTotal(0);
+    setLastOpnameDate(null);
     try {
       const res = await fetch(`/api/inventory/${inventoryId}/movement`);
       const json = await res.json();
       if (json.success) {
         setLedgerData(json.data);
+        setLedgerTotal(json.total ?? json.data.length);
+        setLastOpnameDate(json.lastOpnameDate ?? null);
       }
     } catch (e) {
       console.error('Failed to fetch ledger', e);
@@ -452,7 +458,10 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                                   <History className="w-4 h-4 text-indigo-500" />
                                   Buku Besar Kartu Stok - <span className="text-amber-500">{item.inventoryName}</span>
                                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-bold">
-                                    {ledgerData.length} Mutasi
+                                    {ledgerTotal} Mutasi
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-slate-500">
+                                    Terakhir opname: {lastOpnameDate ? new Date(lastOpnameDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
                                   </span>
                                 </h4>
                                 <button
@@ -514,6 +523,11 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                                   </tbody>
                                 </table>
                               </div>
+                              {ledgerData.length > 10 && (
+                                <p className="mt-2 text-[10px] text-slate-500">
+                                  Menampilkan 10 mutasi terbaru dari {ledgerTotal}. Klik &quot;Lihat Kartu Lengkap&quot; untuk semua riwayat.
+                                </p>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -539,6 +553,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Kode: <span className="font-mono font-bold">{fullLedgerItem.inventoryNo}</span> • Barcode: <span className="font-mono">{fullLedgerItem.barcode}</span> • Kategori: {fullLedgerItem.categoryName}
+                  {' '}• Terakhir opname: <span className="font-bold">{lastOpnameDate ? new Date(lastOpnameDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}</span>
                 </p>
               </div>
               <button
@@ -582,7 +597,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                 />
               </div>
               <span className="text-xs font-bold text-slate-500">
-                Total {ledgerData.length} Riwayat Mutasi
+                Total {ledgerTotal} Riwayat Mutasi{ledgerTotal > ledgerData.length ? ` (${ledgerData.length} terbaru ditampilkan)` : ''}
               </span>
             </div>
 

@@ -379,13 +379,13 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         }`}
       >
         {/* 4 Report Tabs (1:1 Admin.Frm_Report) */}
-        <div className="flex flex-wrap gap-1.5 p-1 rounded-xl bg-slate-800/40 border border-slate-700/50">
+        <div className={`flex flex-wrap gap-1.5 p-1 rounded-xl border ${isDark ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-100 border-slate-200'}`}>
           <button
             onClick={() => setActiveTab('daily')}
             className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'daily'
                 ? 'bg-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
@@ -397,7 +397,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'monthly'
                 ? 'bg-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
@@ -409,7 +409,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'items'
                 ? 'bg-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <Package className="w-3.5 h-3.5" />
@@ -421,7 +421,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'summary'
                 ? 'bg-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                : isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <PieChart className="w-3.5 h-3.5" />

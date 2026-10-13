@@ -9,9 +9,19 @@ function getDatasourceUrl(): string | undefined {
   if (!raw) return undefined;
   try {
     const url = new URL(raw);
-    const currentLimit = Number(url.searchParams.get('connection_limit') || '0');
-    if (!currentLimit || currentLimit < 15) {
-      url.searchParams.set('connection_limit', '15');
+    // Local Postgres has no pooler: use the URL as-is
+    if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return raw;
+    // Supabase session mode (5432) caps the whole project at pool_size clients (EMAXCONNSESSION).
+    // Transaction mode (6543) multiplexes clients, which serverless instances need.
+    if (url.port === '5432' && url.hostname.endsWith('pooler.supabase.com')) {
+      url.port = '6543';
+    }
+    if (url.port === '6543' && !url.searchParams.has('pgbouncer')) {
+      url.searchParams.set('pgbouncer', 'true');
+    }
+    // Keep each instance small: many instances (ERP + POS) share one pooler
+    if (!url.searchParams.has('connection_limit')) {
+      url.searchParams.set('connection_limit', '5');
     }
     if (!url.searchParams.has('pool_timeout')) {
       url.searchParams.set('pool_timeout', '30');

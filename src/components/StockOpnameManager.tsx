@@ -91,6 +91,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const [warehouse, setWarehouse] = useState<string>('');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [opnameItems, setOpnameItems] = useState<OpnameEntry[]>([]);
+  // ADJUST = legacy OPM (+/- change), COUNT = legacy SCO stock check (counted qty)
+  const [opnameMode, setOpnameMode] = useState<'ADJUST' | 'COUNT'>('ADJUST');
 
   // Input Form Fields
   const [selectedInvId, setSelectedInvId] = useState<number | ''>('');
@@ -148,13 +150,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   };
 
   // Generate New Transaction No
-  const generateNewTxNo = useCallback(() => {
-    const date = new Date();
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const rnd = Math.floor(1000 + Math.random() * 9000);
-    return `OPN/${yyyy}/${mm}/${rnd}`;
-  }, []);
+  // New documents have no number until the first save: the server assigns the
+  // legacy-style OPM-/SCO- number (sequential per day, so two users can't collide)
+  const generateNewTxNo = useCallback(() => '', []);
 
   // Fetch Warehouses Lookup
   const fetchWarehouses = useCallback(async () => {
@@ -205,21 +203,10 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
       if (seq !== loadSeqRef.current) return;
 
-      if (Array.isArray(itemsArray) && itemsArray.length > 0) {
-        const allItems: OpnameEntry[] = itemsArray.map((item: InventoryLookupItem) => {
-          const itemQty = item.stokAkhir !== undefined ? Number(item.stokAkhir) : Number(item.stock || 0);
-          return {
-            inventoryId: Number(item.id),
-            inventoryNo: item.inventoryNo,
-            barcode: item.barcode || item.inventoryNo,
-            inventoryName: item.inventoryName,
-            qty: itemQty,
-            price: Number(item.price || 0),
-            description: 'Stok Opname Catalog',
-          };
-        });
-        setOpnameItems(allItems);
-      }
+      // Start empty: posting marks every listed item as checked today, so the full
+      // catalog is only loaded on purpose via "Populate All" (COUNT mode)
+      void itemsArray;
+      setOpnameItems([]);
 
       setNoTransaction(generateNewTxNo());
       setSelectedHistoryTx('');
@@ -264,6 +251,10 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
     if (isReadOnly) {
       showToast('Transaksi yang sudah diposting/dibatalkan tidak dapat diubah. Klik "Baru" terlebih dahulu.', 'error');
+      return;
+    }
+    if (opnameMode === 'ADJUST') {
+      showToast('Muat semua barang hanya untuk mode Cek Stok (hitung fisik).', 'info');
       return;
     }
     const allItems: OpnameEntry[] = inventoryList.map((item) => {
@@ -347,8 +338,12 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
 
     const qty = typeof qtyInput === 'number' ? qtyInput : 0;
-    if (qty < 0) {
-      showToast('Qty opname tidak boleh negatif', 'error');
+    if (opnameMode === 'COUNT' && qty < 0) {
+      showToast('Qty hitung fisik tidak boleh negatif', 'error');
+      return;
+    }
+    if (opnameMode === 'ADJUST' && qty === 0) {
+      showToast('Isi penyesuaian, contoh 2 untuk tambah atau -1 untuk kurang', 'error');
       return;
     }
 
@@ -364,7 +359,8 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         const [itemToMove] = updated.splice(existingIdx, 1);
         const updatedItem = {
           ...itemToMove,
-          qty,
+          // Adjustments add up (scan twice = +2); a count replaces the previous count
+          qty: opnameMode === 'ADJUST' ? itemToMove.qty + qty : qty,
           description: noteText || 'Penyesuaian Opname',
         };
         updated.unshift(updatedItem);
@@ -385,7 +381,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     });
 
     if (wasExisting) {
-      showToast(`Qty "${found.inventoryName}" diperbarui menjadi ${qty}`, 'info');
+      showToast(`Qty "${found.inventoryName}" diperbarui`, 'info');
     } else {
       showToast(`"${found.inventoryName}" berhasil ditambahkan ke daftar`, 'success');
     }
@@ -447,7 +443,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   // Inline Qty Update Handler
   const handleInlineQtyChange = (invId: number, newQty: number) => {
     if (isReadOnly) return;
-    const validQty = Math.max(0, newQty);
+    const validQty = opnameMode === 'COUNT' ? Math.max(0, newQty) : newQty;
     setOpnameItems((prev) =>
       prev.map((item) => (item.inventoryId === invId ? { ...item, qty: validQty } : item))
     );
@@ -475,6 +471,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       const detailItems = payload?.items || json.data?.items || json.data || [];
       if (json.success) {
         setNoTransaction(txNo);
+        setOpnameMode(payload?.mode === 'ADJUST' ? 'ADJUST' : 'COUNT');
         const statusVal = payload?.status || json.header?.status || 'POSTED';
         setOpnameStatus(statusVal);
         setReversedReasonText(payload?.reversedReason || '');
@@ -521,7 +518,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   const handleSubmitOpname = async (action: 'draft' | 'post' = 'post') => {
     if (isSubmitting) return;
     setIsSubmitting(true);
-    const targetTxNo = noTransaction || generateNewTxNo();
+    const targetTxNo = noTransaction;
     try {
       const res = await fetch('/api/inventory/opname', {
         method: 'POST',
@@ -530,19 +527,20 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           no_tx: targetTxNo,
           noTransaction: targetTxNo,
           opnameNo: targetTxNo,
+          opnameMode,
           wh_name: warehouse,
           warehouse,
           items: opnameItems.map((it) => ({
             inventoryId: it.inventoryId,
             barcode: it.barcode,
-            qty: it.qty,
+            ...(opnameMode === 'ADJUST' ? { adjustQty: it.qty } : { qty: it.qty }),
             price: it.price,
             description: it.description,
             notes: it.description,
           })),
           createdBy: auditorName,
-          remarks: `Stok Opname ${targetTxNo} (Auditor: ${auditorName})`,
-          notes: `Stok Opname ${targetTxNo} (Auditor: ${auditorName})`,
+          remarks: `Stok Opname (Auditor: ${auditorName})`,
+          notes: `Stok Opname (Auditor: ${auditorName})`,
           action,
         }),
       });
@@ -551,8 +549,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       if (json.success) {
         const successMsg = json.message || (action === 'post' ? 'Stok Opname berhasil diposting!' : 'Draft Opname berhasil disimpan!');
         setIsReconciling(false);
+        const savedTxNo: string = json.data?.header?.notransaction || targetTxNo;
         await refreshLookupsAndHistory();
-        await handleSelectHistory(targetTxNo);
+        await handleSelectHistory(savedTxNo);
         showToast(successMsg, 'success');
       } else {
         showToast(extractErrorMessage(json.error, 'Gagal menyimpan stok opname'), 'error');
@@ -611,6 +610,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     }
     const draftData = {
       noTransaction,
+      opnameMode,
       warehouse,
       auditorName,
       opnameItems,
@@ -629,6 +629,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     try {
       const draft = JSON.parse(draftStr);
       setNoTransaction(draft.noTransaction);
+      setOpnameMode(draft.opnameMode === 'COUNT' ? 'COUNT' : 'ADJUST');
       setWarehouse(draft.warehouse);
       setAuditorName(draft.auditorName || 'Super Administrator');
       setOpnameStatus('DRAFT');
@@ -834,7 +835,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                 </span>
               </div>
               <span className="text-[10px] font-bold text-amber-500 font-mono">
-                {noTransaction || 'OPN/NEW'}
+                {noTransaction || '(Nomor otomatis)'}
               </span>
             </div>
           </div>
@@ -1088,6 +1089,50 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         </div>
       </div>
 
+      {/* MODE: Penyesuaian (+/-) like legacy OPM, or Cek Stok (hitung fisik) like legacy SCO */}
+      <div
+        className={`px-5 py-2 border-b flex flex-wrap items-center gap-2 shrink-0 text-xs ${
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        }`}
+      >
+        <span className={`font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Jenis:</span>
+        {([
+          ['ADJUST', 'Penyesuaian (+/-)', 'Tambah/kurangi stok langsung, contoh 2 atau -1'],
+          ['COUNT', 'Cek Stok (hitung fisik)', 'Isi jumlah hasil hitung; selisih dihitung otomatis'],
+        ] as const).map(([value, label, hint]) => {
+          const locked = isReadOnly || !!noTransaction;
+          const active = opnameMode === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              title={hint}
+              disabled={locked && !active}
+              onClick={() => {
+                if (locked || active) return;
+                setOpnameMode(value);
+                setOpnameItems([]);
+                setQtyInput(1);
+              }}
+              className={`px-3 py-1 rounded-lg font-bold border transition-all ${
+                active
+                  ? 'bg-amber-500 text-slate-950 border-amber-500'
+                  : isDark
+                  ? 'border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40'
+                  : 'border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        <span className="text-[11px] text-slate-500">
+          {opnameMode === 'ADJUST'
+            ? 'Qty = perubahan stok (+ tambah, - kurang). Stok akhir tidak boleh minus.'
+            : 'Qty = jumlah hasil hitung fisik. Tanggal cek stok tercatat walau qty sudah benar.'}
+        </span>
+      </div>
+
       {/* 📥 INLINE FAST SCAN ENTRY ROW */}
       <div
         className={`px-5 py-2.5 border-b flex flex-wrap items-center gap-3 shrink-0 ${
@@ -1141,13 +1186,13 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
 
         {/* Qty */}
         <div className="w-24 flex items-center gap-1">
-          <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty:</span>
+          <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{opnameMode === 'ADJUST' ? 'Qty ±:' : 'Qty:'}</span>
           <input
             type="number"
-            min="0"
+            min={opnameMode === 'COUNT' ? 0 : undefined}
             disabled={isReadOnly}
             value={qtyInput}
-            onChange={(e) => setQtyInput(e.target.value === '' ? '' : parseInt(e.target.value) || 0)}
+            onChange={(e) => setQtyInput(e.target.value === '' || e.target.value === '-' ? '' : parseInt(e.target.value) || 0)}
             className={`w-full py-1 text-center font-black text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
               isDark ? 'bg-slate-950 text-amber-400 border-slate-700' : 'bg-white text-amber-900 border-slate-300'
             }`}
@@ -1305,7 +1350,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                           </button>
                           <input
                             type="number"
-                            min="0"
+                            min={opnameMode === 'COUNT' ? 0 : undefined}
                             disabled={isReadOnly}
                             value={item.qty}
                             onChange={(e) => handleInlineQtyChange(item.inventoryId, parseInt(e.target.value) || 0)}
@@ -1454,7 +1499,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                       <tr key={item.inventoryId} className={isDark ? 'bg-slate-900' : 'bg-white'}>
                         <td className="px-4 py-2 font-mono font-bold text-slate-400">{item.inventoryNo}</td>
                         <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>
-                        <td className="px-4 py-2 text-center font-mono font-black">{item.qty}</td>
+                        <td className="px-4 py-2 text-center font-mono font-black">{opnameMode === 'ADJUST' && item.qty > 0 ? `+${item.qty}` : item.qty}</td>
                         <td className="px-4 py-2 text-right font-mono">Rp {(item.price || 0).toLocaleString('id-ID')}</td>
                         <td className="px-4 py-2 text-right font-mono font-bold text-emerald-400">
                           Rp {(item.qty * (item.price || 0)).toLocaleString('id-ID')}

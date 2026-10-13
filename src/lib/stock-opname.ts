@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { recordAuditEvent } from '@/lib/audit-event';
 
@@ -5,14 +6,51 @@ export interface OpnameItemInput {
   inventoryId: number;
   barcode?: string;
   qty?: number;
+  /** Adjustment mode: +/- change to apply to the current stock instead of a counted qty */
+  adjustQty?: number;
   systemQty?: number;
   physicalQty?: number;
   unitPrice?: number;
   notes?: string;
 }
 
+/**
+ * Mirrors the two legacy (Module Manager) stock documents in t_opname:
+ * - ADJUST: "OPM-YYMMDD<seq>", qty holds the +/- difference
+ * - COUNT:  stock check "SCO-...", qty holds the counted qty and syncdate the check date
+ */
+export type OpnameMode = 'ADJUST' | 'COUNT';
+
+export function opnameModeOf(noTransaction: string | null | undefined): OpnameMode {
+  return (noTransaction || '').toUpperCase().startsWith('OPM-') ? 'ADJUST' : 'COUNT';
+}
+
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** Next legacy-style document number for today (WIB), serialised by an advisory lock. */
+async function generateOpnameNo(tx: Prisma.TransactionClient, mode: OpnameMode): Promise<string> {
+  const ymd = new Date(Date.now() + WIB_OFFSET_MS).toISOString().slice(2, 10).replace(/-/g, '');
+  const prefix = `${mode === 'ADJUST' ? 'OPM' : 'SCO'}-${ymd}`;
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))::text`;
+  const pattern = `^${prefix}[0-9]+$`;
+  const rows = await tx.$queryRaw<{ seq: number | null }[]>`
+    SELECT max(substring(notransaction from ${prefix.length + 1}::int)::int) AS seq FROM (
+      SELECT notransaction FROM t_opname WHERE notransaction ~ ${pattern}
+      UNION ALL
+      SELECT notransaction FROM t_opnameheader WHERE notransaction ~ ${pattern}
+    ) docs`;
+  return `${prefix}${Number(rows[0]?.seq || 0) + 1}`;
+}
+
+/** Store calendar date (WIB) for DATE columns such as syncdate. */
+function storeDate(date: Date): Date {
+  return new Date(new Date(date.getTime() + WIB_OFFSET_MS).toISOString().slice(0, 10));
+}
+
 export interface SaveOpnameParams {
-  noTransaction: string;
+  /** Leave empty for a new document: the server assigns OPM-/SCO- numbering */
+  noTransaction?: string;
+  mode?: OpnameMode;
   date?: string | Date;
   whId?: number;
   notes?: string;
@@ -30,10 +68,15 @@ export interface ReverseOpnameParams {
 }
 
 export async function saveOpnameTransaction(params: SaveOpnameParams) {
-  const { noTransaction, notes, items, actor, action = 'draft', idempotencyKey } = params;
+  const { notes, items, actor, action = 'draft', idempotencyKey } = params;
   const opnameDate = params.date ? new Date(params.date) : new Date();
 
   return prisma.$transaction(async (tx) => {
+    // An existing document keeps its number (and mode); a new one gets the next legacy-style number
+    const noTransaction =
+      params.noTransaction?.trim() || (await generateOpnameNo(tx, params.mode === 'ADJUST' ? 'ADJUST' : 'COUNT'));
+    const mode = opnameModeOf(noTransaction);
+
     // 1. Check existing header status
     const existingHeader = await tx.t_opnameheader.findUnique({
       where: { notransaction: noTransaction },
@@ -70,7 +113,15 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
       }
 
       const currentLiveStock = Number(inv.stokupdate || 0);
-      const targetQty = Number(it.qty ?? it.physicalQty ?? 0);
+      const targetQty =
+        mode === 'ADJUST'
+          ? currentLiveStock + Number(it.adjustQty ?? it.qty ?? 0)
+          : Number(it.qty ?? it.physicalQty ?? 0);
+      if (!Number.isFinite(targetQty) || targetQty < 0) {
+        throw new Error(
+          `Stok "${inv.inventoryname || it.inventoryId}" tidak boleh minus (stok sekarang ${currentLiveStock}, hasil ${targetQty}).`
+        );
+      }
       const diffQty = targetQty - currentLiveStock;
       const unitPrice = it.unitPrice !== undefined ? Number(it.unitPrice) : Number(inv.hpp || inv.price || 0);
 
@@ -110,30 +161,35 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
       })),
     });
 
-    // Legacy t_opname table sync
-    await tx.t_opname.createMany({
-      data: processedItems.map((pi) => ({
-        notransaction: pi.notransaction,
-        inventoryid: pi.inventoryid,
-        barcode: pi.barcode,
-        qty: pi.qty,
-        price: pi.unitprice,
-        description: pi.notes || '',
-        opnamedate: opnameDate,
-        createduser: actor,
-        createddate: new Date(),
-        modifieduser: actor,
-        modifieddate: new Date(),
-        isdone: action === 'post',
-      })),
-    });
-
     let header;
 
     if (action === 'post') {
+      // Legacy t_opname rows, written like Module Manager does and only once applied
+      // (a draft row here would read as a real adjustment): OPM qty = +/- difference,
+      // SCO qty = counted qty with the check date in syncdate.
+      await tx.t_opname.createMany({
+        data: processedItems.map((pi) => ({
+          notransaction: pi.notransaction,
+          inventoryid: pi.inventoryid,
+          barcode: pi.barcode,
+          qty: mode === 'ADJUST' ? pi.differenceqty : pi.qty,
+          price: Math.round(pi.unitprice),
+          description: pi.notes || '',
+          opnamedate: storeDate(opnameDate),
+          syncdate: mode === 'COUNT' ? storeDate(opnameDate) : null,
+          createduser: actor,
+          createddate: new Date(),
+          modifieduser: actor,
+          modifieddate: new Date(),
+          isdone: true,
+        })),
+      });
+
       // 5. POSTING: Apply stock movements and update stock balance atomically
       for (const pi of processedItems) {
-        if (pi.differenceqty !== 0) {
+        // Always record a movement, even when the count matched (qty 0),
+        // so the stock card shows the item was checked on this date
+        {
           const isQtyIn = pi.differenceqty > 0;
           const qtyDelta = Math.abs(pi.differenceqty);
 
@@ -169,11 +225,13 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
           });
         }
 
-        // Set stock balance to EXACT opname quantity
+        // Set stock balance to EXACT opname quantity; syncdate is the legacy "last sync"
+        // (last date the item's stock was checked), updated even when nothing changed
         await tx.m_inventory.update({
           where: { id: BigInt(pi.inventoryid) },
           data: {
             stokupdate: pi.qty,
+            syncdate: storeDate(opnameDate),
           },
         });
       }
@@ -291,6 +349,11 @@ export async function reverseOpnameTransaction(params: ReverseOpnameParams) {
     }
 
     const details = await tx.t_opnamedetail.findMany({
+      where: { notransaction: noTransaction },
+    });
+
+    // Legacy readers treat every t_opname row as applied, so a reversed document must leave it
+    await tx.t_opname.deleteMany({
       where: { notransaction: noTransaction },
     });
 
