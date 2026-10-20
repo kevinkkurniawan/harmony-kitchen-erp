@@ -39,8 +39,9 @@ test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
     // Table headers
     await expect(page.locator('th:has-text("Kode Barang")')).toBeVisible();
     await expect(page.locator('th:has-text("Nama Barang")')).toBeVisible();
-    await expect(page.locator('th:has-text("Stok Gudang")')).toBeVisible();
-    await expect(page.locator('th:has-text("Stok Etalase")')).toBeVisible();
+    // Gudang / Etalase came from a never-updated legacy snapshot and were removed
+    await expect(page.locator('th:has-text("Stok Gudang")')).toHaveCount(0);
+    await expect(page.locator('th:has-text("Stok Etalase")')).toHaveCount(0);
     await expect(page.locator('th:has-text("Stok Akhir")')).toBeVisible();
     await expect(page.locator('th:has-text("Status")')).toBeVisible();
 

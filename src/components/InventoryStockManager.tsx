@@ -38,8 +38,6 @@ interface InventoryItem {
   stokAkhir: number;
   minStock: number;
   hpp: number;
-  stokEtalase?: number;
-  stokGudang?: number;
 }
 
 interface Warehouse {
@@ -217,19 +215,15 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   };
 
   const handleExportCSV = () => {
-    const headers = ['Kode Barang', 'Barcode', 'Nama Barang', 'Kategori', 'Stok Gudang', 'Stok Etalase', 'Stok Akhir', 'Min Stock', 'Status'];
+    const headers = ['Kode Barang', 'Barcode', 'Nama Barang', 'Kategori', 'Stok Akhir', 'Min Stock', 'Status'];
     const rows = sortedItems.map((item) => {
       const onHand = Number(item.stokAkhir || 0);
-      const stokGudang = Number(item.stokGudang || 0);
-      const stokEtalase = Number(item.stokEtalase || 0);
       const status = onHand <= 0 ? 'KOSONG' : onHand <= item.minStock ? 'TIPIS' : 'TERSEDIA';
       return [
         `"${(item.inventoryNo || '').replace(/"/g, '""')}"`,
         `"${(item.barcode || '').replace(/"/g, '""')}"`,
         `"${(item.inventoryName || '').replace(/"/g, '""')}"`,
         `"${(item.categoryName || '').replace(/"/g, '""')}"`,
-        stokGudang,
-        stokEtalase,
         onHand,
         Number(item.minStock || 0),
         status,
@@ -373,14 +367,12 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
               <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
                 <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors w-16 text-center"><div className="flex items-center justify-center gap-1"><span>Kode Barang</span>{sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Barang</span>{sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('stokGudang')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Gudang</span>{sortField === 'stokGudang' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('stokEtalase')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Etalase</span>{sortField === 'stokEtalase' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 <th onClick={() => handleSort('stokAkhir')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Akhir</span>{sortField === 'stokAkhir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 <th onClick={() => handleSort('minStock')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'minStock' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                 <th className="py-1.5 px-2 text-center w-24">Aksi</th>
               </tr>
               <ColumnFilterRow
-                cells={[{ key: 'inventoryno' }, { key: 'inventoryname' }, {}, {}, {}, {}, {}]}
+                cells={[{ key: 'inventoryno' }, { key: 'inventoryname' }, {}, {}, {}]}
                 values={columnFilters}
                 onChange={(key, value) => setColumnFilters((prev) => ({ ...prev, [key]: value }))}
                 isDark={isDark}
@@ -389,14 +381,14 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
             <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="py-20 text-center animate-pulse">
+                  <td colSpan={5} className="py-20 text-center animate-pulse">
                     <RefreshCw className="w-8 h-8 mx-auto mb-3 animate-spin text-indigo-500" />
                     <p className="font-bold text-slate-500">Memuat Kartu Stok...</p>
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-20 text-center">
+                  <td colSpan={5} className="py-20 text-center">
                     <Archive className="w-12 h-12 mx-auto mb-3 text-slate-500 opacity-50" />
                     <p className="font-bold text-slate-500">Tidak ada barang yang cocok dengan filter.</p>
                   </td>
@@ -404,8 +396,6 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
               ) : (
                 sortedItems.map((item) => {
                   const onHand = Number(item.stokAkhir || 0);
-                  const stokEtalase = Number(item.stokEtalase || 0);
-                  const stokGudang = Number(item.stokGudang || 0);
                   const isExpanded = expandedRow === item.id;
 
                   return (
@@ -417,8 +407,6 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                           <div className="text-[10px] text-slate-500">{item.barcode} • {item.categoryName}</div>
                         </td>
                         
-                        <td className="px-4 py-3 text-right font-mono font-bold text-sm">{stokGudang.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-slate-400">{stokEtalase.toLocaleString()}</td>
                         <td className={`px-4 py-3 text-right font-mono font-black text-sm ${onHand <= 0 ? 'text-rose-500' : onHand <= item.minStock ? 'text-amber-500' : 'text-emerald-500'}`}>
                           {onHand.toLocaleString()}
                         </td>
@@ -451,7 +439,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
                       {/* 📖 KARTU STOK DRILL-DOWN LEDGER (Phase 2 Requirement) */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan={7} className="p-0 border-b-2 border-indigo-500/30">
+                          <td colSpan={5} className="p-0 border-b-2 border-indigo-500/30">
                             <div className={`p-4 ${isDark ? 'bg-slate-950 shadow-inner' : 'bg-slate-100 shadow-inner'}`}>
                               <div className="flex items-center justify-between mb-4">
                                 <h4 className="text-sm font-black flex items-center gap-2">

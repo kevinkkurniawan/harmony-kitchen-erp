@@ -34,7 +34,8 @@ export async function GET(req: Request) {
           i.id,
           COALESCE(i.hpp, 0) AS hpp,
           COALESCE(i.minstock, 0) AS minstock,
-          ${hasWarehouseFilter ? 'COALESCE(s.total_qty, 0)' : 'COALESCE(i.stokupdate, s.total_qty, 0)'} AS stock
+          -- s_stockinventory is a never-updated legacy snapshot: it only scopes items to a warehouse, stock is stokupdate
+          COALESCE(i.stokupdate, 0) AS stock
         FROM public.m_inventory i
         ${hasWarehouseFilter ? 'INNER JOIN' : 'LEFT JOIN'} stock_agg s ON s.inventoryid = i.id
         WHERE i.isactive = true

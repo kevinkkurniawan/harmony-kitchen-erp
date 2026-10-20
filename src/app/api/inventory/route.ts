@@ -85,34 +85,14 @@ export async function GET(req: Request) {
       prisma.m_wholesalecategory.findMany({ where: { id: { in: uniqueIds(items.map((i: any) => i.wholesalecategoryid)) } } }),
     ]);
     
-    // Fetch stock for these items
-    const inventoryIds = items.map((i: any) => Number(i.id));
-    const stocks = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT inventoryid, whcode, SUM(qtytotal) as total_qty FROM public.s_stockinventory WHERE inventoryid IN (${inventoryIds.length > 0 ? inventoryIds.join(',') : '0'}) GROUP BY inventoryid, whcode`
-    );
-
-    const stockMap = new Map();
-    for (const st of stocks) {
-      const invId = String(st.inventoryid);
-      if (!stockMap.has(invId)) {
-        stockMap.set(invId, { gudang: 0, etalase: 0 });
-      }
-      const current = stockMap.get(invId);
-      if (st.whcode === 1) {
-        current.gudang += Number(st.total_qty || 0);
-      } else {
-        current.etalase += Number(st.total_qty || 0);
-      }
-    }
-    
     const categoryMap = new Map(categories.map((c: any) => [Number(c.id), c.categoryname]));
     const productTypeMap = new Map(productTypes.map((p: any) => [Number(p.id), p.productname]));
     const wholesaleMap = new Map(wholesaleCategories.map((wc: any) => [wc.id, wc]));
 
     const mapped = items.map((i: any) => {
-      const stockData = stockMap.get(String(i.id)) || { gudang: 0, etalase: 0 };
-      const totalStock = stockData.gudang + stockData.etalase;
-      const liveStock = i.stokupdate !== null && i.stokupdate !== undefined ? Number(i.stokupdate) : totalStock;
+      // stokupdate is the running balance kept by sales / receiving / opname.
+      // s_stockinventory is a one-off legacy snapshot that is never updated, so it is not used for stock.
+      const liveStock = Number(i.stokupdate ?? 0);
       const wc = i.wholesalecategoryid ? wholesaleMap.get(i.wholesalecategoryid) : null;
       
       return {
@@ -161,8 +141,6 @@ export async function GET(req: Request) {
         is_active: Boolean(i.isactive ?? true),
         createdAt: i.createddate,
         created_at: i.createddate,
-        stokGudang: stockData.gudang,
-        stokEtalase: stockData.etalase
       };
     });
 
