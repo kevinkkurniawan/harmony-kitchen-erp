@@ -27,6 +27,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
+import { useDebounce } from '@/hooks/useDebounce';
 
 export interface OpnameEntry {
   id?: number;
@@ -97,6 +98,14 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   // Input Form Fields
   const [selectedInvId, setSelectedInvId] = useState<number | ''>('');
   const [barcodeInput, setBarcodeInput] = useState<string>('');
+  // Searchable product picker (type part of the name / SKU / barcode)
+  const [productQuery, setProductQuery] = useState<string>('');
+  const debouncedProductQuery = useDebounce(productQuery, 300);
+  const [productResults, setProductResults] = useState<InventoryLookupItem[]>([]);
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState<boolean>(false);
+  const [isSearchingProduct, setIsSearchingProduct] = useState<boolean>(false);
+  const [productHighlight, setProductHighlight] = useState<number>(0);
+  const productPickerRef = useRef<HTMLDivElement>(null);
   const [qtyInput, setQtyInput] = useState<number | ''>(1);
   const [descInput, setDescInput] = useState<string>('');
 
@@ -173,7 +182,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
   // Refresh Inventory & History Lookups without clobbering current form state
   const refreshLookupsAndHistory = useCallback(async () => {
     const [invRes, histRes] = await Promise.all([
-      fetch('/api/inventory?limit=500'),
+      fetch('/api/inventory?limit=500&status=active'),
       fetch('/api/inventory/opname'),
     ]);
     const invJson = await invRes.json();
@@ -238,6 +247,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     setOpnameItems([]);
     setSelectedInvId('');
     setBarcodeInput('');
+    setProductQuery('');
     setQtyInput(1);
     setDescInput('');
     showToast('Form Stok Opname Baru Siap Diisi', 'info');
@@ -279,17 +289,78 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     const found = inventoryList.find((item) => item.barcode === val || item.inventoryNo === val);
     if (found) {
       setSelectedInvId(Number(found.id));
+      setProductQuery(found.inventoryName);
     }
   };
 
-  // Handle Inventory Selection Change
-  const handleInventorySelect = (idNum: number) => {
-    setSelectedInvId(idNum);
-    const found = inventoryList.find((item) => Number(item.id) === Number(idNum));
-    if (found) {
-      setBarcodeInput(found.barcode || found.inventoryNo);
-    }
+  // Handle Inventory Selection from the searchable picker
+  const handleInventorySelect = (item: InventoryLookupItem) => {
+    const picked = { ...item, id: Number(item.id) };
+    setInventoryList((prev) => (prev.some((p) => Number(p.id) === picked.id) ? prev : [picked, ...prev]));
+    setSelectedInvId(picked.id);
+    setBarcodeInput(picked.barcode || picked.inventoryNo);
+    setProductQuery(picked.inventoryName);
+    setIsProductDropdownOpen(false);
   };
+
+  // Live product search over the full catalog (request-id guard drops stale responses)
+  const productSearchReqIdRef = useRef(0);
+  useEffect(() => {
+    const reqId = ++productSearchReqIdRef.current;
+    const q = debouncedProductQuery.trim();
+    if (!q || !isProductDropdownOpen) return;
+    const runSearch = async () => {
+      setIsSearchingProduct(true);
+      try {
+        const res = await fetch(`/api/inventory?q=${encodeURIComponent(q)}&limit=30&status=active`);
+        const json = await res.json();
+        if (reqId !== productSearchReqIdRef.current) return;
+        const remoteItems: InventoryLookupItem[] = json.data?.items || json.data || [];
+        if (json.success && Array.isArray(remoteItems)) {
+          setProductResults(remoteItems.map((it) => ({ ...it, id: Number(it.id) })));
+          setProductHighlight(0);
+        }
+      } catch (err) {
+        console.error('Product search failed:', err);
+      } finally {
+        if (reqId === productSearchReqIdRef.current) setIsSearchingProduct(false);
+      }
+    };
+    runSearch();
+  }, [debouncedProductQuery, isProductDropdownOpen]);
+
+  // Typing shows instant local matches while the API search is debounced
+  const handleProductQueryChange = (val: string) => {
+    setProductQuery(val);
+    setSelectedInvId('');
+    setIsProductDropdownOpen(true);
+    setProductHighlight(0);
+    const q = val.trim().toLowerCase();
+    setProductResults(
+      q
+        ? inventoryList
+            .filter(
+              (i) =>
+                i.inventoryName.toLowerCase().includes(q) ||
+                (i.inventoryNo || '').toLowerCase().includes(q) ||
+                (i.barcode || '').toLowerCase().includes(q)
+            )
+            .slice(0, 30)
+        : []
+    );
+  };
+
+  // Close the product dropdown when clicking outside of it
+  useEffect(() => {
+    if (!isProductDropdownOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (productPickerRef.current && !productPickerRef.current.contains(e.target as Node)) {
+        setIsProductDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [isProductDropdownOpen]);
 
   // Add Item to Pending Opname List
   const handleAddItem = async (e?: React.FormEvent) => {
@@ -316,7 +387,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     // Fallback 2: If item isn't in local list yet, query API directly by barcode/SKU
     if (!found && rawScan) {
       try {
-        const res = await fetch(`/api/inventory?q=${encodeURIComponent(rawScan)}&limit=20`);
+        const res = await fetch(`/api/inventory?q=${encodeURIComponent(rawScan)}&limit=20&status=active`);
         const json = await res.json();
         const remoteItems: InventoryLookupItem[] = json.data?.items || json.data || [];
         const q = rawScan.toLowerCase();
@@ -389,6 +460,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
     // Reset input fields
     setSelectedInvId('');
     setBarcodeInput('');
+    setProductQuery('');
     setQtyInput(1);
     setDescInput('');
 
@@ -1165,23 +1237,74 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           />
         </div>
 
-        {/* Select Barang */}
-        <div className="flex-1 min-w-[220px]">
-          <select
-            value={selectedInvId}
+        {/* Select Barang (searchable) */}
+        <div ref={productPickerRef} className="relative flex-1 min-w-[220px]">
+          <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+          <input
+            type="text"
+            value={productQuery}
             disabled={isReadOnly}
-            onChange={(e) => handleInventorySelect(Number(e.target.value))}
-            className={`w-full px-3 py-1.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+            onChange={(e) => handleProductQueryChange(e.target.value)}
+            onFocus={(e) => {
+              e.target.select();
+              if (productQuery.trim() && !selectedInvId) setIsProductDropdownOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setIsProductDropdownOpen(true);
+                setProductHighlight((h) => Math.min(h + 1, Math.max(productResults.length - 1, 0)));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setProductHighlight((h) => Math.max(h - 1, 0));
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const pick = isProductDropdownOpen ? productResults[productHighlight] : undefined;
+                if (pick) handleInventorySelect(pick);
+                else if (selectedInvId) handleAddItem();
+              } else if (e.key === 'Escape') {
+                setIsProductDropdownOpen(false);
+              }
+            }}
+            placeholder="Cari Barang (Nama / SKU / Barcode)..."
+            className={`w-full pl-8 pr-8 py-1.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+              isDark ? 'bg-slate-800 text-white border-slate-700 placeholder-slate-500' : 'bg-white text-slate-900 border-slate-300 placeholder:text-slate-400'
             }`}
-          >
-            <option value="">-- Pilih Barang Catalog --</option>
-            {inventoryList.slice(0, 300).map((inv) => (
-              <option key={inv.id} value={inv.id}>
-                {inv.inventoryName} ({inv.inventoryNo})
-              </option>
-            ))}
-          </select>
+          />
+          {isSearchingProduct && isProductDropdownOpen && (
+            <RefreshCw className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-amber-500" />
+          )}
+
+          {isProductDropdownOpen && productQuery.trim() && (
+            <div className={`absolute left-0 right-0 top-full mt-1 z-40 rounded-xl border shadow-2xl max-h-72 overflow-y-auto ${
+              isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+            }`}>
+              {productResults.length === 0 ? (
+                <div className={`px-3 py-2.5 text-xs italic ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {isSearchingProduct ? 'Mencari barang...' : 'Barang tidak ditemukan'}
+                </div>
+              ) : (
+                productResults.map((inv, idx) => (
+                  <div
+                    key={inv.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleInventorySelect(inv);
+                    }}
+                    onMouseEnter={() => setProductHighlight(idx)}
+                    className={`px-3 py-2 border-b last:border-b-0 text-xs cursor-pointer ${
+                      isDark ? 'border-slate-800' : 'border-slate-200'
+                    } ${idx === productHighlight ? (isDark ? 'bg-slate-800' : 'bg-amber-50') : ''}`}
+                  >
+                    <div className="font-bold">{inv.inventoryName}</div>
+                    <div className={`text-[11px] font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      SKU: {inv.inventoryNo} | Barcode: {inv.barcode || '-'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Qty */}
