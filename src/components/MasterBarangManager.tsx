@@ -95,7 +95,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(100);
 
   // Toast Notification State
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -1446,7 +1446,6 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
                   isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
                 }`}
               >
-                <option value={50}>50</option>
                 <option value={100}>100</option>
                 <option value={200}>200</option>
                 <option value={500}>500</option>
