@@ -1,9 +1,14 @@
 // One-way sync: legacy SQL Server (store) -> Postgres (Supabase, used by the Vercel ERP and POS).
 //
-//   node --env-file=.env sync.mjs          run forever: a pass every SYNC_INTERVAL_MINUTES,
-//                                          comparing every row of every table every FULL_EVERY_MINUTES
-//   node --env-file=.env sync.mjs --once   one pass, then exit
-//   node --env-file=.env sync.mjs --full   one full pass, then exit
+//   hk-sync.exe            (or: node sync.mjs) run forever: a pass every SYNC_INTERVAL_MINUTES,
+//                          comparing every row of every table every FULL_EVERY_MINUTES
+//   hk-sync.exe --config   settings screen in the browser (also opens when there are no settings yet)
+//   hk-sync.exe --check    test both connections, then exit
+//   hk-sync.exe --setup    move new-app ids to the trial range, then exit
+//   hk-sync.exe --once     one pass, then exit
+//   hk-sync.exe --full     one full pass, then exit
+//
+// Settings come from hk-sync.env next to the exe (or .env next to sync.mjs), see env.mjs.
 //
 // Legacy ModifiedDate is not reliable, so the agent compares row contents: it reads legacy rows, hashes them,
 // and writes only rows whose hash differs from what it last wrote (kept in a local cache file). Rows that
@@ -11,11 +16,13 @@
 // are limited to recently created rows between full passes.
 //
 // Only SELECTs are sent to SQL Server. Rows entered in the new app use ids >= TRIAL_ID_START
-// (see setup.mjs); they never appear in the cache, so they are never overwritten or deleted.
+// (see --setup); they never appear in the cache, so they are never overwritten or deleted.
 
+import { BASE_DIR, ENV_FILE, PACKAGED } from './env.mjs';
 import { createHash } from 'node:crypto';
+import { appendFileSync, existsSync, renameSync, statSync } from 'node:fs';
 import { readFile, rename, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import sql from 'mssql';
 import pg from 'pg';
 import { TABLES } from './tables.mjs';
@@ -25,11 +32,24 @@ const TRIAL_ID_START = Number(env.TRIAL_ID_START ?? 900000000);
 const INTERVAL_MIN = Number(env.SYNC_INTERVAL_MINUTES ?? 5);
 const FULL_EVERY_MIN = Number(env.FULL_EVERY_MINUTES ?? 60);
 const RECENT_DAYS = Number(env.RECENT_DAYS ?? 7);
-const CACHE_FILE = env.CACHE_FILE ?? fileURLToPath(new URL('./sync-cache.json', import.meta.url));
+const CACHE_FILE = env.CACHE_FILE ?? join(BASE_DIR, 'sync-cache.json');
+const LOG_FILE = join(BASE_DIR, 'hk-sync.log');
 const MAX_PARAMS = 60000; // Postgres allows 65535 bind parameters per statement
 const LOCK_ID = 727274; // pg advisory lock, keeps two agents from running at once
 
-const log = (...args) => console.log(new Date().toISOString(), ...args);
+// The packaged exe runs as a scheduled task with no console, so it also logs to hk-sync.log
+// (rolled over to hk-sync.log.1 at 5 MB).
+function log(...args) {
+  const line = [new Date().toISOString(), ...args].join(' ');
+  console.log(line);
+  if (!PACKAGED) return;
+  try {
+    if (statSync(LOG_FILE, { throwIfNoEntry: false })?.size > 5 * 1024 * 1024) renameSync(LOG_FILE, `${LOG_FILE}.1`);
+    appendFileSync(LOG_FILE, `${line}\n`);
+  } catch {
+    // logging must never stop the sync
+  }
+}
 
 const legacyPool = new sql.ConnectionPool({
   server: env.MSSQL_SERVER ?? 'localhost',
@@ -374,16 +394,73 @@ async function runPass(full) {
   }
 }
 
-async function main() {
-  cache = await loadCache();
+// Moves the id sequences of synced tables to TRIAL_ID_START, so rows created in the new app
+// never collide with ids coming from legacy. Safe to run again.
+async function runSetup() {
+  for (const t of TABLES.filter((t) => t.seq)) {
+    const r = await pgPool.query(`SELECT pg_get_serial_sequence($1, 'id') AS seq`, [`public.${t.name}`]);
+    const seq = r.rows[0]?.seq;
+    if (!seq) {
+      log(`${t.name}: no id sequence, skipped`);
+      continue;
+    }
+    const next = await pgPool.query(
+      `SELECT setval($1, GREATEST($2::bigint, (SELECT COALESCE(MAX(id), 0) + 1 FROM ${q(t.name)} WHERE id >= $2)), false) AS next`,
+      [seq, TRIAL_ID_START],
+    );
+    log(`${t.name}: next new-app id ${next.rows[0].next}`);
+  }
+}
+
+// Tests both connections and reports how many mapped tables each side has.
+async function runCheck() {
+  log(`settings: ${ENV_FILE}`);
   await legacyPool.connect();
-  await ensureTables();
+  log(`SQL Server: connected to ${env.MSSQL_SERVER}/${env.MSSQL_DATABASE}`);
+  await pgPool.query('SELECT 1');
+  log('Postgres: connected');
+  const plans = await loadPlans();
+  log(`${plans.length} of ${TABLES.length} tables found on both sides`);
+  if (plans.length !== TABLES.length) process.exitCode = 1;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function main() {
   const args = process.argv.slice(2);
+  if (args.includes('--help')) {
+    console.log('hk-sync [--config | --check | --setup | --once | --full]  (no option: run forever)');
+    console.log(`settings: ${ENV_FILE}`);
+    return;
+  }
+  // double-clicking the exe before it has settings opens the settings screen
+  if (args.includes('--config') || (PACKAGED && !args.length && !existsSync(ENV_FILE))) {
+    const { runConfig } = await import('./config.mjs');
+    return runConfig();
+  }
+  if (args.includes('--check')) return runCheck();
+  if (args.includes('--setup')) return runSetup();
+
+  cache = await loadCache();
   if (args.includes('--full') || args.includes('--once')) {
+    await legacyPool.connect();
+    await ensureTables();
     await runPass(args.includes('--full'));
     return;
   }
+
   log(`sync running every ${INTERVAL_MIN} min, full compare every ${FULL_EVERY_MIN} min`);
+  // started at boot, the network or SQL Server may not be up yet: keep retrying
+  for (;;) {
+    try {
+      await legacyPool.connect();
+      await ensureTables();
+      break;
+    } catch (err) {
+      log(`waiting for databases: ${err.message}`);
+      await sleep(60000);
+    }
+  }
   let lastFull = 0;
   for (;;) {
     const started = Date.now();
@@ -393,8 +470,7 @@ async function main() {
     } catch (err) {
       log(`pass FAILED ${err.message}`);
     }
-    const wait = Math.max(0, INTERVAL_MIN * 60000 - (Date.now() - started));
-    await new Promise((r) => setTimeout(r, wait));
+    await sleep(Math.max(0, INTERVAL_MIN * 60000 - (Date.now() - started)));
   }
 }
 

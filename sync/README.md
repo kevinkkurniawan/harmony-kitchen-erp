@@ -38,18 +38,21 @@ and `m_user.password` is not copied.
    GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO hk_sync;
    ```
    Use the session pooler or direct connection string (port 5432), not the transaction pooler.
-3. **Sync PC:** install Node.js 20 LTS or newer, copy this folder, then
-   ```
-   npm install
-   copy .env.example .env      (and fill it in)
-   npm run setup               (moves new-app ids to the trial range)
-   npm run full                (first full copy)
-   ```
+3. **Sync PC:** copy the built `dist` folder (see Building) and run `install.bat` as administrator. It opens a
+   settings screen in the browser (`hk-sync.exe --config`, served on 127.0.0.1) where the connections are entered
+   and tested; "Save and start sync" writes `hk-sync.env`, moves new-app ids to the trial range (`--setup`), and
+   registers `hk-sync.exe` as a Windows task that starts with Windows. No Node or codebase is needed on that PC;
+   `dist/README.txt` is the store-side guide.
    The first full copy replaces whatever the synced tables in Supabase hold today with legacy data, and removes
    rows below the trial id range that are not in legacy. Deleting `sync-cache.json` makes the next pass do this again.
-4. **Keep it running:** a Windows Task Scheduler task, triggered at startup, running
-   `node --env-file=.env sync.mjs` in this folder, set to restart on failure and to "not start a new instance"
-   if one is running. The agent also takes a Postgres advisory lock, so two copies never run at once.
+   The agent takes a Postgres advisory lock, so two copies never run at once.
+
+## Building
+
+On a Windows PC with Node 20.12 or newer, in this folder: `npm install`, then `npm run build`. That writes
+`dist/` with `hk-sync.exe` (the agent with Node built in), `install.bat`, `uninstall.bat`,
+`hk-sync.env.example` and `README.txt`. For development, `npm run check|setup|once|full|start` run the same
+code with Node, reading `.env` in this folder.
 
 ## Checking on it
 
