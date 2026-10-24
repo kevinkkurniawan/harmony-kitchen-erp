@@ -6,8 +6,12 @@ apps on real data.
 
 - Runs on the always-on PC at the store and connects out to Supabase. No port is opened at the store.
 - Sends only `SELECT` to SQL Server.
-- Every 5 minutes: copies rows whose `modifieddate` moved or whose id is new.
-- Once a night (`FULL_SYNC_HOUR`): copies every row again and deletes Postgres rows that were deleted in legacy.
+- Every 5 minutes it compares legacy rows with what it last wrote and writes only rows that changed.
+  Legacy `ModifiedDate` is not used: POS voids, discount recalcs and stock updates change rows without it.
+  The comparison uses hashes kept in `sync-cache.json` next to the script.
+- Small tables are read whole every pass, so deletes in legacy show up within 5 minutes. The four large tables
+  (POS headers, details, payments, stock flow details) are limited to rows created in the last 7 days, and
+  read whole every hour (`FULL_EVERY_MINUTES`), which also catches their deletes and older edits.
 - Legacy wins: synced rows are overwritten with legacy values.
 - Rows entered in the new app get ids from `TRIAL_ID_START` (900,000,000) up and are never touched.
   Nothing goes back to legacy.
@@ -41,7 +45,8 @@ and `m_user.password` is not copied.
    npm run setup               (moves new-app ids to the trial range)
    npm run full                (first full copy)
    ```
-   The first full copy replaces whatever the synced tables in Supabase hold today with legacy data.
+   The first full copy replaces whatever the synced tables in Supabase hold today with legacy data, and removes
+   rows below the trial id range that are not in legacy. Deleting `sync-cache.json` makes the next pass do this again.
 4. **Keep it running:** a Windows Task Scheduler task, triggered at startup, running
    `node --env-file=.env sync.mjs` in this folder, set to restart on failure and to "not start a new instance"
    if one is running. The agent also takes a Postgres advisory lock, so two copies never run at once.
@@ -49,7 +54,7 @@ and `m_user.password` is not copied.
 ## Checking on it
 
 ```sql
-SELECT table_name, last_run, rows_copied, rows_skipped, last_error FROM sync_state ORDER BY last_run DESC;
+SELECT table_name, last_run, rows_changed, rows_deleted, rows_skipped, last_error FROM sync_state ORDER BY last_run DESC;
 SELECT table_name, row_key, error, at FROM sync_skipped ORDER BY at DESC LIMIT 50;
 ```
 

@@ -1,13 +1,21 @@
 // One-way sync: legacy SQL Server (store) -> Postgres (Supabase, used by the Vercel ERP and POS).
 //
-//   node --env-file=.env sync.mjs          run forever: incremental every SYNC_INTERVAL_MINUTES,
-//                                          full copy + reconcile once a night at FULL_SYNC_HOUR
-//   node --env-file=.env sync.mjs --once   one incremental pass, then exit
-//   node --env-file=.env sync.mjs --full   one full copy + reconcile, then exit
+//   node --env-file=.env sync.mjs          run forever: a pass every SYNC_INTERVAL_MINUTES,
+//                                          comparing every row of every table every FULL_EVERY_MINUTES
+//   node --env-file=.env sync.mjs --once   one pass, then exit
+//   node --env-file=.env sync.mjs --full   one full pass, then exit
+//
+// Legacy ModifiedDate is not reliable, so the agent compares row contents: it reads legacy rows, hashes them,
+// and writes only rows whose hash differs from what it last wrote (kept in a local cache file). Rows that
+// were in legacy last time but are gone now are deleted from Postgres. Large tables (`recent` in tables.mjs)
+// are limited to recently created rows between full passes.
 //
 // Only SELECTs are sent to SQL Server. Rows entered in the new app use ids >= TRIAL_ID_START
-// (see setup.mjs) and are never overwritten or deleted.
+// (see setup.mjs); they never appear in the cache, so they are never overwritten or deleted.
 
+import { createHash } from 'node:crypto';
+import { readFile, rename, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import sql from 'mssql';
 import pg from 'pg';
 import { TABLES } from './tables.mjs';
@@ -15,8 +23,9 @@ import { TABLES } from './tables.mjs';
 const env = process.env;
 const TRIAL_ID_START = Number(env.TRIAL_ID_START ?? 900000000);
 const INTERVAL_MIN = Number(env.SYNC_INTERVAL_MINUTES ?? 5);
-const FULL_SYNC_HOUR = Number(env.FULL_SYNC_HOUR ?? 2);
-const OVERLAP_MIN = 10; // re-read rows modified shortly before the watermark, for late commits
+const FULL_EVERY_MIN = Number(env.FULL_EVERY_MINUTES ?? 60);
+const RECENT_DAYS = Number(env.RECENT_DAYS ?? 7);
+const CACHE_FILE = env.CACHE_FILE ?? fileURLToPath(new URL('./sync-cache.json', import.meta.url));
 const MAX_PARAMS = 60000; // Postgres allows 65535 bind parameters per statement
 const LOCK_ID = 727274; // pg advisory lock, keeps two agents from running at once
 
@@ -45,8 +54,37 @@ const pgPool = new pg.Pool({
 const q = (name) => `"${name}"`;
 const b = (name) => `[${name}]`;
 
-// Column lists per table, matched case-insensitively (legacy names may be mixed case).
-async function loadColumns() {
+// Local wall-clock text for dates, so a legacy `date` key never shifts a day through UTC.
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+const localText = (d) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+  `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+const norm = (v) =>
+  v == null ? null : v instanceof Date ? localText(v) : Buffer.isBuffer(v) ? v.toString('base64') : String(v);
+
+const keyOf = (plan, row) => JSON.stringify(plan.pk.map((c) => norm(row[c])));
+const hashOf = (plan, row) =>
+  createHash('sha1').update(JSON.stringify(plan.cols.map((c) => norm(row[c])))).digest('base64').slice(0, 16);
+
+// cache: { [table]: { [key]: hash } } of what is in Postgres from legacy
+let cache = null;
+
+async function loadCache() {
+  try {
+    return JSON.parse(await readFile(CACHE_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function saveCache() {
+  const tmp = `${CACHE_FILE}.tmp`;
+  await writeFile(tmp, JSON.stringify(cache));
+  await rename(tmp, CACHE_FILE);
+}
+
+// Column lists per table, matched case-insensitively (legacy names are mixed case).
+async function loadPlans() {
   const legacy = await legacyPool.request().query(
     `SELECT TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo'`,
   );
@@ -80,23 +118,17 @@ async function loadColumns() {
       log(`skip ${t.name}: key column(s) ${missingPk.join(', ')} not in both databases`);
       continue;
     }
-    const has = (c) => c && cols.includes(c);
+    const trialKey = t.trialKey ?? (t.seq ? 'id' : null);
     plans.push({
       ...t,
       legacyTable: src.table,
       cols,
-      legacyName: (c) => src.cols.get(c),
-      changed: has(t.changed) ? t.changed : null,
-      idCol: has(t.idCol ?? 'id') ? (t.idCol ?? 'id') : null,
-      trialKey: has(t.trialKey ?? (t.seq ? 'id' : null)) ? (t.trialKey ?? 'id') : null,
+      legacyName: (c) => src.cols.get(c) ?? c,
+      recent: t.recent && src.cols.has(t.recent) ? t.recent : null,
+      trialKey: trialKey && cols.includes(trialKey) ? trialKey : null,
     });
   }
   return plans;
-}
-
-async function getState(table) {
-  const r = await pgPool.query(`SELECT last_changed, last_id FROM sync_state WHERE table_name = $1`, [table]);
-  return r.rows[0] ?? null;
 }
 
 function upsertSql(plan, rowCount) {
@@ -115,166 +147,180 @@ function upsertSql(plan, rowCount) {
 
 // Writes one batch inside a savepoint. If the batch fails (e.g. a legacy orphan breaks a foreign key),
 // retries row by row and records rows that still fail in sync_skipped instead of stopping the table.
+// Returns the rows that were written.
 async function writeBatch(client, plan, rows) {
   const params = (rs) => rs.flatMap((r) => plan.cols.map((c) => r[c] ?? null));
   await client.query('SAVEPOINT batch');
   try {
     await client.query(upsertSql(plan, rows.length), params(rows));
     await client.query('RELEASE SAVEPOINT batch');
-    return 0;
+    return rows;
   } catch {
     await client.query('ROLLBACK TO SAVEPOINT batch');
   }
-  let skipped = 0;
+  const written = [];
   for (const row of rows) {
     await client.query('SAVEPOINT row');
     try {
       await client.query(upsertSql(plan, 1), params([row]));
       await client.query('RELEASE SAVEPOINT row');
+      written.push(row);
     } catch (err) {
       await client.query('ROLLBACK TO SAVEPOINT row');
-      const key = Object.fromEntries(plan.pk.map((c) => [c, row[c]]));
+      // retried every pass until it goes in; one row per key here, with the latest error
       await client.query(
-        `INSERT INTO sync_skipped (table_name, row_key, error) VALUES ($1, $2, $3)`,
-        [plan.name, JSON.stringify(key), String(err.message).slice(0, 500)],
+        `INSERT INTO sync_skipped (table_name, row_key, error) VALUES ($1, $2, $3)
+         ON CONFLICT (table_name, row_key) DO UPDATE SET error = EXCLUDED.error, at = now()`,
+        [
+        plan.name,
+        keyOf(plan, row),
+          String(err.message).slice(0, 500),
+        ],
       );
-      skipped++;
     }
   }
-  return skipped;
+  if (written.length) {
+    await client.query(
+      `DELETE FROM sync_skipped WHERE table_name = $1 AND row_key = ANY($2)`,
+      [plan.name, written.map((row) => keyOf(plan, row))],
+    );
+  }
+  return written;
 }
 
-// Same key whichever side the row came from (pg returns bigint as string, mssql as number).
-const keyOf = (plan, row) =>
-  JSON.stringify(plan.pk.map((c) => (row[c] instanceof Date ? row[c].toISOString() : String(row[c]))));
+async function deleteKeys(client, plan, keys) {
+  const n = plan.pk.length;
+  for (let i = 0; i < keys.length; i += 1000) {
+    const chunk = keys.slice(i, i + 1000).map((k) => JSON.parse(k));
+    const tuples = chunk.map((_, k) => `(${plan.pk.map((__, j) => `$${k * n + j + 1}`).join(',')})`);
+    await client.query(
+      `DELETE FROM ${q(plan.name)} WHERE (${plan.pk.map(q).join(',')}) IN (${tuples.join(',')})`,
+      chunk.flat(),
+    );
+  }
+}
 
-// Copies one table. Incremental: rows changed since the watermark, or newer than the last id.
-// Full: every row; returns the set of legacy keys for reconcile.
+// Compares one table and writes the differences, deleting rows that disappeared from legacy.
+// Between full passes, large tables only read rows created in the last RECENT_DAYS (no deletes then).
 async function syncTable(plan, full) {
-  const state = full ? null : await getState(plan.name);
+  const known = cache[plan.name] ?? {};
+  const scoped = !full && plan.recent;
   const select = plan.cols.map((c) => `${b(plan.legacyName(c))} AS ${b(c)}`).join(', ');
   const request = legacyPool.request();
   let where = '';
-  if (state) {
-    const parts = [];
-    if (plan.changed && state.last_changed) {
-      request.input('since', sql.DateTime2, new Date(state.last_changed.getTime() - OVERLAP_MIN * 60000));
-      parts.push(`${b(plan.legacyName(plan.changed))} >= @since`);
-    }
-    if (plan.idCol && state.last_id != null) {
-      request.input('lastId', sql.BigInt, Number(state.last_id));
-      parts.push(`${b(plan.legacyName(plan.idCol))} > @lastId`);
-    }
-    // nothing to filter on: leave the table to the nightly full pass
-    if (!parts.length) return null;
-    where = `WHERE ${parts.join(' OR ')}`;
+  if (scoped) {
+    request.input('since', sql.DateTime, new Date(Date.now() - RECENT_DAYS * 86400000));
+    where = `WHERE ${b(plan.legacyName(plan.recent))} >= @since`;
   }
 
   const batchSize = Math.min(500, Math.floor(MAX_PARAMS / plan.cols.length));
-  const keys = full ? new Set() : null;
-  let maxChanged = state?.last_changed ?? null;
-  let maxId = state?.last_id != null ? Number(state.last_id) : null;
-  let rows = [];
-  let copied = 0;
+  const seen = new Set();
+  const fresh = {}; // key -> hash for rows written this pass
+  let pending = [];
+  let changed = 0;
   let skipped = 0;
+  let deleted = 0;
 
   const client = await pgPool.connect();
   try {
     await client.query('BEGIN');
+    const flush = async (batch) => {
+      const written = await writeBatch(client, plan, batch);
+      for (const row of written) fresh[keyOf(plan, row)] = row.__hash;
+      changed += written.length;
+      skipped += batch.length - written.length;
+    };
     await new Promise((resolve, reject) => {
       let chain = Promise.resolve();
       request.stream = true;
       request.on('row', (row) => {
-        if (keys) keys.add(keyOf(plan, row));
-        const changed = plan.changed ? row[plan.changed] : null;
-        if (changed && (!maxChanged || changed > maxChanged)) maxChanged = changed;
-        const id = plan.idCol ? Number(row[plan.idCol]) : null;
-        if (id != null && !Number.isNaN(id) && (maxId == null || id > maxId)) maxId = id;
-        rows.push(row);
-        if (rows.length >= batchSize) {
-          const batch = rows;
-          rows = [];
+        const key = keyOf(plan, row);
+        seen.add(key);
+        const hash = hashOf(plan, row);
+        if (known[key] === hash) return;
+        row.__hash = hash;
+        pending.push(row);
+        if (pending.length >= batchSize) {
+          const batch = pending;
+          pending = [];
           request.pause();
           chain = chain
-            .then(() => writeBatch(client, plan, batch))
-            .then((s) => {
-              skipped += s;
-              copied += batch.length;
-              request.resume();
-            })
+            .then(() => flush(batch))
+            .then(() => request.resume())
             .catch(reject);
         }
       });
       request.on('error', reject);
       request.on('done', () => {
-        chain
-          .then(async () => {
-            if (rows.length) {
-              skipped += await writeBatch(client, plan, rows);
-              copied += rows.length;
-            }
-          })
-          .then(resolve, reject);
+        chain.then(() => (pending.length ? flush(pending) : null)).then(resolve, reject);
       });
       request.query(`SELECT ${select} FROM [dbo].${b(plan.legacyTable)} ${where}`);
     });
+
+    // a read that covered the whole table can also tell which rows were deleted in legacy
+    const gone = scoped ? [] : Object.keys(known).filter((k) => !seen.has(k));
+    if (gone.length) {
+      await deleteKeys(client, plan, gone);
+      deleted = gone.length;
+    }
     await client.query(
-      `INSERT INTO sync_state (table_name, last_changed, last_id, last_run, rows_copied, rows_skipped, last_error)
-       VALUES ($1, $2, $3, now(), $4, $5, NULL)
-       ON CONFLICT (table_name) DO UPDATE SET last_changed = EXCLUDED.last_changed, last_id = EXCLUDED.last_id,
-         last_run = now(), rows_copied = EXCLUDED.rows_copied, rows_skipped = EXCLUDED.rows_skipped, last_error = NULL`,
-      [plan.name, maxChanged, maxId, copied, skipped],
+      `INSERT INTO sync_state (table_name, last_run, rows_changed, rows_deleted, rows_skipped, last_error)
+       VALUES ($1, now(), $2, $3, $4, NULL)
+       ON CONFLICT (table_name) DO UPDATE SET last_run = now(), rows_changed = EXCLUDED.rows_changed,
+         rows_deleted = EXCLUDED.rows_deleted, rows_skipped = EXCLUDED.rows_skipped, last_error = NULL`,
+      [plan.name, changed, deleted, skipped],
     );
     await client.query('COMMIT');
+    for (const k of gone) delete known[k];
+    Object.assign(known, fresh);
+    cache[plan.name] = known;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
   } finally {
     client.release();
   }
-  if (copied) log(`${plan.name}: ${copied} row(s) copied${skipped ? `, ${skipped} skipped` : ''}`);
-  return keys;
+  if (changed || deleted || skipped) {
+    log(`${plan.name}: ${changed} written, ${deleted} deleted${skipped ? `, ${skipped} skipped` : ''}`);
+  }
+  return seen;
 }
 
-// Deletes Postgres rows that no longer exist in legacy. Never touches trial rows,
-// and skips tables that have no way to tell trial rows apart.
-async function reconcileTable(plan, legacyKeys) {
-  if (!plan.trialKey || !legacyKeys) return;
+// Without a cache the agent cannot know which Postgres rows came from legacy, so after a cold full pass
+// it removes rows below the trial range that are not in legacy. Tables without a trialKey are left alone.
+async function pruneTable(plan, legacyKeys) {
+  if (!plan.trialKey) return;
   const r = await pgPool.query(
     `SELECT ${plan.pk.map(q).join(',')} FROM ${q(plan.name)} WHERE ${q(plan.trialKey)} < $1`,
     [TRIAL_ID_START],
   );
-  const gone = r.rows.filter((row) => !legacyKeys.has(keyOf(plan, row)));
+  const gone = r.rows.map((row) => keyOf(plan, row)).filter((k) => !legacyKeys.has(k));
   if (!gone.length) return;
-  for (let i = 0; i < gone.length; i += 1000) {
-    const chunk = gone.slice(i, i + 1000);
-    const n = plan.pk.length;
-    const tuples = chunk.map((_, k) => `(${plan.pk.map((__, j) => `$${k * n + j + 1}`).join(',')})`);
-    await pgPool.query(
-      `DELETE FROM ${q(plan.name)} WHERE (${plan.pk.map(q).join(',')}) IN (${tuples.join(',')})`,
-      chunk.flatMap((row) => plan.pk.map((c) => row[c])),
-    );
+  const client = await pgPool.connect();
+  try {
+    await deleteKeys(client, plan, gone);
+  } finally {
+    client.release();
   }
-  log(`${plan.name}: ${gone.length} row(s) deleted (gone from legacy)`);
+  log(`${plan.name}: ${gone.length} row(s) not in legacy deleted`);
 }
 
 async function ensureTables() {
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS sync_state (
       table_name   text PRIMARY KEY,
-      last_changed timestamptz,
-      last_id      bigint,
       last_run     timestamptz,
-      rows_copied  integer,
+      rows_changed integer,
+      rows_deleted integer,
       rows_skipped integer,
       last_error   text
     );
     CREATE TABLE IF NOT EXISTS sync_skipped (
-      id         bigserial PRIMARY KEY,
       table_name text NOT NULL,
-      row_key    jsonb NOT NULL,
+      row_key    text NOT NULL,
       error      text,
-      at         timestamptz NOT NULL DEFAULT now()
+      at         timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (table_name, row_key)
     );`);
 }
 
@@ -285,15 +331,23 @@ async function runPass(full) {
   if (!lock.rows[0].ok) {
     lockClient.release();
     log('another sync is running, skipping this pass');
-    return;
+    return false;
   }
   try {
-    const plans = await loadColumns();
-    const keys = new Map();
+    const cold = cache == null;
+    if (cold) {
+      log('no local cache: comparing every row and pruning Postgres rows that are not in legacy');
+      cache = {};
+      full = true;
+    }
+    const plans = await loadPlans();
+    const seen = new Map();
+    let failed = false;
     for (const plan of plans) {
       try {
-        keys.set(plan.name, await syncTable(plan, full || !(await getState(plan.name))));
+        seen.set(plan.name, await syncTable(plan, full));
       } catch (err) {
+        failed = true;
         log(`${plan.name}: FAILED ${err.message}`);
         await pgPool.query(
           `INSERT INTO sync_state (table_name, last_run, last_error) VALUES ($1, now(), $2)
@@ -302,33 +356,26 @@ async function runPass(full) {
         );
       }
     }
-    if (full) {
+    if (cold) {
       for (const plan of [...plans].reverse()) {
+        if (!seen.has(plan.name)) continue;
         try {
-          await reconcileTable(plan, keys.get(plan.name));
+          await pruneTable(plan, seen.get(plan.name));
         } catch (err) {
-          log(`${plan.name}: reconcile FAILED ${err.message}`);
+          log(`${plan.name}: prune FAILED ${err.message}`);
         }
       }
-      await pgPool.query(
-        `INSERT INTO sync_state (table_name, last_run) VALUES ('__full__', now())
-         ON CONFLICT (table_name) DO UPDATE SET last_run = now()`,
-      );
     }
+    await saveCache();
+    return full && !failed;
   } finally {
     await lockClient.query(`SELECT pg_advisory_unlock($1)`, [LOCK_ID]).catch(() => {});
     lockClient.release();
   }
 }
 
-async function fullDue() {
-  if (new Date().getHours() !== FULL_SYNC_HOUR) return false;
-  const r = await pgPool.query(`SELECT last_run FROM sync_state WHERE table_name = '__full__'`);
-  const lastRun = r.rows[0]?.last_run;
-  return !lastRun || Date.now() - lastRun.getTime() > 20 * 60 * 60 * 1000;
-}
-
 async function main() {
+  cache = await loadCache();
   await legacyPool.connect();
   await ensureTables();
   const args = process.argv.slice(2);
@@ -336,11 +383,13 @@ async function main() {
     await runPass(args.includes('--full'));
     return;
   }
-  log(`sync running every ${INTERVAL_MIN} min, full pass at ${FULL_SYNC_HOUR}:00`);
+  log(`sync running every ${INTERVAL_MIN} min, full compare every ${FULL_EVERY_MIN} min`);
+  let lastFull = 0;
   for (;;) {
     const started = Date.now();
     try {
-      await runPass(await fullDue());
+      const full = started - lastFull >= FULL_EVERY_MIN * 60000;
+      if (await runPass(full)) lastFull = started;
     } catch (err) {
       log(`pass FAILED ${err.message}`);
     }
