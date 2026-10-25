@@ -281,7 +281,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
   }, {} as Record<string, typeof capabilityCatalog>);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+    <div className="w-full flex-1 min-h-0 overflow-y-auto p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Toast Notification */}
       {toastMessage && (
         <div
