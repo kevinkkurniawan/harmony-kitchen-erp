@@ -101,6 +101,13 @@ function innerWidth(element: HTMLElement | null) {
   return element.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
 }
 
+function hasScrollingAncestor(table: HTMLTableElement) {
+  for (let element = table.parentElement; element && element !== document.body; element = element.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(element).overflowX)) return true;
+  }
+  return false;
+}
+
 function applyWidths(table: HTMLTableElement, widths: number[], fillLast = true) {
   const headers = headerCells(table);
   if (headers.length !== widths.length) return;
@@ -120,7 +127,8 @@ function applyWidths(table: HTMLTableElement, widths: number[], fillLast = true)
     header.style.minWidth = '';
   });
   table.dataset.columnResizeSized = 'true';
-  if (table.parentElement) table.parentElement.style.overflowX = 'auto';
+  // Making the parent scroll would also make it the sticky header's scroll box, so reuse an existing scroller.
+  if (table.parentElement && !hasScrollingAncestor(table)) table.parentElement.style.overflowX = 'auto';
 }
 
 function clearWidths(table: HTMLTableElement) {
@@ -198,8 +206,9 @@ function createHandle(table: HTMLTableElement, header: HTMLTableCellElement) {
     const widths = startingWidths(table, headers);
     const startX = event.clientX;
     const startWidth = widths[index];
-    // Never snap a column that is already narrower than the minimum.
+    // Never snap a column that is already outside the min/max range.
     const minWidth = Math.min(MIN_WIDTH, startWidth);
+    const maxWidth = Math.max(MAX_WIDTH, startWidth);
     let moved = false;
 
     handle.setPointerCapture(event.pointerId);
@@ -207,7 +216,7 @@ function createHandle(table: HTMLTableElement, header: HTMLTableCellElement) {
     document.body.dataset.columnResizing = '';
 
     const onMove = (moveEvent: PointerEvent) => {
-      const width = Math.round(Math.max(minWidth, Math.min(MAX_WIDTH, startWidth + moveEvent.clientX - startX)));
+      const width = Math.round(Math.max(minWidth, Math.min(maxWidth, startWidth + moveEvent.clientX - startX)));
       if (width === widths[index] && moved) return;
       widths[index] = width;
       moved = true;
