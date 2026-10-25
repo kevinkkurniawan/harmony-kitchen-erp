@@ -167,7 +167,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
   };
 
   return (
-    <div id="printable-sales-report" className="p-6 space-y-6 max-w-[1600px] mx-auto">
+    <div id="printable-sales-report" className="w-full p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* 🖨️ OFFICIAL PRINT HEADER (VISIBLE ONLY ON PRINT) */}
       <div className="print-header">
         <div className="flex justify-between items-center pb-2">

@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react';
 
-const STORAGE_PREFIX = 'erp-table-widths:';
+// v2: widths saved by the old resizer were often broken (80px floor, filter rows counted), so start fresh.
+const STORAGE_PREFIX = 'erp-table-widths:v2:';
 // When true, data cells are only truncated once the user has set column widths.
 const TRUNCATE_ONLY_RESIZED: boolean = false;
 const MIN_WIDTH = 40;
