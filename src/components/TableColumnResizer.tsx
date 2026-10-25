@@ -3,129 +3,321 @@
 import { useEffect } from 'react';
 
 const STORAGE_PREFIX = 'erp-table-widths:';
+// When true, data cells are only truncated once the user has set column widths.
+const TRUNCATE_ONLY_RESIZED: boolean = false;
+const MIN_WIDTH = 40;
+const MAX_WIDTH = 700;
+const STYLE_ID = 'table-column-resizer-styles';
+
+const TABLE_SELECTOR = 'table[data-column-resize-table]';
+const SIZED_SELECTOR = 'table[data-column-resize-sized]';
+
+const RESIZER_CSS = `
+${TRUNCATE_ONLY_RESIZED ? SIZED_SELECTOR : TABLE_SELECTOR} > tbody > tr > td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-column-resize-handle] {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: col-resize;
+  z-index: 30;
+  touch-action: none;
+  user-select: none;
+  transition: color .15s;
+}
+[data-column-resize-handle]:hover,
+[data-column-resize-handle][data-active] {
+  color: #92400e;
+}
+body[data-column-resizing],
+body[data-column-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+`;
+
+// Base widths per table (without the filler space given to the last column).
+const columnWidths = new WeakMap<HTMLTableElement, number[]>();
+
+/** Only the first header row holds column titles; later rows (e.g. ColumnFilterRow) follow its widths. */
+function headerCells(table: HTMLTableElement) {
+  const row = table.tHead?.rows[0];
+  return row ? Array.from(row.cells) : [];
+}
+
+function headerLabel(header: HTMLTableCellElement) {
+  return Array.from(header.childNodes)
+    .filter((node) => !(node instanceof HTMLElement && node.dataset.columnResizeHandle !== undefined))
+    .map((node) => node.textContent || '')
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function tableKey(table: HTMLTableElement) {
   const explicitKey = table.dataset.erpTableId;
   if (explicitKey) return `${STORAGE_PREFIX}${explicitKey}`;
-  const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'))
-    .map((header) => Array.from(header.childNodes)
-      .filter((node) => !(node instanceof HTMLElement && node.dataset.erpColumnResizeHandle === 'true'))
-      .map((node) => node.textContent || '')
-      .join('')
-      .replace(/\s+/g, ' ')
-      .trim())
-    .join('|');
-  return `${STORAGE_PREFIX}${headers}`;
+  return `${STORAGE_PREFIX}${headerCells(table).map(headerLabel).join('|')}`;
 }
 
-function readWidths(table: HTMLTableElement) {
+function readWidths(key: string) {
   try {
-    const widths = JSON.parse(window.localStorage.getItem(tableKey(table)) || '[]');
-    return Array.isArray(widths) && widths.every((width) => typeof width === 'number') ? widths : null;
+    const widths = JSON.parse(window.localStorage.getItem(key) || '[]');
+    return Array.isArray(widths) && widths.length && widths.every((width) => typeof width === 'number') ? widths as number[] : null;
   } catch {
     return null;
   }
 }
 
-function applyWidths(table: HTMLTableElement, widths: number[]) {
-  const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'));
+function saveWidths(key: string, widths: number[]) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(widths));
+  } catch {
+    // Storage can be full or blocked; the widths still apply for this page view.
+  }
+}
+
+/** Utility columns (row number, checkbox, expand button) keep their width. */
+function isUtilityColumn(header: HTMLTableCellElement) {
+  const label = headerLabel(header);
+  return !label || label === '#' || !!header.querySelector('input[type="checkbox"]');
+}
+
+function innerWidth(element: HTMLElement | null) {
+  if (!element) return 0;
+  const style = getComputedStyle(element);
+  return element.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+}
+
+function applyWidths(table: HTMLTableElement, widths: number[], fillLast = true) {
+  const headers = headerCells(table);
   if (headers.length !== widths.length) return;
   const totalWidth = widths.reduce((total, width) => total + width, 0);
-  const containerWidth = table.parentElement?.clientWidth || 0;
-  const targetWidth = Math.max(totalWidth, containerWidth);
+  const tableStyle = getComputedStyle(table);
+  const spacing = tableStyle.borderCollapse === 'separate' ? (parseFloat(tableStyle.borderSpacing) || 0) * (headers.length + 1) : 0;
+  const containerWidth = innerWidth(table.parentElement);
+  // Leftover space goes to the last column only, so the dragged column tracks the pointer exactly.
+  const filler = fillLast ? Math.max(0, containerWidth - totalWidth - spacing) : 0;
+  const tableWidth = totalWidth + spacing + filler;
   table.style.tableLayout = 'fixed';
-  table.style.width = `${targetWidth}px`;
-  table.style.minWidth = `${targetWidth}px`;
+  table.style.width = `${tableWidth}px`;
+  table.style.minWidth = `${tableWidth}px`;
   headers.forEach((header, index) => {
-    header.style.width = `${widths[index]}px`;
-    header.style.minWidth = `${widths[index]}px`;
+    const width = widths[index] + (index === headers.length - 1 ? filler : 0);
+    header.style.width = `${width}px`;
+    header.style.minWidth = '';
   });
+  table.dataset.columnResizeSized = 'true';
   if (table.parentElement) table.parentElement.style.overflowX = 'auto';
 }
 
-function standardizeDataCells(table: HTMLTableElement) {
-  table.querySelectorAll<HTMLTableCellElement>('tbody td').forEach((cell) => {
-    cell.style.whiteSpace = 'nowrap';
-    cell.style.overflow = 'hidden';
-    cell.style.textOverflow = 'ellipsis';
-    // Preserve controls (buttons, inputs, selects) without replacing their own tooltips.
-    if (!cell.title && !cell.querySelector('button, input, select, textarea')) {
-      const fullValue = cell.textContent?.replace(/\s+/g, ' ').trim();
-      if (fullValue) cell.title = fullValue;
+function clearWidths(table: HTMLTableElement) {
+  table.style.tableLayout = '';
+  table.style.width = '';
+  table.style.minWidth = '';
+  headerCells(table).forEach((header) => {
+    header.style.width = '';
+    header.style.minWidth = '';
+  });
+  delete table.dataset.columnResizeSized;
+  columnWidths.delete(table);
+}
+
+function startingWidths(table: HTMLTableElement, headers: HTMLTableCellElement[]) {
+  const stored = columnWidths.get(table);
+  if (stored?.length === headers.length) return [...stored];
+  return headers.map((header) => Math.max(1, Math.round(header.getBoundingClientRect().width)));
+}
+
+/** Widest content in the column, measured with the column squeezed to MIN_WIDTH. */
+function fitWidth(table: HTMLTableElement, widths: number[], index: number) {
+  const measuring = [...widths];
+  measuring[index] = MIN_WIDTH;
+  applyWidths(table, measuring, false);
+  const header = headerCells(table)[index];
+  const headerWhiteSpace = header.style.whiteSpace;
+  header.style.whiteSpace = 'nowrap';
+  const columnCount = widths.length;
+  const rows = [table.tHead?.rows[0], ...Array.from(table.tBodies).flatMap((body) => Array.from(body.rows))];
+  let width = MIN_WIDTH;
+  rows.forEach((row) => {
+    if (!row || row.cells.length !== columnCount) return;
+    width = Math.max(width, row.cells[index].scrollWidth + 2);
+  });
+  header.style.whiteSpace = headerWhiteSpace;
+  return Math.min(MAX_WIDTH, width);
+}
+
+function finishResize(table: HTMLTableElement, widths: number[]) {
+  columnWidths.set(table, widths);
+  applyWidths(table, widths);
+  saveWidths(table.dataset.columnResizeKey || tableKey(table), widths);
+}
+
+function createHandle(table: HTMLTableElement, header: HTMLTableCellElement) {
+  const handle = document.createElement('span');
+  handle.dataset.columnResizeHandle = '';
+  handle.setAttribute('aria-label', `Ubah lebar kolom ${headerLabel(header)}`);
+  handle.title = 'Tarik untuk mengatur lebar kolom, klik dua kali untuk menyesuaikan isi';
+  handle.textContent = '|';
+
+  // Header cells may be sortable: keep handle clicks away from them.
+  handle.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  handle.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const headers = headerCells(table);
+    const index = headers.indexOf(header);
+    if (index < 0) return;
+    const widths = startingWidths(table, headers);
+    widths[index] = fitWidth(table, widths, index);
+    finishResize(table, widths);
+  });
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const headers = headerCells(table);
+    const index = headers.indexOf(header);
+    if (index < 0) return;
+    const widths = startingWidths(table, headers);
+    const startX = event.clientX;
+    const startWidth = widths[index];
+    // Never snap a column that is already narrower than the minimum.
+    const minWidth = Math.min(MIN_WIDTH, startWidth);
+    let moved = false;
+
+    handle.setPointerCapture(event.pointerId);
+    handle.dataset.active = '';
+    document.body.dataset.columnResizing = '';
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const width = Math.round(Math.max(minWidth, Math.min(MAX_WIDTH, startWidth + moveEvent.clientX - startX)));
+      if (width === widths[index] && moved) return;
+      widths[index] = width;
+      moved = true;
+      applyWidths(table, widths);
+    };
+    const onEnd = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onEnd);
+      handle.removeEventListener('pointercancel', onEnd);
+      handle.removeEventListener('lostpointercapture', onEnd);
+      delete handle.dataset.active;
+      delete document.body.dataset.columnResizing;
+      if (moved) finishResize(table, widths);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onEnd);
+    handle.addEventListener('pointercancel', onEnd);
+    handle.addEventListener('lostpointercapture', onEnd);
+  });
+  return handle;
+}
+
+function initializeTable(table: HTMLTableElement, containers: ResizeObserver) {
+  // Nested tables (for example the Kartu Stok ledger) are detail content, not primary grids.
+  if (table.parentElement?.closest('td')) return;
+  const headers = headerCells(table);
+  if (!headers.length) return;
+  if (table.dataset.columnResizeTable === undefined) {
+    table.dataset.columnResizeTable = '';
+    if (table.parentElement) containers.observe(table.parentElement);
+  }
+
+  // Restore saved widths when the table appears, its columns change, or React re-creates header cells.
+  const key = tableKey(table);
+  if (table.dataset.columnResizeKey !== key) {
+    table.dataset.columnResizeKey = key;
+    const saved = readWidths(key);
+    if (saved?.length === headers.length) {
+      columnWidths.set(table, saved);
+      applyWidths(table, saved);
+    } else if (table.dataset.columnResizeSized !== undefined) {
+      clearWidths(table);
     }
+  } else {
+    const current = columnWidths.get(table);
+    if (current?.length === headers.length && headers.some((header) => !header.style.width)) applyWidths(table, current);
+  }
+
+  headers.forEach((header) => {
+    if (header.querySelector(':scope > [data-column-resize-handle]') || isUtilityColumn(header)) return;
+    if (getComputedStyle(header).position === 'static') header.style.position = 'relative';
+    header.appendChild(createHandle(table, header));
   });
 }
 
-function initializeTable(table: HTMLTableElement) {
-  // Nested tables (for example the Kartu Stok ledger) are detail content, not primary grids.
-  if (table.parentElement?.closest('td')) return;
-  const headers = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'));
-  if (!headers.length) return;
-  standardizeDataCells(table);
-
-  const savedWidths = readWidths(table);
-  if (savedWidths?.length === headers.length && table.dataset.columnResizeWidthsApplied !== 'true') {
-    applyWidths(table, savedWidths);
-    table.dataset.columnResizeWidthsApplied = 'true';
+/** Shows the full value of a truncated cell on hover, recomputed each time so it never goes stale. */
+function updateCellTitle(event: PointerEvent) {
+  const cell = event.target instanceof Element ? event.target.closest('td') : null;
+  const table = cell?.parentElement?.parentElement?.parentElement;
+  if (!cell || !(table instanceof HTMLTableElement) || table.dataset.columnResizeTable === undefined) return;
+  // Keep tooltips the page set itself, and leave cells with controls alone.
+  if (cell.title && cell.dataset.columnResizeTitle === undefined) return;
+  if (cell.querySelector('button, input, select, textarea')) return;
+  const fullValue = cell.textContent?.replace(/\s+/g, ' ').trim();
+  if (fullValue && cell.scrollWidth > cell.clientWidth) {
+    cell.title = fullValue;
+    cell.dataset.columnResizeTitle = '';
+  } else if (cell.dataset.columnResizeTitle !== undefined) {
+    cell.removeAttribute('title');
+    delete cell.dataset.columnResizeTitle;
   }
-
-  headers.forEach((header, index) => {
-    // Keep the leading utility/index column (row number, expand button, checkbox) fixed.
-    if (index === 0) return;
-    if (header.querySelector(':scope > [data-erp-column-resize-handle]')) return;
-    header.style.position = 'relative';
-    const handle = document.createElement('span');
-    handle.dataset.erpColumnResizeHandle = 'true';
-    handle.setAttribute('aria-label', `Ubah lebar kolom ${header.textContent?.trim() || index + 1}`);
-    handle.title = 'Tarik untuk mengatur lebar kolom';
-    handle.textContent = '|';
-    handle.style.cssText = 'position:absolute;right:-4px;top:0;width:8px;height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:14px;font-weight:700;line-height:1;cursor:col-resize;z-index:30;touch-action:none;transition:color .15s;';
-    handle.addEventListener('pointerenter', () => {
-      handle.style.color = '#92400e';
-    });
-    handle.addEventListener('pointerleave', () => {
-      handle.style.color = '#64748b';
-    });
-    // Header cells may be sortable. A completed drag emits a click after pointerup,
-    // so stop that click here as well as the initial pointer event.
-    handle.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    handle.addEventListener('dblclick', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    handle.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const currentHeaders = Array.from(table.querySelectorAll<HTMLTableCellElement>('thead th'));
-      const widths = currentHeaders.map((currentHeader) => Math.max(80, Math.round(currentHeader.getBoundingClientRect().width)));
-      const startX = event.clientX;
-      const startWidth = widths[index];
-      const onMove = (moveEvent: PointerEvent) => {
-        widths[index] = Math.max(80, Math.min(700, startWidth + moveEvent.clientX - startX));
-        applyWidths(table, widths);
-      };
-      const onUp = () => {
-        window.localStorage.setItem(tableKey(table), JSON.stringify(widths));
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp, { once: true });
-    });
-    header.appendChild(handle);
-  });
 }
 
 export default function TableColumnResizer() {
   useEffect(() => {
-    const scan = () => document.querySelectorAll<HTMLTableElement>('table').forEach(initializeTable);
+    if (!document.getElementById(STYLE_ID)) {
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = RESIZER_CSS;
+      document.head.appendChild(style);
+    }
+
+    // Keep the filler column in step with its container (window resize, sidebar toggles).
+    const containers = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        entry.target.querySelectorAll<HTMLTableElement>(`:scope > ${TABLE_SELECTOR}`).forEach((table) => {
+          const widths = columnWidths.get(table);
+          if (widths) applyWidths(table, widths);
+        });
+      });
+    });
+
+    let frame = 0;
+    const scan = () => {
+      frame = 0;
+      document.querySelectorAll<HTMLTableElement>('table').forEach((table) => initializeTable(table, containers));
+    };
+    const scheduleScan = () => {
+      if (!frame) frame = requestAnimationFrame(scan);
+    };
     scan();
-    const observer = new MutationObserver(scan);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const observer = new MutationObserver(scheduleScan);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    document.addEventListener('pointerover', updateCellTitle);
+    return () => {
+      observer.disconnect();
+      containers.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      document.removeEventListener('pointerover', updateCellTitle);
+    };
   }, []);
 
   return null;
