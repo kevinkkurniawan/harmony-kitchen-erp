@@ -1,0 +1,4 @@
+node_modules/
+sync-cache.json*
+dist/
+!.env.example

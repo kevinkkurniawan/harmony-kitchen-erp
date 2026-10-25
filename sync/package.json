@@ -1,0 +1,26 @@
+{
+  "name": "harmony-kitchen-sync",
+  "version": "0.2.0",
+  "private": true,
+  "description": "One-way sync from the legacy SQL Server database into the new app's Postgres",
+  "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "check": "node sync.mjs --check",
+    "setup": "node sync.mjs --setup",
+    "once": "node sync.mjs --once",
+    "full": "node sync.mjs --full",
+    "start": "node sync.mjs",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "postject": "^1.0.0-alpha.6"
+  }
+}
