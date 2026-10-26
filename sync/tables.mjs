@@ -16,6 +16,7 @@
 // Legacy ModifiedDate is not trusted: many stored procedures (POS void, discount recalcs, stock updates)
 // change rows without touching it. The agent compares row contents instead (see sync.mjs).
 // Columns that exist only in Postgres are left alone; only columns present on both sides are copied.
+// The exception is the estimated HPP on t_salesposdetail, which sync.mjs fills in after each pass.
 
 export const TABLES = [
   // master data

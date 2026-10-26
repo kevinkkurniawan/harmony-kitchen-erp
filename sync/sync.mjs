@@ -325,6 +325,36 @@ async function pruneTable(plan, legacyKeys) {
   log(`${plan.name}: ${gone.length} row(s) not in legacy deleted`);
 }
 
+// Legacy sale lines carry no cost, and arrive with the new app's column defaults (HPP 0, provenance
+// EXACT), so reports would show a 100% margin. Fill them the way the app's legacy migration does
+// (src/lib/legacy-migration.ts): the item's current HPP, marked ESTIMATED, or UNAVAILABLE when the item
+// has none. Lines are estimated once; an UNAVAILABLE line is filled in when its item later gets an HPP,
+// and totals follow qty changes. New-app lines (trial ids) are never touched.
+async function estimateHpp() {
+  const fresh = await pgPool.query(
+    `UPDATE t_salesposdetail d
+        SET unithpp = COALESCE(i.hpp, 0),
+            totalhpp = COALESCE(i.hpp, 0) * COALESCE(d.qty, 0),
+            hppprovenance = CASE WHEN COALESCE(i.hpp, 0) > 0 THEN 'ESTIMATED' ELSE 'UNAVAILABLE' END
+       FROM m_inventory i
+      WHERE i.id = d.inventoryid
+        AND d.id < $1
+        AND (COALESCE(d.hppprovenance, 'EXACT') = 'EXACT'
+             OR (d.hppprovenance = 'UNAVAILABLE' AND COALESCE(i.hpp, 0) > 0))`,
+    [TRIAL_ID_START],
+  );
+  const totals = await pgPool.query(
+    `UPDATE t_salesposdetail
+        SET totalhpp = unithpp * COALESCE(qty, 0)
+      WHERE id < $1 AND hppprovenance = 'ESTIMATED'
+        AND totalhpp IS DISTINCT FROM unithpp * COALESCE(qty, 0)`,
+    [TRIAL_ID_START],
+  );
+  if (fresh.rowCount || totals.rowCount) {
+    log(`t_salesposdetail: HPP estimated on ${fresh.rowCount} line(s), totals updated on ${totals.rowCount}`);
+  }
+}
+
 async function ensureTables() {
   await pgPool.query(`
     CREATE TABLE IF NOT EXISTS sync_state (
@@ -384,6 +414,13 @@ async function runPass(full) {
         } catch (err) {
           log(`${plan.name}: prune FAILED ${err.message}`);
         }
+      }
+    }
+    if (plans.some((p) => p.name === 't_salesposdetail')) {
+      try {
+        await estimateHpp();
+      } catch (err) {
+        log(`HPP estimate FAILED ${err.message}`);
       }
     }
     await saveCache();
