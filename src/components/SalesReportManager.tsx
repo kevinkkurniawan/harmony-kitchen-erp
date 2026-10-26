@@ -19,6 +19,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
+import { formatBangkokDate, getTodayBangkok } from '@/lib/date-utils';
 
 interface DailyReportRow {
   date: string;
@@ -79,7 +80,10 @@ interface SalesReportManagerProps {
 export default function SalesReportManager({ isDark }: SalesReportManagerProps) {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'items' | 'summary'>('daily');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('All');
-  
+  // Report period, default the last 30 days (the API's own default)
+  const [startDate, setStartDate] = useState<string>(() => formatBangkokDate(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const [endDate, setEndDate] = useState<string>(() => getTodayBangkok());
+
   // Report Datasets
   const [dailyData, setDailyData] = useState<DailyReportRow[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyReportRow[]>([]);
@@ -128,7 +132,10 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
   const loadReportData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const pmQuery = paymentMethodFilter !== 'All' ? `&paymentMethod=${paymentMethodFilter}` : '';
+      const pmQuery =
+        (paymentMethodFilter !== 'All' ? `&paymentMethod=${paymentMethodFilter}` : '') +
+        (startDate ? `&startDate=${startDate}` : '') +
+        (endDate ? `&endDate=${endDate}` : '');
 
       // 1. Fetch Daily Report
       const dailyRes = await fetch(`/api/reports/sales?type=daily${pmQuery}`);
@@ -154,7 +161,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [paymentMethodFilter]);
+  }, [paymentMethodFilter, startDate, endDate]);
 
   useEffect(() => {
     loadReportData();
@@ -178,6 +185,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           <div className="text-right text-xs">
             <div><strong>Tanggal Cetak:</strong> {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID')}</div>
             <div><strong>Jenis Laporan:</strong> {activeTab.toUpperCase()} REPORT</div>
+            <div><strong>Periode:</strong> {startDate} s/d {endDate}</div>
             <div><strong>Metode Bayar:</strong> {paymentMethodFilter}</div>
           </div>
         </div>
@@ -431,6 +439,34 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           </button>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+        {/* Period Filter */}
+        <div className="flex items-center gap-2">
+          <label className={`text-xs font-bold flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+            <Calendar className="w-3.5 h-3.5 text-purple-400" />
+            <span>Periode:</span>
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            max={endDate || undefined}
+            onChange={(e) => setStartDate(e.target.value)}
+            className={`p-2 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer ${
+              isDark ? 'bg-slate-800 text-white border-slate-700 [color-scheme:dark]' : 'bg-white text-slate-900 border-slate-300'
+            }`}
+          />
+          <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>s/d</span>
+          <input
+            type="date"
+            value={endDate}
+            min={startDate || undefined}
+            onChange={(e) => setEndDate(e.target.value)}
+            className={`p-2 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer ${
+              isDark ? 'bg-slate-800 text-white border-slate-700 [color-scheme:dark]' : 'bg-white text-slate-900 border-slate-300'
+            }`}
+          />
+        </div>
+
         {/* Payment Filter Dropdown */}
         <div className="flex items-center gap-2">
           <label className={`text-xs font-bold flex items-center gap-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
@@ -450,6 +486,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             <option value="Transfer">Bank Transfer</option>
             <option value="Card">Kartu Debit/Kredit</option>
           </select>
+        </div>
         </div>
       </div>
 
