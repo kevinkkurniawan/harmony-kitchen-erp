@@ -4,6 +4,7 @@ import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { parseColumnFilters } from '@/lib/column-filter';
 import { parseBangkokStartOfDay, parseBangkokEndOfDay } from '@/lib/date-utils';
 import { apiError } from '@/lib/api-response';
+import { isLegacySale, normalizeSale } from '@/lib/sales-normalize';
 
 export async function GET(req: Request) {
   try {
@@ -73,11 +74,30 @@ export async function GET(req: Request) {
       prisma.t_salesposheader.findMany({
         where: summaryWhere,
         select: {
+          id: true,
           grandtotal: true,
           paymenttypecode: true,
+          status: true,
+          manualdiscountamount: true,
         },
       }),
     ]);
+
+    // Legacy sales keep their amount and payment type in t_salespayment / the lines, not on the header
+    const legacyIds = [...activeHeadersForSummary, ...transactions]
+      .filter((h: any) => isLegacySale(h))
+      .map((h: any) => Number(h.id));
+    const { detailsByHeader: legacyDetails, paymentsByHeader: legacyPayments } = await loadLinesAndPayments(
+      Array.from(new Set(legacyIds)),
+    );
+    const saleView = (h: any) => {
+      if (!isLegacySale(h)) {
+        return { amount: Number(h.grandtotal || 0), paymentType: (h.paymenttypecode || 'CASH').toUpperCase() };
+      }
+      const id = Number(h.id);
+      const n = normalizeSale(h, legacyDetails.get(id) || [], legacyPayments.get(id) || []);
+      return { amount: n.net, paymentType: n.payGroup === 'CARD' ? 'DEBIT' : n.payGroup };
+    };
 
     let grossSales = 0;
     const paymentBreakdown: Record<string, number> = {
@@ -89,9 +109,8 @@ export async function GET(req: Request) {
     };
 
     for (const h of activeHeadersForSummary) {
-      const amt = Number(h.grandtotal || 0);
+      const { amount: amt, paymentType: pt } = saleView(h);
       grossSales += amt;
-      const pt = (h.paymenttypecode || 'CASH').toUpperCase();
       if (paymentBreakdown[pt] !== undefined) {
         paymentBreakdown[pt] += amt;
       } else {
@@ -135,7 +154,8 @@ export async function GET(req: Request) {
       
       const subtotal = s_details.reduce((acc: number, item: any) => acc + Number(item.subtotal || 0), 0);
       const discount = s_details.reduce((acc: number, item: any) => acc + Number(item.disc || 0) + Number(item.disc2 || 0) + Number(item.disc3 || 0), 0);
-      
+      const { amount: grandTotal, paymentType } = saleView(s);
+
       return {
         id: Number(s.id),
         invoiceNo: s.salesposno,
@@ -150,9 +170,9 @@ export async function GET(req: Request) {
         customer_name: s.customername || 'Pelanggan Umum',
         cashierName: s.createduser || 'Kasir',
         cashier_name: s.createduser || 'Kasir',
-        paymentMethod: s.paymenttypecode || 'CASH',
-        paymentType: s.paymenttypecode || 'CASH',
-        payment_method: s.paymenttypecode || 'CASH',
+        paymentMethod: s.paymenttypecode || paymentType,
+        paymentType: s.paymenttypecode || paymentType,
+        payment_method: s.paymenttypecode || paymentType,
         subtotal: subtotal,
         totalAmount: subtotal,
         total_amount: subtotal,
@@ -163,10 +183,10 @@ export async function GET(req: Request) {
         tax: 0,
         taxAmount: 0,
         tax_amount: 0,
-        grandTotal: Number(s.grandtotal),
-        grand_total: Number(s.grandtotal),
-        amountPaid: Number(s.grandtotal),
-        amount_paid: Number(s.grandtotal),
+        grandTotal,
+        grand_total: grandTotal,
+        amountPaid: grandTotal,
+        amount_paid: grandTotal,
         changeAmount: 0,
         change_amount: 0,
         isVoid: Boolean(s.isvoid),
@@ -197,4 +217,34 @@ export async function GET(req: Request) {
     console.error('Error in GET /api/sales/monitoring:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
+}
+
+// Lines and payments for the given sales, queried in chunks to stay under Postgres's bind-parameter limit.
+async function loadLinesAndPayments(headerIds: number[]) {
+  const detailsByHeader = new Map<number, any[]>();
+  const paymentsByHeader = new Map<number, any[]>();
+  for (let i = 0; i < headerIds.length; i += 10000) {
+    const ids = headerIds.slice(i, i + 10000);
+    const [details, payments] = await Promise.all([
+      prisma.t_salesposdetail.findMany({
+        where: { salesposheaderid: { in: ids } },
+        select: { salesposheaderid: true, qty: true, price: true, subtotal: true, disc: true, disc2: true, disc3: true },
+      }),
+      prisma.t_salespayment.findMany({
+        where: { salesposid: { in: ids } },
+        select: { salesposid: true, transactionvalue: true, paymenttypeid: true },
+      }),
+    ]);
+    details.forEach((d: any) => {
+      const hid = Number(d.salesposheaderid);
+      if (!detailsByHeader.has(hid)) detailsByHeader.set(hid, []);
+      detailsByHeader.get(hid)!.push(d);
+    });
+    payments.forEach((pm: any) => {
+      const hid = Number(pm.salesposid);
+      if (!paymentsByHeader.has(hid)) paymentsByHeader.set(hid, []);
+      paymentsByHeader.get(hid)!.push(pm);
+    });
+  }
+  return { detailsByHeader, paymentsByHeader };
 }
