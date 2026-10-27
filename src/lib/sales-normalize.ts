@@ -21,6 +21,31 @@ const LEGACY_PAYMENT_GROUP: Record<number, PayGroup> = {
   7: 'CARD',
 };
 
+/**
+ * The m_paymenttype.code the legacy POS expects in t_salespayment.paymenttypeid for a payment
+ * type name, or null when the legacy POS has no code for it (e.g. TEMPO).
+ */
+export function legacyPaymentTypeCode(text: string): number | null {
+  const t = text.toUpperCase();
+  if (t === 'CASH' || t.includes('TUNAI')) return 0;
+  if (t.includes('QRIS')) return 3;
+  if (t.includes('SHOPEE')) return 4;
+  if (t.includes('TOKOPEDIA')) return 5;
+  if (t.includes('TRANSFER')) return 6;
+  if (t.includes('MANDIRI')) return 7;
+  if (t.includes('CREDIT')) return 2;
+  if (t.includes('EDC') || t.includes('DEBIT') || t.includes('CARD') || t === 'BCA') return 1;
+  return null;
+}
+
+/** Payment type label shown in the sales screens for a sale, from the header or its legacy payments. */
+export function salePaymentType(header: any, payments: any[]): string {
+  if (header.paymenttypecode) return String(header.paymenttypecode).toUpperCase();
+  if (payments.length === 0) return 'CASH';
+  const group = LEGACY_PAYMENT_GROUP[Number(payments[0].paymenttypeid)] ?? 'OTHER';
+  return group === 'CARD' ? 'DEBIT' : group;
+}
+
 export function payGroupFromText(text: string): PayGroup {
   const t = text.toUpperCase();
   if (t === 'CASH' || t.includes('TUNAI')) return 'CASH';

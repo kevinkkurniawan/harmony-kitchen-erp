@@ -79,6 +79,17 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
   const [newFullName, setNewFullName] = useState('');
   const [newUserLevel, setNewUserLevel] = useState('Kasir');
 
+  const [newPassword, setNewPassword] = useState('');
+
+  // Edit User (username / password) Modal
+  const [editUser, setEditUser] = useState<UserRecord | null>(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [editPasswordConfirm, setEditPasswordConfirm] = useState('');
+
+  // Delete User confirmation
+  const [deleteUser, setDeleteUser] = useState<UserRecord | null>(null);
+
   // Permission Editor Modal
   const [isPermModalOpen, setIsPermModalOpen] = useState(false);
 
@@ -234,6 +245,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
           fullName: newFullName,
           userLevel: newUserLevel,
           isActive: true,
+          ...(newPassword && { password: newPassword }),
         }),
       });
 
@@ -244,6 +256,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
         setNewUsername('');
         setNewFullName('');
         setNewUserLevel('Kasir');
+        setNewPassword('');
         loadUsers();
       } else {
         showToast(json.error || 'Gagal membuat user', 'error');
@@ -251,6 +264,74 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     } catch (err) {
       console.error('Create user error:', err);
       showToast('Terjadi kesalahan saat membuat user', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openEditUser = (user: UserRecord) => {
+    setEditUser(user);
+    setEditUsername(user.username);
+    setEditPassword('');
+    setEditPasswordConfirm('');
+  };
+
+  // Update Username / Password
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+    if (!editUsername.trim()) {
+      showToast('Username wajib diisi!', 'error');
+      return;
+    }
+    if (editPassword && editPassword !== editPasswordConfirm) {
+      showToast('Konfirmasi password tidak sama!', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/users/${editUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: editUsername.trim(),
+          ...(editPassword && { password: editPassword }),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(`User "${editUsername.trim()}" berhasil diperbarui!`, 'success');
+        setEditUser(null);
+        loadUsers();
+      } else {
+        showToast(json.error || 'Gagal mengubah user', 'error');
+      }
+    } catch (err) {
+      console.error('Update user error:', err);
+      showToast('Terjadi kesalahan saat mengubah user', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Delete User
+  const handleDeleteUser = async () => {
+    if (!deleteUser) return;
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/users/${deleteUser.id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.success) {
+        showToast(`User "${deleteUser.username}" berhasil dihapus!`, 'success');
+        setDeleteUser(null);
+        loadUsers();
+      } else {
+        showToast(json.error || 'Gagal menghapus user', 'error');
+      }
+    } catch (err) {
+      console.error('Delete user error:', err);
+      showToast('Terjadi kesalahan saat menghapus user', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -412,13 +493,31 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                       </span>
                     </td>
                     <td className="p-4 text-right">
-                      <button
-                        onClick={() => handleEditPermissions(user)}
-                        className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1.5 ml-auto transition-all cursor-pointer"
-                      >
-                        <Key className="w-3.5 h-3.5" />
-                        <span>Atur Hak Akses</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleEditPermissions(user)}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                          <span>Atur Hak Akses</span>
+                        </button>
+                        <button
+                          onClick={() => openEditUser(user)}
+                          title="Ubah username / password"
+                          className="px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 font-bold border border-indigo-500/30 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Ubah</span>
+                        </button>
+                        <button
+                          onClick={() => setDeleteUser(user)}
+                          title="Hapus user"
+                          className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold border border-red-500/30 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -727,6 +826,20 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                 </select>
               </div>
 
+              <div className="space-y-1">
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Password :</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Kosongkan untuk password default 123456"
+                  autoComplete="new-password"
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+                  }`}
+                />
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -744,6 +857,124 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ✏️ MODAL UBAH USER (USERNAME / PASSWORD) */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div
+            className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 transition-all ${
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
+            }`}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-sm font-black flex items-center gap-2">
+                <Edit className="w-4 h-4 text-indigo-400" />
+                Ubah User: <span className="font-mono text-indigo-400">{editUser.username}</span>
+              </h3>
+              <button onClick={() => setEditUser(null)} className={`hover:text-white ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateUser} className="space-y-4 mt-4 text-xs">
+              <div className="space-y-1">
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Username :</label>
+                <input
+                  type="text"
+                  required
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+                  }`}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Password Baru :</label>
+                <input
+                  type="password"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Kosongkan jika tidak diubah"
+                  autoComplete="new-password"
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+                  }`}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Konfirmasi Password Baru :</label>
+                <input
+                  type="password"
+                  value={editPasswordConfirm}
+                  onChange={(e) => setEditPasswordConfirm(e.target.value)}
+                  disabled={!editPassword}
+                  autoComplete="new-password"
+                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${
+                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
+                  }`}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditUser(null)}
+                  className="px-4 py-2 rounded-xl border text-xs font-bold border-slate-700 hover:bg-slate-800"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-black text-xs shadow"
+                >
+                  {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ KONFIRMASI HAPUS USER */}
+      {deleteUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div
+            className={`w-full max-w-sm rounded-3xl border shadow-2xl p-6 space-y-4 transition-all ${
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
+            }`}
+          >
+            <h3 className="text-sm font-black flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-red-400" />
+              Hapus User
+            </h3>
+            <p className={`text-xs ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+              Yakin ingin menghapus user <span className="font-mono font-bold text-red-400">{deleteUser.username}</span> ({deleteUser.fullName})?
+              User ini tidak akan bisa login lagi dan hak aksesnya ikut terhapus. Riwayat transaksinya tetap tersimpan.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setDeleteUser(null)}
+                className="px-4 py-2 rounded-xl border font-bold border-slate-700 hover:bg-slate-800"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteUser}
+                disabled={isSaving}
+                className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white font-black shadow"
+              >
+                {isSaving ? 'Menghapus...' : 'Ya, Hapus'}
+              </button>
+            </div>
           </div>
         </div>
       )}
