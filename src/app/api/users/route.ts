@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { getCurrentUser } from '@/lib/session';
 
 export async function GET(req: Request) {
   try {
@@ -51,6 +52,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || currentUser.userLevel !== 'Admin') {
+    return NextResponse.json({ success: false, error: 'Hanya Admin yang dapat menambahkan user.' }, { status: 403 });
+  }
   try {
     const body = await req.json();
     const { username, fullName, userLevel, isActive } = body;

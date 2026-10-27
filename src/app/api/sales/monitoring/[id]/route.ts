@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { requireCapability } from '@/lib/capabilities';
 import { recordAuditEvent } from '@/lib/audit-event';
+import { legacyPaymentTypeCode, salePaymentType } from '@/lib/sales-normalize';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -50,6 +51,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       };
     });
 
+    // Legacy sales keep the payment type in t_salespayment, not on the header
+    const payments = header.paymenttypecode
+      ? []
+      : await prisma.t_salespayment.findMany({ where: { salesposid: headerId }, select: { paymenttypeid: true } });
+    const paymentType = salePaymentType(header, payments);
+
     const subtotal = details.reduce((acc: number, d: any) => acc + Number(d.subtotal || 0), 0);
     const discValue = details.reduce((acc: number, d: any) => acc + Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0), 0);
     const grandTotal = Number(header.grandtotal || 0) || (subtotal - discValue);
@@ -84,8 +91,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         manualDiscountMode: header.manualdiscountmode || 'NOMINAL',
         manualDiscountValue: Number(header.manualdiscountvalue || 0),
         manualDiscountReason: header.manualdiscountreason || null,
-        paymentType: header.paymenttypecode || 'CASH',
-        bankName: header.paymenttypecode && header.paymenttypecode !== 'CASH' ? header.paymenttypecode : '',
+        paymentType,
+        bankName: paymentType !== 'CASH' ? paymentType : '',
       },
       items,
     });
@@ -137,18 +144,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           },
         });
 
-        // Sync payment record and rebalance payment buckets
-        let paymenttypeid = 1;
-        let isCash = false;
-        if (newType === 'CASH') {
-          paymenttypeid = 1;
-          isCash = true;
-        } else if (newType === 'EDC BCA') paymenttypeid = 3;
-        else if (newType === 'QRIS') paymenttypeid = 4;
-        else if (newType === 'TRANSFER') paymenttypeid = 7;
-        else if (newType === 'EDC MANDIRI') paymenttypeid = 8;
-        else if (newType === 'SHOPEE') paymenttypeid = 5;
-        else if (newType === 'TOKOPEDIA') paymenttypeid = 6;
+        // Sync payment record and rebalance payment buckets. The legacy POS reads paymenttypeid as
+        // m_paymenttype.code (0 Cash, 1 Debit, 3 Qris, ...), not its id; a type it has no code for
+        // keeps the existing value.
+        const paymenttypeid = legacyPaymentTypeCode(newType);
+        const isCash = newType === 'CASH';
 
         const currentPayments = await tx.t_salespayment.findMany({
           where: { salesposid: headerId },
@@ -162,7 +162,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           await tx.t_salespayment.update({
             where: { salesposid: p.salesposid },
             data: {
-              paymenttypeid,
+              ...(paymenttypeid !== null && { paymenttypeid }),
               tunai: isCash ? payAmount : 0,
               debit: isCash ? 0 : payAmount,
               modifieduser: actor,
