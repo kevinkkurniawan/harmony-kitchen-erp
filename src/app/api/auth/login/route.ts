@@ -6,6 +6,11 @@ import { getPermissionsForUser } from '@/lib/erp-permissions';
 export async function POST(request: Request) {
   try {
     const { username, password } = await request.json();
+    // Both must be non-empty strings before they reach the query: Prisma drops undefined filters
+    // (no password check at all) and treats objects as operators such as { not: '' }.
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+      return NextResponse.json({ success: false, error: 'Username atau password salah' }, { status: 401 });
+    }
     const user = await prisma.m_user.findFirst({ where: { username, password } });
     if (!user) return NextResponse.json({ success: false, error: 'Username atau password salah' }, { status: 401 });
     const sessionUser: SessionUser = { id: Number(user.id), username: user.username || '', userLevel: inferUserLevel(user.username) };
