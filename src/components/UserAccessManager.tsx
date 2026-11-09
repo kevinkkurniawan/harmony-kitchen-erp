@@ -788,7 +788,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   type="text"
                   required
                   value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
+                  onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
                   placeholder="e.g. kasir2"
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
                     isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
@@ -886,7 +886,7 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
                   type="text"
                   required
                   value={editUsername}
-                  onChange={(e) => setEditUsername(e.target.value)}
+                  onChange={(e) => setEditUsername(e.target.value.toLowerCase())}
                   className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
                     isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
                   }`}

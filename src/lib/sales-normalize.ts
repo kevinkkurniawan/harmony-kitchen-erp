@@ -41,9 +41,22 @@ export function legacyPaymentTypeCode(text: string): number | null {
 /** Payment type label shown in the sales screens for a sale, from the header or its legacy payments. */
 export function salePaymentType(header: any, payments: any[]): string {
   if (header.paymenttypecode) return String(header.paymenttypecode).toUpperCase();
-  if (payments.length === 0) return 'CASH';
-  const group = LEGACY_PAYMENT_GROUP[Number(payments[0].paymenttypeid)] ?? 'OTHER';
+  if (payments.length === 0) return isLegacySale(header) ? UNPAID_LABEL : 'CASH';
+  const code = Number(payments[0].paymenttypeid);
+  // Credit Card keeps its own name (the old app shows it); it still counts in the card (EDC) totals
+  if (code === 2) return 'CREDIT CARD';
+  const group = LEGACY_PAYMENT_GROUP[code] ?? 'OTHER';
   return group === 'CARD' ? 'DEBIT' : group;
+}
+
+export const UNPAID_LABEL = 'BELUM BAYAR';
+
+/**
+ * A legacy sale with no payment row was never paid (held or abandoned in the old POS).
+ * The old app leaves these out of its sales lists and totals, so the ERP must not count them.
+ */
+export function isUnpaidLegacySale(header: any, payments: any[]): boolean {
+  return isLegacySale(header) && payments.length === 0;
 }
 
 export function payGroupFromText(text: string): PayGroup {

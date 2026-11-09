@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { requireCapability } from '@/lib/capabilities';
 import { recordAuditEvent } from '@/lib/audit-event';
-import { legacyPaymentTypeCode, salePaymentType } from '@/lib/sales-normalize';
+import { isLegacySale, isUnpaidLegacySale, legacyPaymentTypeCode, salePaymentType } from '@/lib/sales-normalize';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -51,15 +51,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       };
     });
 
-    // Legacy sales keep the payment type in t_salespayment, not on the header
-    const payments = header.paymenttypecode
-      ? []
-      : await prisma.t_salespayment.findMany({ where: { salesposid: headerId }, select: { paymenttypeid: true } });
+    // Legacy sales keep the amount and payment type in t_salespayment; load them even when a payment
+    // correction has written paymenttypecode on the header, or the sale would look unpaid
+    const payments = isLegacySale(header)
+      ? await prisma.t_salespayment.findMany({ where: { salesposid: headerId }, select: { paymenttypeid: true, transactionvalue: true } })
+      : [];
     const paymentType = salePaymentType(header, payments);
+    const unpaid = isUnpaidLegacySale(header, payments);
 
-    const subtotal = details.reduce((acc: number, d: any) => acc + Number(d.subtotal || 0), 0);
+    // Line subtotals are already after the item discount, so the amount before discount is lines + discount.
+    // Legacy sales keep the amount paid in t_salespayment (header grandtotal is 0).
     const discValue = details.reduce((acc: number, d: any) => acc + Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0), 0);
-    const grandTotal = Number(header.grandtotal || 0) || (subtotal - discValue);
+    const lineTotal = details.reduce((acc: number, d: any) => acc + Number(d.subtotal || 0), 0);
+    const subtotal = lineTotal + discValue;
+    const paidTotal = payments.reduce((acc: number, p: any) => acc + Number(p.transactionvalue || 0), 0);
+    const grandTotal = Number(header.grandtotal || 0) || paidTotal || lineTotal;
     const txDate = header.salesposdate
       ? new Date(header.salesposdate).toLocaleString('id-ID', {
           day: '2-digit',
@@ -83,7 +89,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         discValue: discValue,
         taxValue: 0,
         grandTotal: grandTotal,
-        paymentAmount: grandTotal,
+        paymentAmount: unpaid ? 0 : grandTotal,
         changeAmount: 0,
         isVoid: Boolean(header.isvoid),
         isOverrideGrosir1: Boolean(header.isoverridegrosir),

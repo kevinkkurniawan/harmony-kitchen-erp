@@ -5,7 +5,7 @@ import { getCurrentUser } from '@/lib/session';
 import { hasCapability } from '@/lib/capabilities';
 import { parseBangkokStartOfDay, parseBangkokEndOfDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
 import { parseColumnFilters } from '@/lib/column-filter';
-import { normalizeSale, type NormalizedSale } from '@/lib/sales-normalize';
+import { isUnpaidLegacySale, normalizeSale, type NormalizedSale } from '@/lib/sales-normalize';
 
 export async function GET(request: Request) {
   try {
@@ -91,8 +91,11 @@ export async function GET(request: Request) {
       paymentsByHeader.get(hid)!.push(pm);
     });
 
+    // Legacy sales without a payment were never paid; the old app leaves them out of its totals too
+    const paidSales = allSales.filter((s: any) => !isUnpaidLegacySale(s, paymentsByHeader.get(Number(s.id)) || []));
+
     const normalized = new Map<number, NormalizedSale>();
-    allSales.forEach((s: any) => {
+    paidSales.forEach((s: any) => {
       normalized.set(
         Number(s.id),
         normalizeSale(s, detailsByHeader.get(Number(s.id)) || [], paymentsByHeader.get(Number(s.id)) || [])
@@ -101,8 +104,8 @@ export async function GET(request: Request) {
 
     const pmFilter = paymentMethodParam && paymentMethodParam !== 'All' ? paymentMethodParam.toUpperCase() : null;
     const sales = pmFilter
-      ? allSales.filter((s: any) => normalized.get(Number(s.id))!.payGroup === pmFilter)
-      : allSales;
+      ? paidSales.filter((s: any) => normalized.get(Number(s.id))!.payGroup === pmFilter)
+      : paidSales;
 
     // 1. DAILY REPORT
     if (type === 'daily') {
