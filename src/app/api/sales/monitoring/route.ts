@@ -4,7 +4,7 @@ import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { parseColumnFilters } from '@/lib/column-filter';
 import { parseBangkokStartOfDay, parseBangkokEndOfDay } from '@/lib/date-utils';
 import { apiError } from '@/lib/api-response';
-import { isLegacySale, normalizeSale } from '@/lib/sales-normalize';
+import { isLegacySale, isUnpaidLegacySale, normalizeSale, payGroupFromText, salePaymentType, UNPAID_LABEL } from '@/lib/sales-normalize';
 
 export async function GET(req: Request) {
   try {
@@ -41,6 +41,8 @@ export async function GET(req: Request) {
 
     const where: any = {
       ...columnWhere,
+      // An open POS draft is a cart still at the till, not a sale (legacy rows have no status)
+      AND: [{ OR: [{ status: null }, { status: { not: 'DRAFT' } }] }],
     };
 
     if (q) {
@@ -90,13 +92,27 @@ export async function GET(req: Request) {
     const { detailsByHeader: legacyDetails, paymentsByHeader: legacyPayments } = await loadLinesAndPayments(
       Array.from(new Set(legacyIds)),
     );
+    // amount + summary bucket (cards share the EDC/DEBIT card), plus the label shown on the row
     const saleView = (h: any) => {
       if (!isLegacySale(h)) {
-        return { amount: Number(h.grandtotal || 0), paymentType: (h.paymenttypecode || 'CASH').toUpperCase() };
+        const type = (h.paymenttypecode || 'CASH').toUpperCase();
+        // Card payments (EDC BCA, EDC MANDIRI, DEBIT, CREDIT CARD) all go in the EDC Debit/Credit card
+        const group = payGroupFromText(type);
+        const bucket = group === 'CARD' ? 'DEBIT' : group === 'OTHER' ? type : group;
+        return { amount: Number(h.grandtotal || 0), bucket, label: type, unpaid: false };
       }
       const id = Number(h.id);
-      const n = normalizeSale(h, legacyDetails.get(id) || [], legacyPayments.get(id) || []);
-      return { amount: n.net, paymentType: n.payGroup === 'CARD' ? 'DEBIT' : n.payGroup };
+      const payments = legacyPayments.get(id) || [];
+      if (isUnpaidLegacySale(h, payments)) {
+        return { amount: 0, bucket: '', label: UNPAID_LABEL, unpaid: true };
+      }
+      const n = normalizeSale(h, legacyDetails.get(id) || [], payments);
+      return {
+        amount: n.net,
+        bucket: n.payGroup === 'CARD' ? 'DEBIT' : n.payGroup,
+        label: salePaymentType(h, payments),
+        unpaid: false,
+      };
     };
 
     let grossSales = 0;
@@ -108,8 +124,12 @@ export async function GET(req: Request) {
       TEMPO: 0,
     };
 
+    let totalCount = 0;
     for (const h of activeHeadersForSummary) {
-      const { amount: amt, paymentType: pt } = saleView(h);
+      const { amount: amt, bucket: pt, unpaid } = saleView(h);
+      // Unpaid legacy sales are not "Nota Lunas" and add nothing to omzet
+      if (unpaid) continue;
+      totalCount += 1;
       grossSales += amt;
       if (paymentBreakdown[pt] !== undefined) {
         paymentBreakdown[pt] += amt;
@@ -118,7 +138,6 @@ export async function GET(req: Request) {
       }
     }
 
-    const totalCount = activeHeadersForSummary.length;
     const avgBasket = totalCount > 0 ? Math.round(grossSales / totalCount) : 0;
 
     const summary = {
@@ -152,9 +171,11 @@ export async function GET(req: Request) {
       const txDate = s.salesposdate ? new Date(s.salesposdate).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
       const simpleDate = s.salesposdate ? new Date(s.salesposdate).toLocaleDateString('id-ID') : '-';
       
-      const subtotal = s_details.reduce((acc: number, item: any) => acc + Number(item.subtotal || 0), 0);
+      // Line subtotals are already after the item discount (legacy and new POS alike), so the
+      // amount before discount is lines + discount; showing lines next to the discount counted it twice.
       const discount = s_details.reduce((acc: number, item: any) => acc + Number(item.disc || 0) + Number(item.disc2 || 0) + Number(item.disc3 || 0), 0);
-      const { amount: grandTotal, paymentType } = saleView(s);
+      const subtotal = s_details.reduce((acc: number, item: any) => acc + Number(item.subtotal || 0), 0) + discount;
+      const { amount: grandTotal, label: paymentType, unpaid } = saleView(s);
 
       return {
         id: Number(s.id),
@@ -170,9 +191,9 @@ export async function GET(req: Request) {
         customer_name: s.customername || 'Pelanggan Umum',
         cashierName: s.createduser || 'Kasir',
         cashier_name: s.createduser || 'Kasir',
-        paymentMethod: s.paymenttypecode || paymentType,
-        paymentType: s.paymenttypecode || paymentType,
-        payment_method: s.paymenttypecode || paymentType,
+        paymentMethod: paymentType,
+        paymentType: paymentType,
+        payment_method: paymentType,
         subtotal: subtotal,
         totalAmount: subtotal,
         total_amount: subtotal,
@@ -190,7 +211,8 @@ export async function GET(req: Request) {
         changeAmount: 0,
         change_amount: 0,
         isVoid: Boolean(s.isvoid),
-        status: s.isvoid ? 'VOID' : (s.status || 'COMPLETED'),
+        isUnpaid: unpaid,
+        status: s.isvoid ? 'VOID' : unpaid ? UNPAID_LABEL : (s.status || 'COMPLETED'),
         items: s_details.map((d: any) => {
           const inv = inventoryMap.get(Number(d.inventoryid));
           return {

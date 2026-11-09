@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { usernameEquals } from '@/lib/username';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
 
@@ -63,12 +64,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Username wajib diisi.' }, { status: 400 });
     }
 
-    // Check if user already exists
+    // Usernames are stored in lowercase: the POS login looks them up in lowercase
+    const normalizedUsername = String(username).trim().toLowerCase();
+
+    // Check if user already exists (ignoring case, so "Dwi" and "dwi" can't both exist)
     const existing = await prisma.m_user.findFirst({
-      where: { username: username.trim() },
+      where: { username: usernameEquals(normalizedUsername) },
     });
     if (existing) {
-      return NextResponse.json({ success: false, error: `User dengan username "${username}" sudah ada.` }, { status: 400 });
+      return NextResponse.json({ success: false, error: `User dengan username "${normalizedUsername}" sudah ada.` }, { status: 400 });
     }
 
     // Find or create position matching userLevel
@@ -105,7 +109,7 @@ export async function POST(req: Request) {
     // Create user record
     const created = await prisma.m_user.create({
       data: {
-        username: username.trim(),
+        username: normalizedUsername,
         password: body.password || '123456',
         employeeid: Number(emp.id),
         createddate: new Date(),

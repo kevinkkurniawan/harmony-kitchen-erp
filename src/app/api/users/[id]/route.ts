@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { usernameEquals } from '@/lib/username';
 import { getCurrentUser } from '@/lib/session';
 import { recordAuditEvent } from '@/lib/audit-event';
 
@@ -31,9 +32,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       modifieduser: currentUser.username,
       modifieddate: new Date(),
     };
-    if (typeof body.username === 'string' && body.username.trim() && body.username.trim() !== existing.username) {
-      const username = body.username.trim();
-      const taken = await prisma.m_user.findFirst({ where: { username, id: { not: userId } } });
+    // Stored in lowercase, duplicates checked ignoring case. A name that differs only in case is not a
+    // rename: a password-only edit of a legacy "Dwi" must not rename it (sales and shift reports key on it).
+    const newUsername = typeof body.username === 'string' ? body.username.trim().toLowerCase() : '';
+    if (newUsername && newUsername !== (existing.username || '').toLowerCase()) {
+      const username = newUsername;
+      const taken = await prisma.m_user.findFirst({
+        where: { username: usernameEquals(username), id: { not: userId } },
+      });
       if (taken) return NextResponse.json({ success: false, error: `Username "${username}" sudah dipakai.` }, { status: 400 });
       data.username = username;
     }

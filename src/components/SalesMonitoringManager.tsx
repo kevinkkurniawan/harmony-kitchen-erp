@@ -708,6 +708,13 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                           <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
                             VOID
                           </span>
+                        ) : row.isUnpaid ? (
+                          <span
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-slate-500/20 text-slate-400 border border-slate-500/30"
+                            title="Nota dari aplikasi lama tanpa pembayaran; tidak dihitung di omzet"
+                          >
+                            BELUM BAYAR
+                          </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                             LUNAS
@@ -726,16 +733,19 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPaymentCorrection(row);
-                            }}
-                            className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                            title="Ubah Metode Pembayaran"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
+                          {/* An unpaid sale has no payment to correct */}
+                          {!row.isUnpaid && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPaymentCorrection(row);
+                              }}
+                              className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
+                              title="Ubah Metode Pembayaran"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
                           {isVoid ? (
                             <button
                               onClick={(e) => {
@@ -967,6 +977,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                   <option value="QRIS">QRIS Instant</option>
                   <option value="TRANSFER">Bank Transfer</option>
                   <option value="DEBIT">EDC Debit / Credit</option>
+                  <option value="CREDIT CARD">Credit Card</option>
                   <option value="TEMPO">Tempo / Corporate Account</option>
                 </select>
               </div>
