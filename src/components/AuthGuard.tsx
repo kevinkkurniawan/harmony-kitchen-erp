@@ -40,6 +40,29 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     restoreSession();
   }, []);
 
+  // Every /api route now needs the session: when it expires (401), go back to the login form instead of
+  // leaving each screen with load errors. Wraps fetch only while logged in.
+  useEffect(() => {
+    if (!user) return;
+    const originalFetch = window.fetch;
+    window.fetch = async (input, init) => {
+      const response = await originalFetch(input, init);
+      if (response.status === 401) {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(url, window.location.origin).pathname;
+        if (path.startsWith('/api/') && !path.startsWith('/api/auth/')) {
+          setUser(null);
+          setPermissions([]);
+          setError('Sesi login berakhir. Silakan login kembali.');
+        }
+      }
+      return response;
+    };
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [user]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -96,11 +119,12 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-sky-400 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
             <Store className="w-8 h-8 text-white font-bold" />
           </div>
+          {/* Old Module Manager login dialog texts */}
           <h2 className="font-extrabold text-2xl text-slate-900 tracking-tight mb-1">
-            Harmony Kitchen ERP
+            User Login
           </h2>
           <p className="text-sm text-slate-600 font-medium">
-            Sistem Manajemen Terpadu
+            Harmony - Module Manager
           </p>
         </div>
 
@@ -123,7 +147,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Masukkan username"
+              placeholder="Enter Username"
               className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3.5 text-base text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 transition-all"
             />
           </div>
@@ -149,7 +173,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
             className="cursor-pointer w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-500 hover:from-indigo-500 hover:to-sky-400 text-white font-black text-base shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-4"
           >
             <LogIn className="w-5 h-5" />
-            {isSubmitting ? 'Memproses...' : 'Login ke ERP'}
+            {isSubmitting ? 'Memproses...' : 'Log on'}
           </button>
         </form>
       </div>

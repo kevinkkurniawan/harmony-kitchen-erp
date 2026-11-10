@@ -38,6 +38,13 @@ ${TRUNCATE_ONLY_RESIZED ? SIZED_SELECTOR : TABLE_SELECTOR} > tbody > tr > td {
   user-select: none;
   transition: color .15s;
 }
+/* The bar is drawn by CSS so header cells keep their plain caption as text content */
+[data-column-resize-handle]::before {
+  content: '|';
+}
+@media print {
+  [data-column-resize-handle] { display: none !important; }
+}
 [data-column-resize-handle]:hover,
 [data-column-resize-handle][data-active] {
   color: #92400e;
@@ -180,7 +187,6 @@ function createHandle(table: HTMLTableElement, header: HTMLTableCellElement) {
   handle.dataset.columnResizeHandle = '';
   handle.setAttribute('aria-label', `Ubah lebar kolom ${headerLabel(header)}`);
   handle.title = 'Tarik untuk mengatur lebar kolom, klik dua kali untuk menyesuaikan isi';
-  handle.textContent = '|';
 
   // Header cells may be sortable: keep handle clicks away from them.
   handle.addEventListener('click', (event) => {

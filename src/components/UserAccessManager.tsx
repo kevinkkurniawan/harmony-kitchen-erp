@@ -1,23 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  ShieldCheck,
-  Plus,
-  RefreshCw,
-  Save,
-  CheckCircle,
-  XCircle,
-  Key,
-  Sparkles,
-  Lock,
-  Edit,
-  Trash2,
-  X,
-  User as UserIcon,
-  ChevronUp,
-  ChevronDown,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { CheckCircle, XCircle, Plus, Key, Trash2, Save, Undo2, ChevronDown, ChevronRight } from 'lucide-react';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
+import { LegacyWindow, LegacyButton, LegacyGrid, LegacyInput, LegacySelect, GroupBox, FieldRow, lx, type LegacyColumn } from '@/components/legacy';
+import { USER_TYPES } from '@/lib/user-types';
 
 export interface UserRecord {
   id: number;
@@ -39,84 +26,98 @@ export interface ModulePermission {
   canPrint: boolean;
 }
 
+// Permission tree nodes, grouped like the menu; module codes are the server's ERP_MODULE_CODES
 export const MODULE_LABEL_MAP: Record<string, { label: string; group: string }> = {
-  'memo-sync-stok': { label: 'Memo: Cek Sync Stock', group: '📌 Memo Operasional' },
-  'stok-opname': { label: 'Memo: Stok Opname', group: '📌 Memo Operasional' },
-  'master-barang': { label: 'Master Data: Master Barang', group: '🏬 Master Data' },
-  'inventory-stok': { label: 'Master Data: Inventory Stock', group: '🏬 Master Data' },
-  'master-promo': { label: 'Master Data: Master Promo', group: '🏬 Master Data' },
-  'master-supplier': { label: 'Master Data: Master Supplier', group: '🏬 Master Data' },
-  'penerimaan-barang': { label: 'Purchasing: Penerimaan Barang Ekspress', group: '📦 Purchasing' },
-  'penerimaan-barang-harga': { label: 'Purchasing: Penerimaan Barang dengan Harga', group: '📦 Purchasing' },
-  'sales-sync-stok': { label: 'Sales: Sync Stock', group: '📊 Sales' },
-  'sales-monitoring': { label: 'Sales: Sales Monitoring', group: '📊 Sales' },
-  'laporan-penjualan': { label: 'Report: Laporan Penjualan', group: '📑 Report' },
+  'master-barang': { label: 'Master Barang', group: 'Master Data' },
+  'inventory-stok': { label: 'Inventory Stock', group: 'Master Data' },
+  'stok-opname': { label: 'Stok Opname', group: 'Master Data' },
+  'cetak-barcode': { label: 'Cetak Barcode', group: 'Master Data' },
+  'master-promo': { label: 'Master Promo', group: 'Master Data' },
+  'master-supplier': { label: 'Master Supplier', group: 'Master Data' },
+  'penerimaan-barang': { label: 'Penerimaan Barang Ekspress', group: 'Purchasing' },
+  'penerimaan-barang-harga': { label: 'Penerimaan Barang dengan harga', group: 'Purchasing' },
+  'sales-monitoring': { label: 'Sales Monitoring', group: 'Sales' },
+  'laporan-penjualan': { label: 'Laporan Penjualan', group: 'Report' },
 };
+
+// Checkbox that shows a partly-checked state for tree nodes
+function TreeCheck({ checked, partial, onChange, label }: { checked: boolean; partial?: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      ref={(el) => { if (el) el.indeterminate = !checked && Boolean(partial); }}
+      onChange={(e) => onChange(e.target.checked)}
+      className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+    />
+  );
+}
+
+// Indent of one tree level, like the old TreeList
+const TREE_INDENT = 16;
+
+// Expand / collapse arrow of a tree node
+function Twisty({ id, collapsed, onToggle, muted }: { id: string; collapsed: Record<string, boolean>; onToggle: (id: string) => void; muted: string }) {
+  return (
+    <button type="button" onClick={() => onToggle(id)} className={`p-0.5 cursor-pointer ${muted}`} aria-label={collapsed[id] ? 'Buka' : 'Tutup'}>
+      {collapsed[id] ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+    </button>
+  );
+}
 
 interface UserAccessManagerProps {
   isDark: boolean;
 }
 
+type Mode = 'idle' | 'edit' | 'add';
+
 export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
+  const c = lx(isDark);
+  const { confirmDialog, dialog: confirmDialogNode } = useConfirmDialog(isDark);
+
   const [usersList, setUsersList] = useState<UserRecord[]>([]);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<{ key: string; order: 'asc' | 'desc' } | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [mode, setMode] = useState<Mode>('idle');
+
+  // Right group fields ("Change Password" when editing, "Add User" when adding)
+  const [formUsername, setFormUsername] = useState('');
+  const [formPassword, setFormPassword] = useState('');
+  const [formConfirm, setFormConfirm] = useState('');
+  const [formUserType, setFormUserType] = useState('Kasir');
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Permission tree of the selected user (module flags + sensitive capabilities)
   const [userPermissions, setUserPermissions] = useState<ModulePermission[]>([]);
   const [userCapabilities, setUserCapabilities] = useState<Record<string, boolean>>({});
   const [capabilityCatalog, setCapabilityCatalog] = useState<{ code: string; name: string; description: string; category: string }[]>([]);
+  const [permDirty, setPermDirty] = useState(false);
+  const [permLoading, setPermLoading] = useState(false);
+  // User id whose tree loaded; the tree (and saving it) only counts when it matches the selected user
+  const [permLoadedFor, setPermLoadedFor] = useState<number | null>(null);
+  const permReqIdRef = useRef(0);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  // Add User Form Modal
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [newUsername, setNewUsername] = useState('');
-  const [newFullName, setNewFullName] = useState('');
-  const [newUserLevel, setNewUserLevel] = useState('Kasir');
-
-  const [newPassword, setNewPassword] = useState('');
-
-  // Edit User (username / password) Modal
-  const [editUser, setEditUser] = useState<UserRecord | null>(null);
-  const [editUsername, setEditUsername] = useState('');
-  const [editPassword, setEditPassword] = useState('');
-  const [editPasswordConfirm, setEditPasswordConfirm] = useState('');
-
-  // Delete User confirmation
-  const [deleteUser, setDeleteUser] = useState<UserRecord | null>(null);
-
-  // Permission Editor Modal
-  const [isPermModalOpen, setIsPermModalOpen] = useState(false);
-
-  // Status & Notifications
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-  const [sortField, setSortField] = useState<string>('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  const handleSort = (field: string) => {
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField('');
-      setSortOrder('asc');
-    }
-  };
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Fetch Users List
+  // All users at once: the grid's search box filters them in the browser
   const loadUsers = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/users');
+      const res = await fetch('/api/users?all=true');
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setUsersList(json.data);
+        return json.data as UserRecord[];
       }
     } catch (err) {
       console.error('Failed to load users:', err);
@@ -124,197 +125,211 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     } finally {
       setIsLoading(false);
     }
+    return null;
   }, []);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
 
-  // Open Permission Matrix Editor Modal
-  const handleEditPermissions = async (user: UserRecord) => {
-    setSelectedUser(user);
-    setIsLoading(true);
+  // Clears the previous user's tree first; a response for an older click (request id changed) is dropped
+  const resetPermissions = () => {
+    permReqIdRef.current++;
+    setUserPermissions([]);
+    setUserCapabilities({});
+    setPermLoadedFor(null);
+    setPermDirty(false);
+    setPermLoading(false);
+  };
+
+  const loadPermissions = async (user: UserRecord) => {
+    resetPermissions();
+    const reqId = permReqIdRef.current;
+    setPermLoading(true);
     try {
       const res = await fetch(`/api/users/permissions?userId=${user.id}`);
       const json = await res.json();
+      if (reqId !== permReqIdRef.current) return;
       if (json.success && Array.isArray(json.data)) {
         setUserPermissions(json.data);
         setUserCapabilities(json.capabilities || {});
         setCapabilityCatalog(json.capabilityCatalog || []);
-        setIsPermModalOpen(true);
+        setPermLoadedFor(user.id);
       } else {
         showToast('Gagal memuat permission user', 'error');
       }
     } catch (err) {
+      if (reqId !== permReqIdRef.current) return;
       console.error('Error fetching user permissions:', err);
       showToast('Terjadi kesalahan saat memuat hak akses', 'error');
     } finally {
-      setIsLoading(false);
+      if (reqId === permReqIdRef.current) setPermLoading(false);
     }
   };
 
-  // Toggle single permission checkbox
-  const handleTogglePerm = (moduleCode: string, field: 'canView' | 'canAdd' | 'canEdit' | 'canDelete' | 'canPrint') => {
-    setUserPermissions((prev) =>
-      prev.map((item) => {
-        if (item.moduleCode === moduleCode) {
-          return { ...item, [field]: !item[field] };
-        }
-        return item;
-      })
-    );
+  // Clicking a user opens its "Change Password" group with its permission tree
+  const openUser = (user: UserRecord) => {
+    setSelectedUser(user);
+    setMode('edit');
+    setFormUsername(user.username);
+    setFormPassword('');
+    setFormConfirm('');
+    setFormUserType(user.userLevel);
+    loadPermissions(user);
   };
 
-  const handleToggleCapability = (capCode: string) => {
-    setUserCapabilities((prev) => ({
-      ...prev,
-      [capCode]: !prev[capCode],
-    }));
+  const handleAddUser = () => {
+    setSelectedUser(null);
+    setMode('add');
+    setFormUsername('');
+    setFormPassword('');
+    setFormConfirm('');
+    setFormUserType('Kasir');
+    resetPermissions();
   };
 
-  // Check / Uncheck All for a user
-  const handleCheckAll = (value: boolean) => {
-    setUserPermissions((prev) =>
-      prev.map((item) => ({
-        ...item,
-        canView: value,
-        canAdd: value,
-        canEdit: value,
-        canDelete: value,
-        canPrint: value,
-      }))
-    );
-  };
-
-  // Save Permission Matrix to Server
-  const handleSavePermissions = async () => {
-    if (!selectedUser) return;
-
-    setIsSaving(true);
-    try {
-      const res = await fetch('/api/users/permissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          permissions: userPermissions,
-          capabilities: userCapabilities,
-        }),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        showToast(json.message || 'Hak akses berhasil disimpan!', 'success');
-        setIsPermModalOpen(false);
-      } else {
-        showToast(json.error || 'Gagal menyimpan hak akses', 'error');
-      }
-    } catch (err) {
-      console.error('Error saving permissions:', err);
-      showToast('Terjadi kesalahan saat menyimpan hak akses', 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Create New User
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsername || !newFullName) {
-      showToast('Isi Username dan Nama Lengkap!', 'error');
+  const handleChangePassword = () => {
+    if (!selectedUser) {
+      showToast('Pilih user di daftar terlebih dahulu.', 'info');
       return;
     }
-
-    setIsSaving(true);
-    try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: newUsername,
-          fullName: newFullName,
-          userLevel: newUserLevel,
-          isActive: true,
-          ...(newPassword && { password: newPassword }),
-        }),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        showToast(`User "${newUsername}" berhasil ditambahkan!`, 'success');
-        setIsAddUserOpen(false);
-        setNewUsername('');
-        setNewFullName('');
-        setNewUserLevel('Kasir');
-        setNewPassword('');
-        loadUsers();
-      } else {
-        showToast(json.error || 'Gagal membuat user', 'error');
-      }
-    } catch (err) {
-      console.error('Create user error:', err);
-      showToast('Terjadi kesalahan saat membuat user', 'error');
-    } finally {
-      setIsSaving(false);
-    }
+    if (mode !== 'edit') openUser(selectedUser);
+    setTimeout(() => passwordRef.current?.focus(), 0);
   };
 
-  const openEditUser = (user: UserRecord) => {
-    setEditUser(user);
-    setEditUsername(user.username);
-    setEditPassword('');
-    setEditPasswordConfirm('');
+  const handleBack = () => {
+    setMode('idle');
+    setSelectedUser(null);
+    resetPermissions();
   };
 
-  // Update Username / Password
-  const handleUpdateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editUser) return;
-    if (!editUsername.trim()) {
+  // One tick per module = may open it; the other flags follow it (the server writes them the same way)
+  const setOpen = (codes: string[], value: boolean) => {
+    const set = new Set(codes);
+    setUserPermissions((prev) => prev.map((p) => (set.has(p.moduleCode)
+      ? { ...p, canView: value, canAdd: value, canEdit: value, canDelete: value, canPrint: value }
+      : p)));
+    setPermDirty(true);
+  };
+
+  const toggleCapabilities = (codes: string[], value: boolean) => {
+    setUserCapabilities((prev) => ({ ...prev, ...Object.fromEntries(codes.map((code) => [code, value])) }));
+    setPermDirty(true);
+  };
+
+  // Create (Add User) or update username / password + permissions (Change Password); each call only when needed
+  const handleSave = async () => {
+    if (mode === 'idle') return;
+    const username = formUsername.trim().toLowerCase();
+    if (!username) {
       showToast('Username wajib diisi!', 'error');
       return;
     }
-    if (editPassword && editPassword !== editPasswordConfirm) {
+    if (formPassword && formPassword !== formConfirm) {
       showToast('Konfirmasi password tidak sama!', 'error');
       return;
     }
 
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/users/${editUser.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: editUsername.trim(),
-          ...(editPassword && { password: editPassword }),
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        showToast(`User "${editUsername.trim()}" berhasil diperbarui!`, 'success');
-        setEditUser(null);
-        loadUsers();
-      } else {
-        showToast(json.error || 'Gagal mengubah user', 'error');
+      if (mode === 'add') {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            userLevel: formUserType,
+            isActive: true,
+            ...(formPassword && { password: formPassword }),
+          }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+          showToast(json.error || 'Gagal membuat user', 'error');
+          return;
+        }
+        showToast(`User "${username}" berhasil ditambahkan!`, 'success');
+        // Continue on the new user so its permissions can be set right away
+        const users = await loadUsers();
+        const created = users?.find((u) => u.id === Number(json.data?.id));
+        if (created) openUser(created);
+        else handleBack();
+        return;
+      }
+
+      if (!selectedUser) return;
+      // Never write a tree that is still loading, failed to load, or belongs to another user
+      const permReady = permLoadedFor === selectedUser.id;
+      const typeChanged = formUserType !== selectedUser.userLevel;
+      const userChanged = username !== selectedUser.username.toLowerCase() || formPassword !== '' || typeChanged;
+      if (!userChanged && !(permDirty && permReady)) {
+        showToast('Tidak ada perubahan.', 'info');
+        return;
+      }
+      if (userChanged) {
+        const res = await fetch(`/api/users/${selectedUser.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, ...(formPassword && { password: formPassword }), ...(typeChanged && { userType: formUserType }) }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+          showToast(json.error || 'Gagal mengubah user', 'error');
+          return;
+        }
+      }
+      if (permDirty && permReady) {
+        const res = await fetch('/api/users/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: selectedUser.id, permissions: userPermissions, capabilities: userCapabilities }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+          showToast(json.error || 'Gagal menyimpan hak akses', 'error');
+          return;
+        }
+        setPermDirty(false);
+      }
+      // The role sits in the session cookie, so it changes only when that user logs in again
+      showToast(typeChanged
+        ? `User "${username}" berhasil disimpan! User Type baru berlaku saat user ini login berikutnya.`
+        : `User "${username}" berhasil disimpan!`, 'success');
+      setFormPassword('');
+      setFormConfirm('');
+      const users = await loadUsers();
+      const updated = users?.find((u) => u.id === selectedUser.id);
+      if (updated) {
+        setSelectedUser(updated);
+        setFormUsername(updated.username);
+        setFormUserType(updated.userLevel);
       }
     } catch (err) {
-      console.error('Update user error:', err);
-      showToast('Terjadi kesalahan saat mengubah user', 'error');
+      console.error('Save user error:', err);
+      showToast('Terjadi kesalahan saat menyimpan user', 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Delete User
   const handleDeleteUser = async () => {
-    if (!deleteUser) return;
+    if (!selectedUser) {
+      showToast('Pilih user di daftar terlebih dahulu.', 'info');
+      return;
+    }
+    const target = selectedUser;
+    const ok = await confirmDialog(
+      `Yakin ingin menghapus user ${target.username}?\nUser ini tidak akan bisa login lagi dan hak aksesnya ikut terhapus. Riwayat transaksinya tetap tersimpan.`,
+      { title: 'Hapus User', confirmText: 'Ya, Hapus' },
+    );
+    if (!ok) return;
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/users/${deleteUser.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/users/${target.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
-        showToast(`User "${deleteUser.username}" berhasil dihapus!`, 'success');
-        setDeleteUser(null);
+        showToast(`User "${target.username}" berhasil dihapus!`, 'success');
+        handleBack();
         loadUsers();
       } else {
         showToast(json.error || 'Gagal menghapus user', 'error');
@@ -327,621 +342,219 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
     }
   };
 
-  const sortedUsersList = [...usersList].sort((a, b) => {
-    if (!sortField) return 0;
-    const aValue = a[sortField as keyof UserRecord];
-    const bValue = b[sortField as keyof UserRecord];
-    if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-    if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-    return 0;
-  });
+  const visibleUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const rows = q
+      ? usersList.filter((u) => u.username.toLowerCase().includes(q) || (u.userLevel || '').toLowerCase().includes(q))
+      : usersList;
+    if (!sort) return rows;
+    const key = sort.key as keyof UserRecord;
+    return [...rows].sort((a, b) => {
+      const av = String(a[key] ?? '').toLowerCase();
+      const bv = String(b[key] ?? '').toLowerCase();
+      return (av < bv ? -1 : av > bv ? 1 : 0) * (sort.order === 'asc' ? 1 : -1);
+    });
+  }, [usersList, search, sort]);
 
-  // Group permissions by category for nice UI matrix display
-  const groupedPermissions = userPermissions.reduce((acc, perm) => {
-    const info = MODULE_LABEL_MAP[perm.moduleCode] || { label: perm.moduleCode, group: 'Lainnya' };
-    if (!acc[info.group]) acc[info.group] = [];
-    acc[info.group].push({ ...perm, labelName: info.label });
-    return acc;
-  }, {} as Record<string, (ModulePermission & { labelName: string })[]>);
+  const handleSort = (key: string) =>
+    setSort((s) => (!s || s.key !== key ? { key, order: 'asc' } : s.order === 'asc' ? { key, order: 'desc' } : null));
 
-  // Group capabilities by category
-  const groupedCapabilities = capabilityCatalog.reduce((acc, cap) => {
-    if (!acc[cap.category]) acc[cap.category] = [];
-    acc[cap.category].push(cap);
-    return acc;
-  }, {} as Record<string, typeof capabilityCatalog>);
+  // Old grid of frmUserSetting: Username | User Type
+  const userColumns: LegacyColumn<UserRecord>[] = [
+    { key: 'username', caption: 'Username', sortKey: 'username' },
+    { key: 'userLevel', caption: 'User Type', sortKey: 'userLevel' },
+  ];
+
+  const groupedPermissions = useMemo(() => {
+    const groups: Record<string, (ModulePermission & { labelName: string })[]> = {};
+    // Tree order = menu order (MODULE_LABEL_MAP), not the API's order
+    const order = Object.keys(MODULE_LABEL_MAP);
+    const rank = (code: string) => (order.indexOf(code) + 1 || order.length + 1);
+    [...userPermissions].sort((a, b) => rank(a.moduleCode) - rank(b.moduleCode)).forEach((perm) => {
+      const info = MODULE_LABEL_MAP[perm.moduleCode] || { label: perm.moduleCode, group: 'Lainnya' };
+      (groups[info.group] ||= []).push({ ...perm, labelName: info.label });
+    });
+    return groups;
+  }, [userPermissions]);
+
+  const groupedCapabilities = useMemo(() => {
+    const groups: Record<string, typeof capabilityCatalog> = {};
+    capabilityCatalog.forEach((cap) => { (groups[cap.category] ||= []).push(cap); });
+    return groups;
+  }, [capabilityCatalog]);
+
+  const toggleNode = (id: string) => setCollapsed((st) => ({ ...st, [id]: !st[id] }));
+
+  const allOpen = (perms: ModulePermission[]) => perms.length > 0 && perms.every((p) => p.canView);
+  const someOpen = (perms: ModulePermission[]) => perms.some((p) => p.canView);
+  const codesOf = (perms: ModulePermission[]) => perms.map((p) => p.moduleCode);
+
+  // One row of the old "Permission" TreeList: indent, arrow, checkbox and ModuleCode in the first column, ModuleName next
+  const treeRow = (o: { key: string; level: number; node?: string; label: string; checked: boolean; partial?: boolean;
+    onChange: (v: boolean) => void; code?: string; name: string; title?: string; bold?: boolean }) => (
+    <tr key={o.key} className={`${c.rowHover} ${o.bold ? 'font-semibold' : ''}`} title={o.title}>
+      <td className={`py-0.5 pr-2 border-b whitespace-nowrap ${c.border}`} style={{ paddingLeft: 4 + o.level * TREE_INDENT }}>
+        <span className="inline-flex items-center gap-1.5">
+          {o.node ? <Twisty collapsed={collapsed} onToggle={toggleNode} muted={c.muted} id={o.node} /> : <span className="w-4" />}
+          <TreeCheck label={o.label} checked={o.checked} partial={o.partial} onChange={o.onChange} />
+          {o.code && <span className="font-mono text-[11px]">{o.code}</span>}
+        </span>
+      </td>
+      <td className={`px-2 py-0.5 border-b ${c.border}`}>{o.name}</td>
+    </tr>
+  );
+
+  const treeRows: React.ReactNode[] = [];
+  // Modules: root, menu groups, one tick per module
+  treeRows.push(treeRow({ key: '__modules', level: 0, node: '__modules', label: 'Semua Modul', bold: true, name: 'Modul',
+    checked: allOpen(userPermissions), partial: someOpen(userPermissions), onChange: (v) => setOpen(codesOf(userPermissions), v) }));
+  if (!collapsed.__modules) {
+    Object.entries(groupedPermissions).forEach(([group, items]) => {
+      treeRows.push(treeRow({ key: `g:${group}`, level: 1, node: group, label: group, bold: true, name: group,
+        checked: allOpen(items), partial: someOpen(items), onChange: (v) => setOpen(codesOf(items), v) }));
+      if (collapsed[group]) return;
+      items.forEach((perm) => treeRows.push(treeRow({ key: perm.moduleCode, level: 2, label: perm.labelName, code: perm.moduleCode,
+        name: perm.labelName, checked: perm.canView, onChange: (v) => setOpen([perm.moduleCode], v) })));
+    });
+  }
+  // Sensitive actions, enforced server-side per capability; the description is the row's tooltip
+  if (capabilityCatalog.length > 0) {
+    const codes = capabilityCatalog.map((cap) => cap.code);
+    treeRows.push(treeRow({ key: '__caps', level: 0, node: '__caps', label: 'Semua Otorisasi', bold: true, name: 'Otorisasi Aksi Sensitif',
+      checked: codes.every((code) => userCapabilities[code]), partial: codes.some((code) => userCapabilities[code]),
+      onChange: (v) => toggleCapabilities(codes, v) }));
+    if (!collapsed.__caps) {
+      Object.entries(groupedCapabilities).forEach(([cat, caps]) => {
+        treeRows.push(treeRow({ key: `cap:${cat}`, level: 1, node: `cap:${cat}`, label: cat, bold: true, name: cat,
+          checked: caps.every((cap) => userCapabilities[cap.code]), partial: caps.some((cap) => userCapabilities[cap.code]),
+          onChange: (v) => toggleCapabilities(caps.map((cap) => cap.code), v) }));
+        if (collapsed[`cap:${cat}`]) return;
+        caps.forEach((cap) => treeRows.push(treeRow({ key: cap.code, level: 2, label: cap.name, code: cap.code, title: cap.description,
+          name: cap.name,
+          checked: Boolean(userCapabilities[cap.code]), onChange: (v) => toggleCapabilities([cap.code], v) })));
+      });
+    }
+  }
+
+  const permissionTree = (
+    <div className={`flex-1 min-h-0 overflow-auto border rounded ${c.panel}`}>
+      {permLoading ? (
+        <div className={`py-6 text-center ${c.muted}`}>Memuat data...</div>
+      ) : selectedUser && permLoadedFor !== selectedUser.id ? (
+        <div className={`py-6 text-center ${c.muted}`}>Permission user ini gagal dimuat. Klik user-nya lagi untuk memuat ulang.</div>
+      ) : (
+        <table className="w-full border-separate border-spacing-0 text-xs">
+          <thead className="sticky top-0 z-10">
+            <tr className={`h-7 font-semibold text-left whitespace-nowrap ${c.head}`}>
+              <th className={`px-2 border-b border-r ${c.border}`}>Module Code</th>
+              <th className={`px-2 border-b w-full ${c.border}`}>Module Name</th>
+            </tr>
+          </thead>
+          <tbody>{treeRows}</tbody>
+        </table>
+      )}
+    </div>
+  );
+
+  // The edited user's role may be one the add list does not offer (legacy positions); show it as is
+  const userTypeOptions: string[] = (USER_TYPES as readonly string[]).includes(formUserType) ? [...USER_TYPES] : [formUserType, ...USER_TYPES];
 
   return (
-    <div className="w-full flex-1 min-h-0 overflow-y-auto p-6 space-y-6 max-w-[1600px] mx-auto">
-      {/* Toast Notification */}
+    <LegacyWindow
+      title="Setting - User"
+      isDark={isDark}
+      toolbar={
+        <>
+          <LegacyButton isDark={isDark} onClick={handleAddUser} icon={<Plus className="w-3.5 h-3.5" />}>Add User</LegacyButton>
+          <LegacyButton isDark={isDark} onClick={handleChangePassword} icon={<Key className="w-3.5 h-3.5" />}>Change Password</LegacyButton>
+          <LegacyButton isDark={isDark} onClick={handleDeleteUser} disabled={isSaving} icon={<Trash2 className="w-3.5 h-3.5" />}>Delete User</LegacyButton>
+          <LegacyButton isDark={isDark} variant="primary" onClick={handleSave} disabled={mode === 'idle' || isSaving || permLoading} icon={<Save className="w-3.5 h-3.5" />}>
+            {isSaving ? 'Menyimpan...' : 'Save'}
+          </LegacyButton>
+          <LegacyButton isDark={isDark} onClick={handleBack} disabled={mode === 'idle'} icon={<Undo2 className="w-3.5 h-3.5" />}>Back</LegacyButton>
+        </>
+      }
+    >
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center gap-2.5 transition-all animate-bounce ${
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-xl border text-xs font-bold flex items-center gap-2.5 ${
             toastMessage.type === 'success'
-              ? 'bg-emerald-500 text-white border-emerald-400'
+              ? 'bg-emerald-700 text-white border-emerald-800'
               : toastMessage.type === 'error'
-              ? 'bg-red-500 text-white border-red-400'
-              : 'bg-amber-500 text-slate-950 border-amber-400'
+              ? 'bg-rose-700 text-white border-rose-800'
+              : 'bg-amber-500 text-slate-950 border-amber-600'
           }`}
         >
           {toastMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
           <span>{toastMessage.text}</span>
         </div>
       )}
+      {confirmDialogNode}
 
-      {/* Header Bar */}
-      <div
-        className={`flex items-center justify-end gap-4 ${isDark ? 'text-white' : 'text-slate-900'}`}
-      >
-        <div className="flex items-center gap-3">
-          <button
-            onClick={loadUsers}
-            disabled={isLoading}
-            className={`px-4 py-2 rounded-2xl border text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              isDark
-                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
-                : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            onClick={() => setIsAddUserOpen(true)}
-            className="px-4 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah User</span>
-          </button>
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-2">
+        {/* Left: user list */}
+        <div className="md:w-80 shrink-0 min-h-0 flex flex-col gap-2 h-64 md:h-auto">
+          <LegacyInput isDark={isDark} placeholder="Cari Username / User Type..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <LegacyGrid
+            isDark={isDark}
+            columns={userColumns}
+            rows={visibleUsers}
+            rowKey={(u) => u.id}
+            loading={isLoading && usersList.length === 0}
+            emptyText="Belum ada data user."
+            focusedKey={selectedUser?.id ?? null}
+            onRowClick={openUser}
+            sort={sort}
+            onSort={handleSort}
+          />
         </div>
-      </div>
 
-      {/* Main Users Table */}
-      <div
-        className={`rounded-3xl border shadow-sm overflow-hidden transition-all ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className={`border-b font-black uppercase tracking-wider ${isDark ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-100 border-slate-300 text-slate-600'}`}>
-              <tr>
-                <th className="p-4 cursor-pointer" onClick={() => handleSort('id')}>
-                  <div className="flex items-center gap-1.5">
-                    ID {sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
-                <th className="p-4 cursor-pointer" onClick={() => handleSort('username')}>
-                  <div className="flex items-center gap-1.5">
-                    Username {sortField === 'username' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
-                <th className="p-4 cursor-pointer" onClick={() => handleSort('fullName')}>
-                  <div className="flex items-center gap-1.5">
-                    Nama Lengkap {sortField === 'fullName' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
-                <th className="p-4 cursor-pointer" onClick={() => handleSort('userLevel')}>
-                  <div className="flex items-center gap-1.5">
-                    Level Access / Role {sortField === 'userLevel' && (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
-                <th className="p-4 text-center">Status</th>
-                <th className="p-4 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/40 font-medium">
-              {isLoading && usersList.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 font-bold">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-400" />
-                    Memuat data user...
-                  </td>
-                </tr>
-              ) : sortedUsersList.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 font-bold">
-                    Belum ada data user.
-                  </td>
-                </tr>
-              ) : (
-                sortedUsersList.map((user) => (
-                  <tr
-                    key={user.id}
-                    className={`transition-colors ${
-                      isDark ? 'hover:bg-slate-800/40 text-slate-200' : 'hover:bg-slate-50 text-slate-800'
-                    }`}
-                  >
-                    <td className="p-4 font-mono font-bold text-slate-500">{user.id}</td>
-                    <td className="p-4 font-bold text-emerald-400">{user.username}</td>
-                    <td className="p-4 font-semibold">{user.fullName}</td>
-                    <td className="p-4">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide uppercase bg-slate-800 text-slate-300 border border-slate-700">
-                        {user.userLevel}
-                      </span>
-                    </td>
-                    <td className="p-4 text-center">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                        user.isActive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                      }`}>
-                        {user.isActive ? 'Aktif' : 'Nonaktif'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleEditPermissions(user)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          <Key className="w-3.5 h-3.5" />
-                          <span>Atur Hak Akses</span>
-                        </button>
-                        <button
-                          onClick={() => openEditUser(user)}
-                          title="Ubah username / password"
-                          className="px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 font-bold border border-indigo-500/30 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                          <span>Ubah</span>
-                        </button>
-                        <button
-                          onClick={() => setDeleteUser(user)}
-                          title="Hapus user"
-                          className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold border border-red-500/30 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Hapus</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 🔐 MODAL ATUR HAK AKSES */}
-      {isPermModalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div
-            className={`w-full max-w-4xl max-h-[90vh] rounded-3xl border shadow-2xl flex flex-col transition-all overflow-hidden ${
-              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
-            }`}
-          >
-            {/* Modal Header */}
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-base font-black flex items-center gap-2">
-                    Hak Akses: <span className="text-emerald-400 font-mono">{selectedUser.username}</span>
-                    <span className="text-xs font-normal text-slate-400">({selectedUser.fullName})</span>
-                  </h2>
-                  <p className="text-xs text-slate-400">Atur hak akses modul dan kapabilitas sensitif untuk user ini.</p>
-                </div>
+        {/* Right: "Change Password" (editing) or "Add User" group */}
+        <GroupBox caption={mode === 'add' ? 'Add User' : 'Change Password'} isDark={isDark} className="flex-1 min-w-0">
+          {mode === 'idle' ? (
+            <div className={`py-10 text-center ${c.muted}`}>Pilih user di daftar, atau klik Add User.</div>
+          ) : (
+            <form
+              className="flex-1 min-h-0 flex flex-col gap-2"
+              autoComplete="off"
+              onSubmit={(e) => { e.preventDefault(); handleSave(); }}
+            >
+              <div className="max-w-md flex flex-col gap-1.5">
+                <FieldRow label="Username *" isDark={isDark}>
+                  <LegacyInput isDark={isDark} value={formUsername} required onChange={(e) => setFormUsername(e.target.value.toLowerCase())} />
+                </FieldRow>
+                <FieldRow label="Password *" isDark={isDark}>
+                  <LegacyInput
+                    ref={passwordRef}
+                    isDark={isDark}
+                    type="password"
+                    autoComplete="new-password"
+                    value={formPassword}
+                    onChange={(e) => setFormPassword(e.target.value)}
+                    placeholder={mode === 'add' ? 'Kosongkan untuk password default 123456' : 'Kosongkan jika tidak diubah'}
+                  />
+                </FieldRow>
+                <FieldRow label="Confirm Password *" isDark={isDark}>
+                  <LegacyInput isDark={isDark} type="password" autoComplete="new-password" value={formConfirm} disabled={!formPassword} onChange={(e) => setFormConfirm(e.target.value)} />
+                </FieldRow>
+                <FieldRow label="User Type" isDark={isDark}>
+                  <LegacySelect isDark={isDark} value={formUserType} onChange={(e) => setFormUserType(e.target.value)}>
+                    {userTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </LegacySelect>
+                </FieldRow>
               </div>
-              <button
-                onClick={() => setIsPermModalOpen(false)}
-                className={`p-2 rounded-xl border transition-all ${isDark ? 'border-slate-800 hover:bg-slate-800 text-slate-400' : 'border-slate-300 hover:bg-slate-100 text-slate-600'}`}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Quick Action Controls */}
-            <div className="px-6 py-3 border-b border-slate-800/40 bg-slate-950/40 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className={`flex items-center gap-2 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <span>Pilih Opsi Hak Akses Massal:</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleCheckAll(true)}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold border border-emerald-500/30 cursor-pointer transition-all"
-                >
-                  ☑️ Centang Semua Modul
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCheckAll(false)}
-                  className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 font-bold border border-red-500/30 cursor-pointer transition-all"
-                >
-                  ⬜ Uncentang Semua Modul
-                </button>
-              </div>
-            </div>
-
-            {/* Content Body */}
-            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
-              {/* Sensitive Capabilities Section */}
-              {Object.keys(groupedCapabilities).length > 0 && (
-                <div className="space-y-3 pb-6 border-b border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-400" />
-                    <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
-                      🔒 Otorisasi Aksi Sensitif (Granular Capabilities)
-                    </h3>
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    Otorisasi server-side untuk operasi transaksi material dan data sensitif (Admin memiliki akses penuh secara default).
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                    {Object.entries(groupedCapabilities).map(([cat, caps]) => (
-                      <div
-                        key={cat}
-                        className={`p-3.5 rounded-2xl border space-y-2.5 ${
-                          isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
-                        }`}
-                      >
-                        <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
-                          {cat}
-                        </div>
-                        <div className="space-y-2">
-                          {caps.map((cap) => (
-                            <label
-                              key={cap.code}
-                              className="flex items-start gap-2.5 cursor-pointer select-none group"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={Boolean(userCapabilities[cap.code])}
-                                onChange={() => handleToggleCapability(cap.code)}
-                                className="w-4 h-4 mt-0.5 accent-amber-500 cursor-pointer rounded"
-                              />
-                              <div>
-                                <div className={`text-xs font-bold ${userCapabilities[cap.code] ? 'text-amber-400' : 'text-slate-400'}`}>
-                                  {cap.name}
-                                </div>
-                                <div className="text-[10px] text-slate-500 leading-snug">
-                                  {cap.description}
-                                </div>
-                              </div>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Module Permissions Matrix */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400">
-                  📋 Hak Akses Modul CRUD
-                </h3>
-                {Object.entries(groupedPermissions).map(([groupName, items]) => (
-                  <div key={groupName} className="space-y-2">
-                    <div className="text-xs font-bold text-slate-400 border-b border-slate-800 pb-1">
-                      {groupName}
-                    </div>
-                    <div className="space-y-2">
-                      {items.map((perm) => (
-                        <div
-                          key={perm.moduleCode}
-                          className={`p-3 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
-                            isDark ? 'bg-slate-950/50 border-slate-800/80' : 'bg-white border-slate-300'
-                          }`}
-                        >
-                          <div className="font-bold text-xs">
-                            {perm.labelName}
-                            <span className="block text-[10px] font-mono text-slate-500">{perm.moduleCode}</span>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(perm.canView)}
-                                onChange={() => handleTogglePerm(perm.moduleCode, 'canView')}
-                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                              />
-                              <span className={perm.canView ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                                Lihat (View)
-                              </span>
-                            </label>
-
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(perm.canAdd)}
-                                onChange={() => handleTogglePerm(perm.moduleCode, 'canAdd')}
-                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                              />
-                              <span className={perm.canAdd ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                                Tambah
-                              </span>
-                            </label>
-
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(perm.canEdit)}
-                                onChange={() => handleTogglePerm(perm.moduleCode, 'canEdit')}
-                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                              />
-                              <span className={perm.canEdit ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                                Edit
-                              </span>
-                            </label>
-
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(perm.canDelete)}
-                                onChange={() => handleTogglePerm(perm.moduleCode, 'canDelete')}
-                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                              />
-                              <span className={perm.canDelete ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                                Hapus
-                              </span>
-                            </label>
-
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(perm.canPrint)}
-                                onChange={() => handleTogglePerm(perm.moduleCode, 'canPrint')}
-                                className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
-                              />
-                              <span className={perm.canPrint ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                                Cetak
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800/60 bg-slate-950/80 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsPermModalOpen(false)}
-                className="px-4 py-2 rounded-xl border text-xs font-bold border-slate-700 hover:bg-slate-800 cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleSavePermissions}
-                disabled={isSaving}
-                className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 shadow cursor-pointer transition-all"
-              >
-                <Save className="w-4 h-4" />
-                <span>{isSaving ? 'Menyimpan...' : 'Simpan Hak Akses'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ➕ MODAL TAMBAH USER BARU */}
-      {isAddUserOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div
-            className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 transition-all ${
-              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
-            }`}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-black flex items-center gap-2">
-                <UserIcon className="w-4 h-4 text-emerald-400" />
-                Tambah User ERP Baru
-              </h3>
-              <button onClick={() => setIsAddUserOpen(false)} className={`hover:text-white ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateUser} className="space-y-4 mt-4 text-xs">
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Username :</label>
-                <input
-                  type="text"
-                  required
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
-                  placeholder="e.g. kasir2"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Lengkap :</label>
-                <input
-                  type="text"
-                  required
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="e.g. Dewi Sartika"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Level Access / Role :</label>
-                <select
-                  value={newUserLevel}
-                  onChange={(e) => setNewUserLevel(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                >
-                  <option value="Kasir">Kasir POS</option>
-                  <option value="Supervisor">Supervisor Floor</option>
-                  <option value="Manager">Manager ERP</option>
-                  <option value="Admin">Super Admin</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Password :</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Kosongkan untuk password default 123456"
-                  autoComplete="new-password"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddUserOpen(false)}
-                  className="px-4 py-2 rounded-xl border text-xs font-bold border-slate-700 hover:bg-slate-800"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow"
-                >
-                  {isSaving ? 'Menyimpan...' : 'Simpan User'}
-                </button>
+              <div className="flex-1 min-h-0 flex flex-col gap-1">
+                <span className={`font-semibold ${c.muted}`}>Permission</span>
+                {mode === 'add' ? (
+                  <div className={`py-4 px-2 border rounded ${c.panel} ${c.muted}`}>Klik Save untuk membuat user, lalu atur permission-nya di sini.</div>
+                ) : (
+                  permissionTree
+                )}
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* ✏️ MODAL UBAH USER (USERNAME / PASSWORD) */}
-      {editUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div
-            className={`w-full max-w-md rounded-3xl border shadow-2xl p-6 transition-all ${
-              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
-            }`}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-sm font-black flex items-center gap-2">
-                <Edit className="w-4 h-4 text-indigo-400" />
-                Ubah User: <span className="font-mono text-indigo-400">{editUser.username}</span>
-              </h3>
-              <button onClick={() => setEditUser(null)} className={`hover:text-white ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateUser} className="space-y-4 mt-4 text-xs">
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Username :</label>
-                <input
-                  type="text"
-                  required
-                  value={editUsername}
-                  onChange={(e) => setEditUsername(e.target.value.toLowerCase())}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Password Baru :</label>
-                <input
-                  type="password"
-                  value={editPassword}
-                  onChange={(e) => setEditPassword(e.target.value)}
-                  placeholder="Kosongkan jika tidak diubah"
-                  autoComplete="new-password"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Konfirmasi Password Baru :</label>
-                <input
-                  type="password"
-                  value={editPasswordConfirm}
-                  onChange={(e) => setEditPasswordConfirm(e.target.value)}
-                  disabled={!editPassword}
-                  autoComplete="new-password"
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 ${
-                    isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditUser(null)}
-                  className="px-4 py-2 rounded-xl border text-xs font-bold border-slate-700 hover:bg-slate-800"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-black text-xs shadow"
-                >
-                  {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 🗑️ KONFIRMASI HAPUS USER */}
-      {deleteUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div
-            className={`w-full max-w-sm rounded-3xl border shadow-2xl p-6 space-y-4 transition-all ${
-              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
-            }`}
-          >
-            <h3 className="text-sm font-black flex items-center gap-2">
-              <Trash2 className="w-4 h-4 text-red-400" />
-              Hapus User
-            </h3>
-            <p className={`text-xs ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-              Yakin ingin menghapus user <span className="font-mono font-bold text-red-400">{deleteUser.username}</span> ({deleteUser.fullName})?
-              User ini tidak akan bisa login lagi dan hak aksesnya ikut terhapus. Riwayat transaksinya tetap tersimpan.
-            </p>
-            <div className="flex justify-end gap-2 pt-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setDeleteUser(null)}
-                className="px-4 py-2 rounded-xl border font-bold border-slate-700 hover:bg-slate-800"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteUser}
-                disabled={isSaving}
-                className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white font-black shadow"
-              >
-                {isSaving ? 'Menghapus...' : 'Ya, Hapus'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+          )}
+        </GroupBox>
+      </div>
+    </LegacyWindow>
   );
 }

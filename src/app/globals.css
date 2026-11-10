@@ -25,3 +25,58 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Receipt reprint: same print rules as the POS receipt (harmony-kitchen-pos globals.css, client font fix).
+   Scoped with :has(.receipt-paper) so the ERP's other prints (reports, labels, opname) are not affected. */
+.receipt-paper {
+  font-family: Arial, Helvetica, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+@media print {
+  @page { margin: 0; size: auto; }
+  body:has(.receipt-paper) {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    background: transparent !important;
+  }
+  /* Remove everything except the receipt and its ancestors, so the printer does not feed blank paper */
+  body:has(.receipt-paper) *:not(:has(.receipt-paper)):not(.receipt-paper):not(.receipt-paper *) {
+    display: none !important;
+  }
+  body:has(.receipt-paper) *:has(.receipt-paper) {
+    position: static !important;
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    transform: none !important;
+  }
+  /* Thermal printers print only the middle of the paper; the store's printer cuts ~2 characters on the left */
+  .receipt-paper {
+    position: static;
+    page-break-inside: avoid;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1.5mm 5mm 1.5mm 9mm !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  /* Black-only printers dither the on-screen blue into faint dots: print solid black, slightly heavier */
+  .receipt-paper,
+  .receipt-paper * {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
+  .receipt-paper *:not(.font-bold) {
+    font-weight: 600 !important;
+  }
+}

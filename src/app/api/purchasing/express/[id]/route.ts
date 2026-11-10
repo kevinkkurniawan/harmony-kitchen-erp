@@ -37,6 +37,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       po_no: mr.pono || '-',
       do_no: mr.dono || '-',
       supplier_name: mr.suppliername || '-',
+      supplier_id: mr.supplierid,
+      wh_id: mr.whid,
       driver_name: mr.drivername || '-',
       vehicle_no: mr.vehicleno || '-',
       wh_name: 'Gudang Utama',

@@ -61,9 +61,7 @@ export async function PUT(
       return apiError('VALIDATION_ERROR', 'Qty Minimum tidak boleh lebih besar dari Qty Maksimum', 400);
     }
 
-    if (body.promoName !== undefined || body.promo_name !== undefined) {
-      dataToUpdate.promoname = body.promoName || body.promo_name;
-    }
+    const nextName = String(body.promoName ?? body.promo_name ?? '').trim();
     if (body.qtyMin !== undefined) dataToUpdate.qtymin = nextQtyMin;
     if (body.qtyMax !== undefined) dataToUpdate.qtymax = nextQtyMax;
     if (body.isPartial !== undefined) dataToUpdate.ispartial = Boolean(body.isPartial);
@@ -77,10 +75,17 @@ export async function PUT(
     dataToUpdate.promovalue = 0;
     dataToUpdate.promopercentage = 0;
 
-    await prisma.m_promo.updateMany({
-      where: { id },
-      data: dataToUpdate,
-    });
+    // The name belongs to the whole bundle (the grid groups by it), so a rename updates every tier of the bundle
+    const renameBundle = nextName && nextName !== existing.promoname
+      ? [prisma.m_promo.updateMany({
+          where: { promobundle: existing.promobundle, isgroup: existing.isgroup },
+          data: { promoname: nextName, modifieddate: dataToUpdate.modifieddate },
+        })]
+      : [];
+    await prisma.$transaction([
+      ...renameBundle,
+      prisma.m_promo.updateMany({ where: { id }, data: dataToUpdate }),
+    ]);
 
     const updated = await prisma.m_promo.findFirst({ where: { id } });
     return apiSuccess(updated, 'Aturan promo berhasil diperbarui');

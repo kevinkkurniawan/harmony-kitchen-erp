@@ -87,15 +87,17 @@ export async function GET(req: Request) {
       const paymentType = salePaymentType(s, payments);
 
       // Legacy: transactionvalue is before the bill discount (voucher + discount), so net = value - discount.
-      // New POS: grandtotal is net and the bill discount is on the header (its voucher field holds marketplace payments).
+      // New POS: grandtotal is net; its voucher field holds marketplace payments, not a discount.
       let transactionValue = 0;
       let finalDiscount = 0;
       if (!unpaid) {
         if (isLegacySale(s)) {
-          transactionValue = payments.reduce((sum, p) => sum + Number(p.transactionvalue || 0), 0);
-          finalDiscount = payments.reduce((sum, p) => sum + Number(p.voucher || 0) + Number(p.discount || 0), 0);
+          // As the old Bill Opname (sp_SPSalesPOS_OpnameGetSummary): Nom. Transaksi = value - discount, Diskon Akhir = voucher
+          transactionValue = payments.reduce((sum, p) => sum + Number(p.transactionvalue || 0) - Number(p.discount || 0), 0);
+          finalDiscount = payments.reduce((sum, p) => sum + Number(p.voucher || 0), 0);
         } else {
-          finalDiscount = Number(s.manualdiscountamount || 0);
+          // The new POS stores its whole bill discount (member + voucher + manual) in t_salespayment.discount
+          finalDiscount = pay ? Number(pay.discount || 0) : Number(s.manualdiscountamount || 0);
           transactionValue = Number(s.grandtotal || 0) + finalDiscount;
         }
       }

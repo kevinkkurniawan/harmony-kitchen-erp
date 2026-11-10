@@ -5,6 +5,8 @@ import { parseColumnFilters } from '@/lib/column-filter';
 import { apiError } from '@/lib/api-response';
 import { getCurrentUser } from '@/lib/session';
 import { canUserViewHpp } from '@/lib/capabilities';
+import { getTodayBangkok } from '@/lib/date-utils';
+import { receiptLineAmounts, receiptHeaderAmounts, dueDateFromTerm } from '@/lib/receipt-totals';
 
 export async function GET(req: Request) {
   try {
@@ -16,13 +18,19 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(searchParams, {
-      whitelist: ['mrno', 'pono', 'suppliername', 'whid', 'isvoid', 'mrdate', 'dono', 'drivername', 'vehicleno', 'page', 'limit'],
+    // "Terbayar" / "Belum Terbayar" toggle: paid=true | false (legacy rows have ispaid NULL = not paid)
+    const paid = searchParams.get('paid');
+    const filterParams = new URLSearchParams(searchParams);
+    filterParams.delete('paid');
+
+    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(filterParams, {
+      // page / limit stay out: whitelisting them made the parser treat them as column filters
+      whitelist: ['mrno', 'pono', 'suppliername', 'whid', 'isvoid', 'mrdate', 'dono', 'drivername', 'vehicleno'],
       exactMatchFields: ['mrno', 'pono', 'dono'],
       containsFields: ['suppliername', 'drivername', 'vehicleno'],
       numberFields: ['whid'],
       booleanFields: ['isvoid'],
-      dateRangeFields: ['mrdate'],
+      dateOnlyFields: ['mrdate'], // DATE column
     });
 
     if (unsupportedFilters.length > 0) {
@@ -37,6 +45,8 @@ export async function GET(req: Request) {
     const where: any = {
       ...columnWhere,
     };
+    if (paid === 'true') where.ispaid = true;
+    else if (paid === 'false') where.AND = [{ OR: [{ ispaid: false }, { ispaid: null }] }];
 
     if (q) {
       where.OR = [
@@ -106,12 +116,14 @@ export async function GET(req: Request) {
         is_express: false,
         isVoid: Boolean(mr.isvoid),
         is_void: Boolean(mr.isvoid),
+        isPaid: Boolean(mr.ispaid),
         paymentType: mr.paymenttype === 1 ? 'CASH' : 'TEMPO',
         payment_type: mr.paymenttype === 1 ? 'CASH' : 'TEMPO',
         dueDate: mr.duedate ? new Date(mr.duedate).toISOString().slice(0, 10) : '-',
         due_date: mr.duedate ? new Date(mr.duedate).toISOString().slice(0, 10) : '-',
-        downPayment: Number(mr.downpayment || 0),
-        down_payment: Number(mr.downpayment || 0),
+        // Uang Muka is purchase money: Admin only, like the totals
+        downPayment: canViewPrice ? Number(mr.downpayment || 0) : null,
+        down_payment: canViewPrice ? Number(mr.downpayment || 0) : null,
         discPercentage: Number(mr.discpercentage || 0),
         disc_percentage: Number(mr.discpercentage || 0),
         ppnPercentage: Number(mr.ppnpercentage || 0),
@@ -155,6 +167,9 @@ export async function GET(req: Request) {
   }
 }
 
+// Clamp a percentage input to 0..100 (bad input counts as 0)
+const pct = (v: unknown) => Math.max(0, Math.min(100, Number(v) || 0));
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -168,11 +183,15 @@ export async function POST(req: Request) {
     const transporter = body.transporter;
     const whId = body.whId || body.wh_id;
     const paymentType = body.paymentType || body.payment_type;
-    const dueDate = body.dueDate || body.due_date;
     const description = body.description;
-    const downPayment = Number(body.downPayment || body.down_payment || 0);
-    const discPercentage = Number(body.discPercentage || body.disc_percentage || 0);
-    const ppnPercentage = Number(body.ppnPercentage || body.ppn_percentage || 11);
+    // `??` keeps a deliberate 0 (e.g. PPn 0%); `||` turned it into the default
+    // Same clamp as Apply Changes: a negative or non-numeric Uang Muka counts as 0
+    const downPayment = Math.max(0, Number(body.downPayment ?? body.down_payment ?? 0) || 0);
+    const discPercentage = pct(body.discPercentage ?? body.disc_percentage ?? 0);
+    const isMultiDisc = Boolean(body.isMultiDisc);
+    const headerDisc2 = isMultiDisc ? pct(body.disc2) : 0;
+    const headerDisc3 = isMultiDisc ? pct(body.disc3) : 0;
+    const ppnPercentage = Number(body.ppnPercentage ?? body.ppn_percentage ?? 11);
     const items = body.items || [];
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -206,8 +225,9 @@ export async function POST(req: Request) {
     const invMapByNo = new Map(inventories.map((i: any) => [i.inventoryno, i]));
     const invMapById = new Map(inventories.map((i: any) => [String(i.id), i]));
 
-    // Resolve and deduplicate items by inventory ID
-    const mergedItemsMap = new Map<string, { inv: any; qty: number; price: number; discPercentage: number; subtotal: number; description: string | null }>();
+    // Resolve and deduplicate items by inventory ID (a repeated item adds its qty; its first line's price / discounts win)
+    type MergedLine = { inv: any; qty: number; price: number; disc1: number; disc2: number; disc3: number; discRp: number; description: string | null };
+    const mergedItemsMap = new Map<string, MergedLine>();
     for (const it of items) {
       const inv =
         invMapById.get(String(it.inventory_id || it.inventoryId)) ||
@@ -220,105 +240,133 @@ export async function POST(req: Request) {
       }
       const key = String(inv.id);
       const qtyNum = Math.max(1, Number(it.qty) || 1);
-      const priceNum = Math.max(0, Number(it.price || it.unit_price || it.unitPrice || 0));
-      const discNum = Math.max(0, Math.min(100, Number(it.discPercentage || it.disc_percentage || 0)));
-      const subtotalNum = Number(it.subtotal) || (qtyNum * priceNum * (1 - discNum / 100));
-
       const existing = mergedItemsMap.get(key);
       if (existing) {
         existing.qty += qtyNum;
-        existing.subtotal += subtotalNum;
       } else {
         mergedItemsMap.set(key, {
           inv,
           qty: qtyNum,
-          price: priceNum,
-          discPercentage: discNum,
-          subtotal: subtotalNum,
+          price: Math.max(0, Number(it.price || it.unit_price || it.unitPrice || 0)),
+          disc1: pct(it.discPercentage ?? it.disc_percentage ?? it.disc1),
+          disc2: pct(it.disc2),
+          disc3: pct(it.disc3),
+          discRp: Math.max(0, Number(it.discRp ?? it.disc ?? 0) || 0),
           description: it.description || null,
         });
       }
     }
 
-    const rawSubtotal = Array.from(mergedItemsMap.values()).reduce((sum, item) => sum + item.subtotal, 0);
-    const discValue = rawSubtotal * (discPercentage / 100);
-    const afterDisc = rawSubtotal - discValue;
-    const ppnValue = afterDisc * (ppnPercentage / 100);
-    const grandTotal = afterDisc + ppnValue;
-
-    const generatedMrNo = mrNo || `MR-RCV-${Date.now().toString().slice(-6)}`;
-    const authUser = req.headers.get('x-user') || 'admin';
-    const parsedPaymentType = paymentType === 'CASH' ? 1 : 2;
-
-    const created = await prisma.t_materialreceiveheader.create({
-      data: {
-        mrno: generatedMrNo,
-        mrdate: mrDate ? new Date(mrDate) : new Date(),
-        poid: po ? po.id : null,
-        pono: poNo || null,
-        dono: doNo || null,
-        supplierid: Number(supplier.id),
-        suppliername: supplier.suppliername,
-        drivername: driverName || null,
-        vehicleno: vehicleNo || null,
-        transporter: transporter || null,
-        whid: Number(whId) || null,
-        paymenttype: parsedPaymentType,
-        duedate: dueDate ? new Date(dueDate) : null,
-        downpayment: downPayment,
-        discpercentage: discPercentage,
-        discvalue: discValue,
-        ppnpercentage: ppnPercentage,
-        ppnvalue: ppnValue,
-        grandtotal: grandTotal,
-        description: description || null,
-        isvoid: false,
-        ispaid: false,
-        createduser: authUser,
-        createddate: new Date(),
-        modifieduser: authUser,
-        modifieddate: new Date(),
-        t_materialreceivedetail: {
-          create: Array.from(mergedItemsMap.values()).map(({ inv, qty, price, discPercentage: itemDisc, subtotal: itemSub, description: itemDesc }) => ({
-            inventoryid: String(inv.id),
-            qty,
-            price,
-            discpersen1: itemDisc,
-            subtotal: itemSub,
-            uomid: inv.uomid ? Number(inv.uomid) : null,
-            description: itemDesc,
-            isinventory: true,
-            createduser: authUser,
-            createddate: new Date(),
-            modifieduser: authUser,
-            modifieddate: new Date(),
-          })),
-        },
-      },
-    });
-
-    // Update inventory stock & buy price / HPP
-    for (const { inv, qty, price } of mergedItemsMap.values()) {
-      await prisma.m_inventory.update({
-        where: { id: inv.id },
-        data: {
-          stokupdate: { increment: qty },
-          pricebuy: Math.round(price),
-          hpp: Math.round(price),
-        },
-      });
+    // Line amounts follow the old detail SP; the client's subtotal is not trusted
+    const lines = Array.from(mergedItemsMap.values()).map((l) => ({ ...l, ...receiptLineAmounts(l) }));
+    const negative = lines.find((l) => l.netPrice < 0);
+    if (negative) {
+      return NextResponse.json({ success: false, error: `Diskon ${negative.inv.inventoryname} melebihi harga` }, { status: 400 });
     }
 
+    const rawSubtotal = lines.reduce((sum, l) => sum + l.subtotal, 0);
+    const { discValue, ppnValue, grandTotal } = receiptHeaderAmounts({
+      subtotal: rawSubtotal, disc1: discPercentage, isMultiDisc, disc2: headerDisc2, disc3: headerDisc3, ppnPercentage, downPayment,
+    });
+
+    const generatedMrNo = mrNo || `MR-RCV-${Date.now().toString().slice(-6)}`;
+    // The logged-in user, not a request header (no client sent one, so every receipt read "admin")
+    const sessionUser = await getCurrentUser();
+    if (!sessionUser) return NextResponse.json({ success: false, error: 'Sesi login diperlukan.' }, { status: 401 });
+    const authUser = sessionUser.username;
+    const parsedPaymentType = paymentType === 'CASH' ? 1 : 2;
+    const mrDay = mrDate ? String(mrDate).slice(0, 10) : getTodayBangkok();
+    // Credit: "Lama Termin" (days) gives the due date; an explicit dueDate is still accepted from other callers
+    const longTerm = parsedPaymentType === 2 ? Math.max(0, Math.trunc(Number(body.longTerm ?? body.long_term) || 0)) : 0;
+    const dueDate = parsedPaymentType === 2
+      ? (body.longTerm != null || body.long_term != null ? dueDateFromTerm(mrDay, longTerm) : (body.dueDate || body.due_date || null))
+      : null;
+
+    const created = await prisma.$transaction(async (tx) => {
+      const header = await tx.t_materialreceiveheader.create({
+        data: {
+          mrno: generatedMrNo,
+          mrdate: mrDate ? new Date(mrDate) : new Date(),
+          poid: po ? po.id : null,
+          pono: poNo || null,
+          dono: doNo || null,
+          supplierid: Number(supplier.id),
+          suppliername: supplier.suppliername,
+          drivername: driverName || null,
+          vehicleno: vehicleNo || null,
+          transporter: transporter || null,
+          whid: Number(whId) || null,
+          paymenttype: parsedPaymentType,
+          longterm: longTerm,
+          duedate: dueDate ? new Date(dueDate) : null,
+          downpayment: downPayment,
+          discpercentage: discPercentage,
+          disc1: discPercentage,
+          disc2: headerDisc2,
+          disc3: headerDisc3,
+          ismultidisc: isMultiDisc,
+          discvalue: discValue,
+          ppnpercentage: ppnPercentage,
+          ppnvalue: ppnValue,
+          grandtotal: grandTotal,
+          description: description || null,
+          isvoid: false,
+          // Old header SP: a cash receipt is paid on entry
+          ispaid: parsedPaymentType === 1,
+          createduser: authUser,
+          createddate: new Date(),
+          modifieduser: authUser,
+          modifieddate: new Date(),
+          t_materialreceivedetail: {
+            create: lines.map((l) => ({
+              inventoryid: String(l.inv.id),
+              qty: l.qty,
+              price: l.price,
+              discpersen1: l.disc1,
+              discpersen2: l.disc2,
+              discpersen3: l.disc3,
+              disc: l.discRp,
+              disctotal: Math.round(l.discTotal),
+              subtotal: l.subtotal,
+              uomid: l.inv.uomid ? Number(l.inv.uomid) : null,
+              description: l.description,
+              isinventory: true,
+              createduser: authUser,
+              createddate: new Date(),
+              modifieduser: authUser,
+              modifieddate: new Date(),
+            })),
+          },
+        },
+      });
+
+      // Update inventory stock & buy price / HPP (ERP rule: the receipt's price becomes the buy price and HPP)
+      for (const { inv, qty, price } of lines) {
+        await tx.m_inventory.update({
+          where: { id: inv.id },
+          data: {
+            stokupdate: { increment: qty },
+            pricebuy: Math.round(price),
+            hpp: Math.round(price),
+          },
+        });
+      }
+      return header;
+      // One stock update per line: long receipts need more than the 5 s default (same limits as opname)
+    }, { maxWait: 15000, timeout: 60000 });
+
+    // Purchase totals stay Admin-only (the screen does not use this value)
+    const shownTotal = canUserViewHpp(sessionUser) ? grandTotal : null;
     return NextResponse.json({
       success: true,
       id: String(created.id),
       mrNo: created.mrno,
-      grandTotal,
+      grandTotal: shownTotal,
       message: `Penerimaan Barang dengan Harga ${created.mrno} berhasil disimpan & HPP diperbarui!`,
       data: {
         id: Number(created.id),
         mrNo: created.mrno,
-        grandTotal,
+        grandTotal: shownTotal,
       },
     });
   } catch (error: any) {

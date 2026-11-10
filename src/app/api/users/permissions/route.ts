@@ -5,6 +5,11 @@ import { SENSITIVE_CAPABILITIES, getUserCapabilities } from '@/lib/capabilities'
 import { recordAuditEvent } from '@/lib/audit-event';
 import { prisma } from '@/lib/db';
 
+// Grants nothing reads: the POS lets every cashier use these (harmony-kitchen-pos acdfc1c) and BARCODE_MANAGE is
+// never checked. Hidden from the screen and never written, so their stored grants stay as they are.
+const UNUSED_CAPABILITIES = new Set(['MANUAL_DISCOUNT', 'OVERRIDE_GROSIR_1', 'BARCODE_MANAGE']);
+const SCREEN_CAPABILITIES = SENSITIVE_CAPABILITIES.filter((cap) => !UNUSED_CAPABILITIES.has(cap.code));
+
 export async function GET(request: Request) {
   const currentUser = await getCurrentUser();
   if (!currentUser) return NextResponse.json({ success: false, error: 'Login diperlukan.' }, { status: 401 });
@@ -15,14 +20,15 @@ export async function GET(request: Request) {
 
   const subject = requestedUserId === currentUser.id ? currentUser : { ...currentUser, id: requestedUserId, userLevel: 'Staff' as const };
   const data = await getPermissionsForUser(subject);
-  const capabilities = await getUserCapabilities(requestedUserId);
+  const allCapabilities = await getUserCapabilities(requestedUserId);
+  const capabilities = Object.fromEntries(SCREEN_CAPABILITIES.map((cap) => [cap.code, allCapabilities[cap.code] ?? false]));
 
   return NextResponse.json({
     success: true,
     data,
     items: data,
     capabilities,
-    capabilityCatalog: SENSITIVE_CAPABILITIES,
+    capabilityCatalog: SCREEN_CAPABILITIES,
   });
 }
 
@@ -46,7 +52,7 @@ export async function POST(request: Request) {
       const beforeCapabilities = await getUserCapabilities(userId);
       const afterCapabilities: Record<string, boolean> = {};
 
-      const upsertPromises = SENSITIVE_CAPABILITIES.filter((cap) => cap.code in body.capabilities).map((cap) => {
+      const upsertPromises = SCREEN_CAPABILITIES.filter((cap) => cap.code in body.capabilities).map((cap) => {
         const isGranted = Boolean(body.capabilities[cap.code]);
         afterCapabilities[cap.code] = isGranted;
 

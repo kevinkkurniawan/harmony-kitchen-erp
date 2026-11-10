@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { getTodayBangkok } from '@/lib/date-utils';
+import { LegacyWindow, LegacyButton, LegacyGrid, LegacyInput, FieldRow, ContextMenu, menuAt, type LegacyColumn, type ContextMenuState } from '@/components/legacy';
+import { BillOpnameReport } from '@/components/SalesReportManager';
 import {
   RefreshCw,
-  Search,
   Printer,
   CreditCard,
   Eye,
@@ -14,11 +15,10 @@ import {
   X,
   AlertTriangle,
   Zap,
-  ChevronUp,
-  ChevronDown,
   Edit3,
   RotateCcw,
   Ban,
+  FileText,
 } from 'lucide-react';
 
 export interface PosItemDetail {
@@ -49,7 +49,15 @@ export interface PosHeader {
   description: string;
   itemCount?: number;
   totalQty?: number;
+  salesposdate?: string;
+  createdAt?: string;
 }
+
+// Receipt date / time like the POS receipt: the sale day, and the time it was created
+const receiptDate = (h: PosHeader) =>
+  new Date(h.salesposdate || h.createdAt || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Bangkok' });
+const receiptTime = (h: PosHeader) =>
+  h.createdAt ? new Date(h.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : '';
 
 /** One row of the legacy Bill Opname grid, as returned by GET /api/sales/monitoring. */
 export interface MonitoringRow {
@@ -114,6 +122,8 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
   // Legacy Bill Opname shows one day at a time, opening on today
   const [selectedDate, setSelectedDate] = useState<string>(getTodayBangkok());
+  // Admin Bill Opname report buttons (old Rpt_Monthly): month or day of the selected date
+  const [billReport, setBillReport] = useState<'monthly' | 'daily' | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
@@ -125,7 +135,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
   const [receiptLoadingId, setReceiptLoadingId] = useState<number | null>(null);
   // Right-click menu like the legacy Bill Opname grid: Reprint / Void / Unvoid
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: MonitoringRow } | null>(null);
+  const [rowMenu, setRowMenu] = useState<ContextMenuState<MonitoringRow> | null>(null);
   const [printData, setPrintData] = useState<{ header: PosHeader; items: PosItemDetail[] } | null>(null);
 
   // Payment Correction Modal
@@ -171,35 +181,34 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         const url = `/api/sales/monitoring?all=true&q=${encodeURIComponent(debouncedSearchQuery)}&dateFrom=${selectedDate}&dateTo=${selectedDate}`;
         const res = await fetch(url);
         const json = await res.json();
-        if (isMounted && Array.isArray(json.data)) {
+        if (!isMounted) return;
+        if (Array.isArray(json.data)) {
           setTransactions(json.data);
           setTotalCount(json.pagination?.total ?? json.data.length);
+        } else {
+          // Never leave another day's notes under the new date
+          setTransactions([]);
+          setTotalCount(0);
+          addToast(`Gagal memuat data penjualan: ${json.error?.message || json.error || res.status}`, 'error');
         }
       } catch (err) {
         console.error('Error fetching sales monitoring data:', err);
+        if (isMounted) {
+          setTransactions([]);
+          setTotalCount(0);
+          addToast('Gagal memuat data penjualan', 'error');
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
     }
     loadData();
     return () => { isMounted = false; };
-  }, [debouncedSearchQuery, selectedDate, reloadKey]);
+  }, [debouncedSearchQuery, selectedDate, reloadKey, addToast]);
 
   const reloadData = () => setReloadKey((k) => k + 1);
 
-  useEffect(() => {
-    if (!rowMenu) return;
-    const close = () => setRowMenu(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('click', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('click', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [rowMenu]);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
 
   const sortedRows = useMemo(() => {
     if (!sortField) return transactions;
@@ -343,8 +352,68 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
     window.print();
   };
 
+  // Grid columns of the legacy Bill Opname form; actions column replaces its Void / Unvoid / Reprint menu buttons
+  const gridColumns: LegacyColumn<MonitoringRow>[] = [
+    {
+      key: 'isVoid', caption: '.::.', align: 'center', width: 36,
+      render: (row) => <input type="checkbox" checked={row.isVoid} readOnly tabIndex={-1} aria-label={row.isVoid ? 'VOID' : 'Tidak void'} className="pointer-events-none" />,
+    },
+    ...COLUMNS.map((col): LegacyColumn<MonitoringRow> => ({
+      key: col.key,
+      caption: col.label,
+      format: col.numeric ? 'n0' : 'text',
+      sortKey: col.key,
+      footer: col.total ? fmt(totals[col.key] || 0) : undefined,
+    })),
+    {
+      key: 'actions', caption: 'Aksi', align: 'center',
+      render: (row) => (
+        <div className="flex items-center justify-center gap-1">
+          <button onClick={(e) => { e.stopPropagation(); handleViewReceipt(row.id); }} className="p-0.5 rounded hover:bg-blue-500/20 text-blue-600 cursor-pointer" title="Lihat & Cetak Struk">
+            {receiptLoadingId === row.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+          </button>
+          {/* An unpaid sale has no payment to correct */}
+          {!row.isUnpaid && (
+            <button onClick={(e) => { e.stopPropagation(); handleOpenPaymentCorrection(row); }} className="p-0.5 rounded hover:bg-amber-500/20 text-amber-600 cursor-pointer" title="Ubah Metode Pembayaran">
+              <Edit3 className="w-4 h-4" />
+            </button>
+          )}
+          {row.isVoid ? (
+            <button onClick={(e) => { e.stopPropagation(); handleOpenVoidModal(row, 'UNVOID'); }} className="p-0.5 rounded hover:bg-emerald-500/20 text-emerald-600 cursor-pointer" title="Pulihkan Transaksi (UNVOID)">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={(e) => { e.stopPropagation(); handleOpenVoidModal(row, 'VOID'); }} className="p-0.5 rounded hover:bg-rose-500/20 text-rose-600 cursor-pointer" title="Batalkan Transaksi (VOID)">
+              <Ban className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+    <LegacyWindow
+      title="Bill Opname"
+      isDark={isDark}
+      toolbar={
+        <>
+          <LegacyButton isDark={isDark} onClick={() => setSelectedDate(getTodayBangkok())}>Hari Ini</LegacyButton>
+          <div className="w-56">
+            <FieldRow label="Tanggal :" isDark={isDark} labelWidth="w-auto">
+              <LegacyInput isDark={isDark} type="date" value={selectedDate} onChange={(e) => e.target.value && setSelectedDate(e.target.value)} />
+            </FieldRow>
+          </div>
+          <LegacyButton isDark={isDark} onClick={reloadData} icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />}>Refresh</LegacyButton>
+          {/* Old Admin Bill Opname: an empty gap after Refresh, then the two report buttons */}
+          <LegacyButton isDark={isDark} className="ml-6" onClick={() => setBillReport('monthly')} icon={<FileText className="w-3.5 h-3.5" />}>Laporan Bulanan</LegacyButton>
+          <LegacyButton isDark={isDark} onClick={() => setBillReport('daily')} icon={<FileText className="w-3.5 h-3.5" />}>Laporan Harian</LegacyButton>
+          <div className="ml-auto w-64">
+            <LegacyInput isDark={isDark} placeholder="Cari No. Nota / User..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          </div>
+        </>
+      }
+    >
       {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
@@ -369,236 +438,49 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         ))}
       </div>
 
-      {/* TOOLBAR: Hari Ini | Tanggal | Refresh, as in the legacy Bill Opname form */}
-      <div className={`px-4 py-3 border-b flex flex-wrap items-center gap-3 ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <button
-          onClick={() => setSelectedDate(getTodayBangkok())}
-          className={`px-3.5 py-1.5 rounded-xl border text-xs font-black cursor-pointer ${
-            isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
-          }`}
-        >
-          Hari Ini
-        </button>
-        <label className={`flex items-center gap-2 text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-          <span>Tanggal :</span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-            className={`p-1.5 rounded-xl border text-xs font-bold focus:outline-none ${
-              isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-            }`}
-          />
-        </label>
-        <button
-          onClick={reloadData}
-          className={`px-3.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 cursor-pointer ${
-            isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
-          }`}
-        >
-          <RefreshCw className={`w-4 h-4 text-indigo-400 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-        <div className="relative ml-auto w-full sm:w-64">
-          <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-slate-600'}`} />
-          <input
-            type="text"
-            placeholder="Cari No. Nota / User..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full border rounded-xl pl-9 pr-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-              isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
-            }`}
-          />
-        </div>
-      </div>
-
       {totalCount > transactions.length && (
-        <div className="px-4 py-1.5 text-[11px] font-bold bg-amber-500/15 text-amber-600">
+        <div className="px-2 py-1 rounded bg-amber-500/15 text-amber-700 font-semibold">
           Menampilkan {transactions.length} dari {totalCount} nota; total di bawah hanya untuk nota yang tampil.
         </div>
       )}
 
-      {/* GRID: legacy Bill Opname columns, footer totals in place of summary cards */}
-      <div className="flex-1 min-h-0 p-4 flex flex-col">
-        <div className={`flex-1 min-h-0 overflow-auto rounded-xl border ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <table className="w-full text-left border-separate border-spacing-0 text-xs">
-            <thead className="sticky top-0 z-20">
-              <tr className={`h-9 whitespace-nowrap text-[11px] font-black ${isDark ? 'bg-slate-800 text-slate-100' : 'bg-slate-200 text-slate-900'}`}>
-                <th className="py-1.5 px-2 text-center w-10" title="Void">.::.</th>
-                {COLUMNS.map((col) => (
-                  <th
-                    key={col.key}
-                    onClick={() => handleSort(col.key)}
-                    className="py-1.5 px-2 cursor-pointer hover:text-amber-500"
-                  >
-                    <div className={`flex items-center gap-1 ${col.numeric ? 'justify-end' : ''}`}>
-                      <span>{col.label}</span>
-                      {sortField === col.key && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-500" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-500" />)}
-                    </div>
-                  </th>
-                ))}
-                <th className="py-1.5 px-2 text-center w-24">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={COLUMNS.length + 2} className={`py-16 text-center font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                    Memuat data...
-                  </td>
-                </tr>
-              ) : sortedRows.length === 0 ? (
-                <tr>
-                  <td colSpan={COLUMNS.length + 2} className={`py-16 text-center font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                    Tidak ada nota pada tanggal ini.
-                  </td>
-                </tr>
-              ) : (
-                sortedRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    tabIndex={0}
-                    onDoubleClick={() => handleViewReceipt(row.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      // Keep the menu on screen near the right / bottom edge
-                      setRowMenu({ x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120), row });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleViewReceipt(row.id);
-                      }
-                    }}
-                    className={`whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
-                      row.isVoid
-                        ? isDark ? 'bg-rose-950/30 text-slate-500 line-through' : 'bg-rose-50 text-slate-400 line-through'
-                        : isDark ? 'even:bg-slate-800/40 hover:bg-slate-700 text-slate-100' : 'even:bg-slate-50 hover:bg-slate-100 text-slate-800'
-                    }`}
-                    title="Double-click atau tekan Enter untuk melihat detail nota"
-                  >
-                    <td className={`py-1.5 px-2 text-center border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-                      <input type="checkbox" checked={row.isVoid} readOnly tabIndex={-1} aria-label={row.isVoid ? 'VOID' : 'Tidak void'} className="pointer-events-none" />
-                    </td>
-                    {COLUMNS.map((col) => (
-                      <td
-                        key={col.key}
-                        className={`py-1.5 px-2 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} ${col.numeric ? 'text-right font-mono' : ''} ${col.key === 'invoiceNo' ? 'font-mono font-bold' : ''}`}
-                      >
-                        {col.numeric ? fmt(Number(row[col.key])) : String(row[col.key] ?? '')}
-                      </td>
-                    ))}
-                    <td className={`py-1 px-2 text-center border-b no-underline ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewReceipt(row.id);
-                          }}
-                          className="p-1 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
-                          title="Lihat & Cetak Struk"
-                        >
-                          {receiptLoadingId === row.id
-                            ? <RefreshCw className="w-4 h-4 animate-spin" />
-                            : <Eye className="w-4 h-4" />}
-                        </button>
-                        {/* An unpaid sale has no payment to correct */}
-                        {!row.isUnpaid && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPaymentCorrection(row);
-                            }}
-                            className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-500 cursor-pointer"
-                            title="Ubah Metode Pembayaran"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                        )}
-                        {row.isVoid ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenVoidModal(row, 'UNVOID');
-                            }}
-                            className="p-1 rounded-lg hover:bg-emerald-500/20 text-emerald-500 cursor-pointer"
-                            title="Pulihkan Transaksi (UNVOID)"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenVoidModal(row, 'VOID');
-                            }}
-                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-500 cursor-pointer"
-                            title="Batalkan Transaksi (VOID)"
-                          >
-                            <Ban className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-            <tfoot className="sticky bottom-0 z-10">
-              <tr className={`h-9 whitespace-nowrap font-black ${isDark ? 'bg-slate-800 text-slate-100' : 'bg-slate-200 text-slate-900'}`}>
-                <td className="py-1.5 px-2" />
-                {COLUMNS.map((col) => (
-                  <td key={col.key} className={`py-1.5 px-2 ${col.numeric ? 'text-right font-mono' : ''}`}>
-                    {col.total ? fmt(totals[col.key] || 0) : ''}
-                  </td>
-                ))}
-                <td className="py-1.5 px-2" />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+      <LegacyGrid
+        isDark={isDark}
+        columns={gridColumns}
+        rows={sortedRows}
+        rowKey={(row) => row.id}
+        loading={isLoading}
+        emptyText="Tidak ada nota pada tanggal ini."
+        sort={sortField ? { key: sortField, order: sortOrder } : null}
+        onSort={(key) => handleSort(key as keyof MonitoringRow)}
+        onRowDoubleClick={(row) => handleViewReceipt(row.id)}
+        onRowContextMenu={(row, e) => setRowMenu(menuAt(e, row))}
+        rowClassName={(row) => (row.isVoid ? (isDark ? 'bg-rose-950/30 text-slate-500 line-through' : 'bg-rose-50 text-slate-400 line-through') : '')}
+        showFooter
+      />
+
+      {billReport && (
+        <BillOpnameReport isDark={isDark} mode={billReport} date={selectedDate} onClose={() => setBillReport(null)} />
+      )}
 
       {rowMenu && (
-        <div
-          style={{ top: rowMenu.y, left: rowMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-          className={`fixed z-50 w-44 rounded-xl border shadow-2xl py-1 text-xs font-bold ${
-            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-          }`}
-        >
-          <button
-            onClick={() => { const r = rowMenu.row; setRowMenu(null); handleViewReceipt(r.id); }}
-            className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-indigo-500 hover:text-white cursor-pointer"
-          >
-            <Printer className="w-3.5 h-3.5" /><span>Reprint</span>
-          </button>
-          <button
-            onClick={() => {
-              const r = rowMenu.row; setRowMenu(null);
-              if (r.isVoid) addToast('Transaksi Sudah dalam kondisi Void atau batal', 'info');
-              else handleOpenVoidModal(r, 'VOID');
-            }}
-            className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-500 hover:text-white cursor-pointer"
-          >
-            <Ban className="w-3.5 h-3.5" /><span>Void</span>
-          </button>
-          <button
-            onClick={() => {
-              const r = rowMenu.row; setRowMenu(null);
-              if (!r.isVoid) addToast('Transaksi Sudah dalam kondisi Unvoid atau Aktif', 'info');
-              else handleOpenVoidModal(r, 'UNVOID');
-            }}
-            className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-emerald-500 hover:text-white cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" /><span>Unvoid</span>
-          </button>
-        </div>
+        <ContextMenu
+          isDark={isDark}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            { label: 'Reprint', icon: <Printer className="w-3.5 h-3.5" />, onClick: () => handleViewReceipt(rowMenu.row.id) },
+            {
+              label: 'Void', icon: <Ban className="w-3.5 h-3.5" />, danger: true,
+              onClick: () => (rowMenu.row.isVoid ? addToast('Transaksi Sudah dalam kondisi Void atau batal', 'info') : handleOpenVoidModal(rowMenu.row, 'VOID')),
+            },
+            {
+              label: 'Unvoid', icon: <RotateCcw className="w-3.5 h-3.5" />,
+              onClick: () => (!rowMenu.row.isVoid ? addToast('Transaksi Sudah dalam kondisi Unvoid atau Aktif', 'info') : handleOpenVoidModal(rowMenu.row, 'UNVOID')),
+            },
+          ]}
+        />
       )}
 
       {/* Feedback while a receipt loads */}
@@ -641,133 +523,77 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
             </div>
 
             {/* Thermal Printable Content */}
-            <div className="printable-pos-receipt pt-6 space-y-4 text-xs font-mono">
-              <style>{`
-                @media print {
-                  body {
-                    background: white !important;
-                    color: black !important;
-                  }
-                  body * {
-                    visibility: hidden !important;
-                  }
-                  .printable-pos-receipt, .printable-pos-receipt * {
-                    visibility: visible !important;
-                    color: black !important;
-                  }
-                  .printable-pos-receipt {
-                    position: absolute !important;
-                    left: 50% !important;
-                    top: 0 !important;
-                    transform: translateX(-50%) !important;
-                    width: 80mm !important;
-                    padding: 10px !important;
-                    background: white !important;
-                    box-shadow: none !important;
-                    border: none !important;
-                  }
-                  .no-print, .print\\:hidden, button {
-                    display: none !important;
-                  }
-                }
-              `}</style>
-              <div className="text-center space-y-1">
-                <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">HARMONY KITCHEN & RESTO</h2>
-                <p className="text-[10px] text-slate-600">Jl. Raya Dapur No. 88, Surabaya</p>
-                <p className="text-[10px] text-slate-600">Telp: (031) 8899-7766</p>
+            <div className="printable-pos-receipt pt-6">
+              {/* Same layout and texts as the POS receipt (harmony-kitchen-pos ReceiptModal), which the client reviewed */}
+              {/* receipt-paper: the POS receipt print rules (Arial, solid black, thermal margins) in globals.css */}
+              <div className="receipt-paper bg-white px-4 py-3 max-w-[300px] mx-auto text-[#1e40af] text-[13px] leading-snug">
+                <div className="text-center pb-1.5 border-b-2 border-[#1e40af]">
+                  <h2 className="font-bold text-[15px] tracking-wide uppercase">HARMONY KITCHENWARE</h2>
+                  <p className="mt-0.5">Jalan Panglima Sudirman 65</p>
+                  <p>WA : 0851 7238 4707</p>
+                </div>
                 {printData.header.isVoid && (
                   <div className="my-1 py-1 px-2 border-2 border-rose-600 text-rose-600 font-black text-center text-xs tracking-widest uppercase">
                     *** TRANSAKSI DIBATALKAN (VOID) ***
                   </div>
                 )}
-                <div className="border-b border-dashed border-slate-400 my-2" />
-              </div>
-
-              <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">No. Struk:</span>
-                  <span className="font-black">{printData.header.invoiceNo}</span>
+                <div className="pt-2 text-left">No : {printData.header.invoiceNo}</div>
+                <div className="flex justify-between gap-2">
+                  <span>{receiptDate(printData.header)}</span>
+                  <span>{receiptTime(printData.header)}</span>
+                  <span>Ksr : {printData.header.cashierName}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Tanggal:</span>
-                  <span>{printData.header.invoiceDate}</span>
+                <div className="pt-2 pb-1 font-bold flex">
+                  <span className="w-6 text-left shrink-0">#</span>
+                  <span className="flex-1 text-left">Barang</span>
+                  <span className="text-right shrink-0">Sub Total</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Kasir:</span>
-                  <span>{printData.header.cashierName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Pelanggan/Meja:</span>
-                  <span className="font-bold">{printData.header.customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Pembayaran:</span>
-                  <span className="font-bold">{printData.header.paymentType} ({printData.header.bankName || '-'})</span>
-                </div>
-              </div>
-
-              <div className="border-b border-dashed border-slate-400 my-2" />
-
-              {/* Itemized Detail Table */}
-              <table className="w-full text-left border-collapse text-[11px]">
-                <thead>
-                  <tr className="border-b border-slate-300">
-                    <th className="py-1">Item</th>
-                    <th className="py-1 text-center">Qty</th>
-                    <th className="py-1 text-right">Harga</th>
-                    <th className="py-1 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
+                <div className="space-y-1.5">
                   {printData.items.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="py-1.5 font-bold">{it.inventoryName}</td>
-                      <td className="py-1.5 text-center font-bold">{it.qty}</td>
-                      <td className="py-1.5 text-right">{it.price.toLocaleString('id-ID')}</td>
-                      <td className="py-1.5 text-right font-black">{it.subtotal.toLocaleString('id-ID')}</td>
-                    </tr>
+                    <div key={idx} className="flex flex-col">
+                      <div className="flex items-start font-medium">
+                        <span className="w-6 text-left shrink-0">{it.qty}</span>
+                        <span className="flex-1 pr-3 break-words text-left">{it.inventoryName}</span>
+                        <span className="whitespace-nowrap font-bold text-right shrink-0">{Math.round(it.subtotal).toLocaleString('en-US')}</span>
+                      </div>
+                      {it.qty > 1 && <div className="pl-6 text-[12px]">@ {Math.round(it.price).toLocaleString('en-US')}</div>}
+                    </div>
                   ))}
-                </tbody>
-              </table>
-
-              <div className="border-b border-dashed border-slate-400 my-2" />
-
-              {/* Financial Calculation */}
-              <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>Rp {(printData.header.subtotal || 0).toLocaleString('id-ID')}</span>
                 </div>
-                {(printData.header.discValue || 0) > 0 && (
-                  <div className="flex justify-between text-rose-600">
-                    <span>Diskon Promo:</span>
-                    <span>- Rp {(printData.header.discValue || 0).toLocaleString('id-ID')}</span>
+                <div className="mt-2.5 pt-2 border-t-2 border-[#1e40af] space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span>{printData.items.length} Jenis</span>
+                    <div className="flex justify-between w-48">
+                      <span className="flex-1 text-right pr-2">Total :</span>
+                      <span className="font-bold text-right shrink-0 min-w-[70px]">{Math.round(printData.header.grandTotal || 0).toLocaleString('en-US')}</span>
+                    </div>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span>Pajak (PB1 10%):</span>
-                  <span>+ Rp {(printData.header.taxValue || 0).toLocaleString('id-ID')}</span>
+                  {(printData.header.discValue || 0) > 0 && (
+                    <div className="flex justify-end">
+                      <div className="flex justify-between w-48 text-rose-600 font-bold">
+                        <span className="flex-1 text-right pr-2">Diskon :</span>
+                        <span className="text-right shrink-0 min-w-[70px]">- {Math.round(printData.header.discValue || 0).toLocaleString('en-US')}</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <div className="flex justify-between w-48">
+                      <span className="flex-1 text-right pr-2">Jumlah Bayar :</span>
+                      <span className="font-bold text-right shrink-0 min-w-[70px]">{Math.round(printData.header.paymentAmount || 0).toLocaleString('en-US')}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <div className="flex justify-between w-48">
+                      <span className="flex-1 text-right pr-2">Kembali :</span>
+                      <span className="font-bold text-right shrink-0 min-w-[70px]">{Math.round(printData.header.changeAmount || 0).toLocaleString('en-US')}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between font-black text-sm pt-2 border-t border-slate-400 text-slate-900">
-                  <span>GRAND TOTAL:</span>
-                  <span className="text-emerald-600">Rp {(printData.header.grandTotal || 0).toLocaleString('id-ID')}</span>
+                <div className="pt-2.5 text-center space-y-1">
+                  <p className="font-bold uppercase leading-tight text-[12px]">BARANG YANG SUDAH DIBELI<br />TIDAK DAPAT DIKEMBALIKAN / DITUKARKAN</p>
+                  <p className="pt-0.5 font-bold uppercase text-[12px]">TERIMA KASIH ATAS KUNJUNGAN ANDA</p>
+                  <p className="text-[11px]">linktr.ee/harmonykitchenware</p>
                 </div>
-                <div className="flex justify-between pt-1">
-                  <span>Bayar:</span>
-                  <span>Rp {(printData.header.paymentAmount || 0).toLocaleString('id-ID')}</span>
-                </div>
-                <div className="flex justify-between font-bold">
-                  <span>Kembali:</span>
-                  <span>Rp {(printData.header.changeAmount || 0).toLocaleString('id-ID')}</span>
-                </div>
-              </div>
-
-              <div className="border-b border-dashed border-slate-400 my-4" />
-
-              <div className="text-center space-y-1 text-[10px] text-slate-600 font-sans">
-                <p className="font-bold">Terima Kasih Atas Kunjungan Anda!</p>
-                <p>Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.</p>
-                <p className="pt-2 font-mono">www.harmonykitchen.id</p>
               </div>
             </div>
           </div>
@@ -928,6 +754,6 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
           </div>
         </div>
       )}
-    </div>
+    </LegacyWindow>
   );
 }

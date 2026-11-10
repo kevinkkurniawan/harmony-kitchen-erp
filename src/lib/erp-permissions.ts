@@ -2,10 +2,10 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { SessionUser } from '@/lib/session';
 
+// Menu keys of ERPDashboard; stored rows with other codes (old 'memo-sync-stok', 'sales-sync-stok') are ignored
 export const ERP_MODULE_CODES = [
-  'memo-sync-stok', 'stok-opname', 'master-barang', 'inventory-stok', 'master-promo',
-  'master-supplier', 'penerimaan-barang', 'penerimaan-barang-harga', 'sales-sync-stok',
-  'sales-monitoring', 'laporan-penjualan',
+  'master-barang', 'inventory-stok', 'stok-opname', 'cetak-barcode', 'master-promo', 'master-supplier',
+  'penerimaan-barang', 'penerimaan-barang-harga', 'sales-monitoring', 'laporan-penjualan',
 ] as const;
 
 export interface StoredPermission {
@@ -58,13 +58,15 @@ async function getCurrentUserSafely(): Promise<SessionUser | null> {
 
 export async function savePermissions(userId: number, permissions: StoredPermission[]) {
   const allowed = new Set<string>(ERP_MODULE_CODES);
-  await prisma.$transaction(permissions.filter((permission) => allowed.has(permission.moduleCode)).map((permission) =>
-    prisma.$executeRaw(Prisma.sql`
+  // One tick per module (like Module Manager's tree) = canView; the other flags are written equal to it
+  await prisma.$transaction(permissions.filter((permission) => allowed.has(permission.moduleCode)).map((permission) => {
+    const open = Boolean(permission.canView);
+    return prisma.$executeRaw(Prisma.sql`
       INSERT INTO erp_user_permission (user_id, module_code, can_view, can_add, can_edit, can_delete, can_print, updated_at)
-      VALUES (${userId}, ${permission.moduleCode}, ${permission.canView}, ${permission.canAdd}, ${permission.canEdit}, ${permission.canDelete}, ${permission.canPrint}, NOW())
+      VALUES (${userId}, ${permission.moduleCode}, ${open}, ${open}, ${open}, ${open}, ${open}, NOW())
       ON CONFLICT (user_id, module_code) DO UPDATE SET
         can_view = EXCLUDED.can_view, can_add = EXCLUDED.can_add, can_edit = EXCLUDED.can_edit,
         can_delete = EXCLUDED.can_delete, can_print = EXCLUDED.can_print, updated_at = NOW()
-    `)
-  ));
+    `);
+  }));
 }

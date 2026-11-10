@@ -2,11 +2,11 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function loginAs(page: Page, username: string, pin: string) {
   await page.goto('/');
-  const usernameInput = page.locator('input[placeholder="Masukkan username"]');
+  const usernameInput = page.locator('input[placeholder="Enter Username"]');
   await expect(usernameInput).toBeVisible({ timeout: 15000 });
   await usernameInput.fill(username);
   await page.fill('input[placeholder="••••••••"]', pin);
-  await page.click('button:has-text("Login ke ERP")');
+  await page.click('button:has-text("Log on")');
 
   await expect(page.getByRole('button', { name: /Stok Opname/i }).first()).toBeVisible({ timeout: 15000 });
 }
@@ -17,7 +17,7 @@ async function openStokOpnameMenu(page: Page) {
   await sidebarBtn.click();
 
   await expect(page.getByTestId('opname-status-badge')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText('Sedang Mengambil Data...')).toBeHidden({ timeout: 25000 });
+  await expect(page.getByText('Memuat data...')).toBeHidden({ timeout: 25000 });
 }
 
 test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', () => {
@@ -31,36 +31,53 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
     try {
       await loginAs(page, 'admin', '5555');
       for (const id of createdProductIds) {
-        await page.request.delete(`/api/inventory?id=${id}`);
+        await page.request.delete(`/api/inventory/${id}`);
       }
     } finally {
       await context.close();
     }
   });
 
-  test('1. Unified Single Qty UI: removes Qty Sistem, Qty Fisik, Selisih, and Blind Count', async ({ page }) => {
+  test('1. Legacy "Input Stock" layout: old buttons, field rows, grid columns and footer', async ({ page }) => {
     await loginAs(page, 'admin', '5555');
     await openStokOpnameMenu(page);
 
-    // Summary cards were removed; the footer still shows the unified Qty totals
-    await expect(page.getByText('Total Item Opname')).toHaveCount(0);
-    await expect(page.getByText(/Total Qty/).first()).toBeVisible();
+    await expect(page.getByText('Input Stock', { exact: true })).toBeVisible();
+    for (const name of ['New Opname', 'Refresh', 'Print', 'Print Barcode', 'Input', 'Simpan']) {
+      await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+    for (const label of ['Barcode :', 'No. Transaksi :', 'Gudang :', 'Nama Barang :', 'Opname History :', 'Qty :', 'Desc :']) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    }
+    // Client-agreed mode switch stays
+    await expect(page.getByRole('button', { name: 'Penyesuaian (+/-)', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cek Stok (hitung fisik)', exact: true })).toBeVisible();
 
-    // Verify Table Headers have unified "Qty" and NO "Qty Sistem", "Qty Fisik", or "Selisih"
+    // Legacy grid columns; Price only for Admin
     const thead = page.locator('table thead').first();
-    await expect(thead.getByText('Kode Barang')).toBeVisible();
-    await expect(thead.getByText('Nama Barang')).toBeVisible();
-    await expect(thead.getByText('Qty', { exact: true })).toBeVisible();
-    await expect(thead.getByText('Keterangan')).toBeVisible();
-    await expect(thead.getByText('Aksi')).toBeVisible();
+    for (const caption of ['Barcode', 'No. Inventory', 'Nama Barang', 'Qty', 'Description', 'Price']) {
+      await expect(thead.getByText(caption, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByText('0 Jenis', { exact: true })).toBeVisible();
+    await expect(page.getByText('Total = 0 barang', { exact: true })).toBeVisible();
+    // Old order: &Print then Print Barcode; the ".:: Detail ::." group only appears for an unknown barcode
+    const print = await page.getByRole('button', { name: 'Print', exact: true }).boundingBox();
+    const printBarcode = await page.getByRole('button', { name: 'Print Barcode', exact: true }).boundingBox();
+    expect(printBarcode!.x).toBeGreaterThan(print!.x);
+    await expect(page.getByText('.:: Detail ::.')).toHaveCount(0);
 
+    // Removed new-only controls
+    for (const gone of ['Export CSV', 'Draft', 'Load', 'Baru', 'Tambah']) {
+      await expect(page.getByRole('button', { name: gone, exact: true })).toHaveCount(0);
+    }
+    await expect(page.locator('input[placeholder="Nama Auditor..."]')).toHaveCount(0);
+    await expect(page.locator('input[placeholder="Filter tabel opname..."]')).toHaveCount(0);
     await expect(page.getByText('Qty Sistem')).toHaveCount(0);
     await expect(page.getByText('Qty Fisik')).toHaveCount(0);
-    await expect(page.getByText('Blind Count')).toHaveCount(0);
     await expect(thead.getByText('Selisih')).toHaveCount(0);
   });
 
-  test('2. Fast Scan Entry, Catalog Add, Inline Qty Stepper, Search, Sorting & Local Draft', async ({ page }) => {
+  test('2. Barcode Enter + Input button, inline Qty edit, sorting and right-click Hapus', async ({ page }) => {
     await loginAs(page, 'admin', '5555');
 
     // Create 2 temporary items to test deterministic opname manipulation
@@ -98,68 +115,75 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
 
     await openStokOpnameMenu(page);
 
-    // Click "Baru" to clear the auto-populated catalog and start a focused worksheet
-    await page.getByRole('button', { name: 'Baru', exact: true }).click();
-    await expect(page.getByText('0 Barang', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'New Opname', exact: true }).click();
+    await expect(page.getByText('0 Jenis', { exact: true })).toBeVisible();
 
-    // Add Item A via Barcode/SKU input + Enter
     const scanInput = page.locator('input[placeholder="Scan Barcode / SKU..."]');
-    const qtyEntryInput = page.locator('span:has-text("Qty:") + input[type="number"]');
+    const qtyEntryInput = page.locator('label', { hasText: 'Qty :' }).locator('input[type="number"]');
     const noteInput = page.locator('input[placeholder="Catatan Opname..."]');
 
+    // Item A via Barcode + Enter (Penyesuaian mode: qty is a +/- change)
     await scanInput.fill(skuA);
     await qtyEntryInput.fill('12');
     await noteInput.fill('Rak Depan');
     await scanInput.press('Enter');
 
     await expect(page.getByText(`Alpha Opname Item ${suffix}`).first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('1 Barang', { exact: true })).toBeVisible();
-    await expect(page.getByText('12 Unit', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('1 Jenis', { exact: true })).toBeVisible();
+    await expect(page.getByText('Total = 12 barang', { exact: true })).toBeVisible();
 
-    // Add Item B via Tambah button
+    // Item B via the Input button
     await scanInput.fill(skuB);
     await qtyEntryInput.fill('5');
     await noteInput.fill('Gudang Belakang');
-    await page.getByRole('button', { name: 'Tambah', exact: true }).click();
+    await page.getByRole('button', { name: 'Input', exact: true }).click();
 
     await expect(page.getByText(`Beta Opname Item ${suffix}`).first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('2 Barang', { exact: true })).toBeVisible();
-    await expect(page.getByText('17 Unit', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('2 Jenis', { exact: true })).toBeVisible();
+    await expect(page.getByText('Total = 17 barang', { exact: true })).toBeVisible();
 
-    // Test inline stepper (+1 and -1) on the top row (Item B)
-    const firstRow = page.locator('table tbody tr').first();
-    await firstRow.locator('button[title="Tambah 1"]').click();
-    await expect(page.getByText('18 Unit', { exact: true }).first()).toBeVisible();
+    // Inline qty edit on the top row (Item B)
+    const qtyBeta = page.getByLabel(`Qty Beta Opname Item ${suffix}`);
+    await qtyBeta.fill('6');
+    await expect(page.getByText('Total = 18 barang', { exact: true })).toBeVisible();
 
-    await firstRow.locator('button[title="Kurangi 1"]').click();
-    await expect(page.getByText('17 Unit', { exact: true }).first()).toBeVisible();
+    // A negative adjustment can be typed key by key ("-" first); an unfinished "-" falls back on blur
+    await qtyBeta.fill('');
+    await qtyBeta.pressSequentially('-3');
+    await qtyBeta.press('Enter');
+    await expect(qtyBeta).toHaveValue('-3');
+    await expect(page.getByText('Total = 9 barang', { exact: true })).toBeVisible();
+    await qtyBeta.fill('');
+    await qtyBeta.pressSequentially('-');
+    await qtyBeta.blur();
+    await expect(qtyBeta).toHaveValue('-3');
 
-    // Test table search filter
-    const searchInput = page.locator('input[placeholder="Filter tabel opname..."]');
-    await searchInput.fill('Alpha');
-    await expect(page.locator('table tbody tr')).toHaveCount(1);
-    await expect(page.locator('table tbody tr').first()).toContainText(`Alpha Opname Item ${suffix}`);
-    await searchInput.fill('');
-    await expect(page.locator('table tbody tr')).toHaveCount(2);
+    // Refresh keeps the unsaved lines; New Opname asks first and "Batal" keeps them
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(page.getByText('2 Jenis', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'New Opname', exact: true }).click();
+    await expect(page.getByText('Item opname yang sudah diinput belum disimpan. Buang input ini?')).toBeVisible();
+    await page.getByRole('button', { name: 'Batal', exact: true }).click();
+    await expect(page.getByText('2 Jenis', { exact: true })).toBeVisible();
+    await expect(page.getByText('Total = 9 barang', { exact: true })).toBeVisible();
 
-    // Test column sorting by Qty
+    // Sort by Qty
     const qtyHeader = page.locator('table thead th').filter({ hasText: /^Qty/ });
-    await qtyHeader.click(); // asc: Beta (5) then Alpha (12)
+    await qtyHeader.click(); // asc: Beta (-3) then Alpha (12)
     await expect(page.locator('table tbody tr').first()).toContainText(`Beta Opname Item ${suffix}`);
-    await qtyHeader.click(); // desc: Alpha (12) then Beta (5)
+    await qtyHeader.click(); // desc: Alpha (12) then Beta (-3)
     await expect(page.locator('table tbody tr').first()).toContainText(`Alpha Opname Item ${suffix}`);
 
-    // Test Browser Draft Save & Load
-    await page.getByRole('button', { name: 'Draft', exact: true }).click();
-    await expect(page.getByText(/Draft stok opname berhasil disimpan/i)).toBeVisible();
+    // Right-click Hapus removes a row
+    await page.locator('table tbody tr', { hasText: `Alpha Opname Item ${suffix}` }).click({ button: 'right' });
+    await page.getByRole('button', { name: 'Hapus', exact: true }).click();
+    await expect(page.getByText('1 Jenis', { exact: true })).toBeVisible();
+    await expect(page.getByText('Total = -3 barang', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Baru', exact: true }).click();
-    await expect(page.getByText('0 Barang', { exact: true })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Load', exact: true }).click();
-    await expect(page.getByText('2 Barang', { exact: true })).toBeVisible();
-    await expect(page.getByText('17 Unit', { exact: true }).first()).toBeVisible();
-    await expect(page.getByTestId('opname-status-badge')).toHaveText('DRAFT');
+    // Confirming "Buang" clears the worksheet
+    await page.getByRole('button', { name: 'New Opname', exact: true }).click();
+    await page.getByRole('button', { name: 'Buang', exact: true }).click();
+    await expect(page.getByText('0 Jenis', { exact: true })).toBeVisible();
   });
 
   test('3. End-to-End DB Draft, Posting, Live Stock Update, and Reversal Workflow', async ({ page }) => {
@@ -194,21 +218,30 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
 
     await openStokOpnameMenu(page);
 
-    // Start new opname worksheet
-    await page.getByRole('button', { name: 'Baru', exact: true }).click();
-    await expect(page.getByText('0 Barang', { exact: true })).toBeVisible();
+    // Start a new Cek Stok (hitung fisik) worksheet: qty = counted stock
+    await page.getByRole('button', { name: 'New Opname', exact: true }).click();
+    await page.getByRole('button', { name: 'Cek Stok (hitung fisik)', exact: true }).click();
+    await expect(page.getByText('0 Jenis', { exact: true })).toBeVisible();
 
     // Add the item with target Qty = 25
     const scanInput = page.locator('input[placeholder="Scan Barcode / SKU..."]');
-    const qtyEntryInput = page.locator('span:has-text("Qty:") + input[type="number"]');
+    const qtyEntryInput = page.locator('label', { hasText: 'Qty :' }).locator('input[type="number"]');
     const noteInput = page.locator('input[placeholder="Catatan Opname..."]');
 
     await scanInput.fill(sku);
     await qtyEntryInput.fill('25');
     await noteInput.fill('Audit Kuartal');
-    await page.getByRole('button', { name: 'Tambah', exact: true }).click();
+    await page.getByRole('button', { name: 'Input', exact: true }).click();
 
-    await expect(page.getByText('25 Unit', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Total = 25 barang', { exact: true })).toBeVisible({ timeout: 15000 });
+
+    // Cek Stok: the grid qty does not take a negative count
+    const qtyCell = page.getByLabel(`Qty Postable Opname Item ${suffix}`);
+    await qtyCell.fill('');
+    await qtyCell.pressSequentially('-5');
+    await qtyCell.blur();
+    await expect(qtyCell).toHaveValue('25');
+    await expect(page.getByText('Total = 25 barang', { exact: true })).toBeVisible();
 
     // Open Confirmation Preview Modal
     await page.getByRole('button', { name: 'Simpan', exact: true }).click();
@@ -266,7 +299,11 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
   });
 
   test('4. RBAC Enforcement: non-admin user cannot post or reverse opname', async ({ page }) => {
-    await loginAs(page, 'merry', '1111');
+    // Needs a real non-admin login without OPNAME_POST / OPNAME_REVERSE grants; no such user is seeded
+    const staffUser = process.env.E2E_STAFF_USER;
+    const staffPassword = process.env.E2E_STAFF_PASSWORD;
+    test.skip(!staffUser || !staffPassword, 'Set E2E_STAFF_USER and E2E_STAFF_PASSWORD to a non-admin login');
+    await loginAs(page, staffUser!, staffPassword!);
 
     const postRes = await page.request.post('/api/inventory/opname', {
       data: {
@@ -285,5 +322,136 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
       },
     });
     expect(revRes.status()).toBe(403);
+  });
+
+  test('5. Print Barcode: old Rpt_OpnameBarcode A4 sheet, one label per line with barcode, name and retail price', async ({ page }) => {
+    await loginAs(page, 'admin', '5555');
+    const suffix = Date.now().toString().slice(-6);
+    const sku = `OPN-BC-${suffix}`;
+    const res = await page.request.post('/api/inventory', {
+      data: { inventoryNo: sku, barcode: `8993${suffix}`, inventoryName: `Label Opname Item ${suffix}`, price: 15000, hpp: 9000 },
+    });
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    createdProductIds.push(Number(json.data.id));
+
+    await openStokOpnameMenu(page);
+    await page.getByRole('button', { name: 'New Opname', exact: true }).click();
+    const scanInput = page.locator('input[placeholder="Scan Barcode / SKU..."]');
+    await scanInput.fill(sku);
+    await scanInput.press('Enter');
+    await expect(page.getByText('1 Jenis', { exact: true })).toBeVisible({ timeout: 15000 });
+
+    await page.evaluate(() => {
+      const w = window as unknown as { __sheet: unknown };
+      window.print = () => {
+        const area = document.getElementById('opname-barcode-print')!;
+        w.__sheet = {
+          visibleCss: Array.from(document.querySelectorAll('style')).some((el) => (el.textContent || '').includes('#opname-barcode-print { display: block')),
+          labels: area.querySelectorAll('.opname-barcode-label').length,
+          bars: area.querySelectorAll('.opname-barcode-label [data-testid="barcode-svg"]').length,
+          text: area.textContent || '',
+        };
+      };
+    });
+    await page.getByRole('button', { name: 'Print Barcode', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sheet?: unknown }).__sheet)).toBeTruthy();
+    const sheet = await page.evaluate(() => (window as unknown as { __sheet: { visibleCss: boolean; labels: number; bars: number; text: string } }).__sheet);
+    expect(sheet.visibleCss).toBe(true);
+    expect(sheet.labels).toBe(1);
+    expect(sheet.bars).toBe(1);
+    expect(sheet.text).toContain('No Transaksi :');
+    expect(sheet.text).toContain(`8993${suffix}`);
+    expect(sheet.text).toContain(`Label Opname Item ${suffix}`);
+    // Retail price (not the HPP 9.000)
+    expect(sheet.text).toContain('15.000');
+    expect(sheet.text).not.toContain('9.000');
+
+    // Afterwards the normal Print uses the opname report sheet again
+    await expect.poll(() => page.evaluate(() => Array.from(document.querySelectorAll('style')).some((el) => (el.textContent || '').includes('#printable-opname-report')))).toBe(true);
+  });
+
+  test('6. Unknown barcode opens ".:: Detail ::.", Submit creates the item and adds it; clashes are refused', async ({ page }) => {
+    await loginAs(page, 'admin', '5555');
+    await openStokOpnameMenu(page);
+    await page.getByRole('button', { name: 'New Opname', exact: true }).click();
+
+    const suffix = Date.now().toString().slice(-6);
+    const newBarcode = `7770${suffix}`;
+    const scanInput = page.locator('input[placeholder="Scan Barcode / SKU..."]');
+    await scanInput.fill(newBarcode);
+    await scanInput.press('Enter');
+
+    const detail = page.getByTestId('opname-detail');
+    await expect(page.getByText('.:: Detail ::.')).toBeVisible({ timeout: 15000 });
+    for (const label of ['Barcode :', 'Inv No. :', 'Inv Name :', 'Qty :', 'Kode Harga :', 'Desc :']) {
+      await expect(detail.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(detail.getByLabel('Detail Barcode')).toHaveValue(newBarcode);
+    await expect(detail.getByLabel('Inv No.')).toBeFocused();
+    // No line was added for the unknown code
+    await expect(page.getByText('0 Jenis', { exact: true })).toBeVisible();
+
+    await detail.getByLabel('Inv No.').fill(`OPN-NEW-${suffix}`);
+    await detail.getByLabel('Inv Name').fill(`Barang Baru Scan ${suffix}`);
+    await detail.getByLabel('Detail Qty').fill('3');
+    await detail.getByLabel('Kode Harga').fill('KH1');
+    await detail.getByLabel('Detail Desc').fill('Ditemukan saat opname');
+    const created = page.waitForResponse((r) => r.url().includes('/api/inventory/opname/item'));
+    await detail.getByRole('button', { name: 'Submit' }).click();
+    const createdJson = await (await created).json();
+    expect(createdJson.success).toBe(true);
+    createdProductIds.push(Number(createdJson.data.id));
+
+    await expect(page.getByText('.:: Detail ::.')).toHaveCount(0);
+    await expect(page.getByText('1 Jenis', { exact: true })).toBeVisible();
+    await expect(page.getByText('Total = 3 barang', { exact: true })).toBeVisible();
+    await expect(page.locator('table tbody tr').first()).toContainText(`Barang Baru Scan ${suffix}`);
+
+    // Saved as a normal item, no stock until the opname is posted
+    const inv = await (await page.request.get(`/api/inventory?q=${newBarcode}`)).json();
+    const item = (inv.data || []).find((i: { id: string }) => Number(i.id) === Number(createdJson.data.id));
+    expect(item).toMatchObject({ inventoryNo: `OPN-NEW-${suffix}`, kodeHarga: 'KH1', description: 'Ditemukan saat opname' });
+    expect(Number(item.stokAkhir ?? item.stock)).toBe(0);
+
+    // Scanning it again now finds the item (Penyesuaian adds up)
+    await scanInput.fill(newBarcode);
+    await page.locator('label', { hasText: 'Qty :' }).first().locator('input[type="number"]').fill('2');
+    await scanInput.press('Enter');
+    await expect(page.getByText('Total = 5 barang', { exact: true })).toBeVisible({ timeout: 15000 });
+
+    // A second unknown barcode whose Inv No. is already used is refused, nothing is created or added
+    await scanInput.fill(`7771${suffix}`);
+    await scanInput.press('Enter');
+    await expect(page.getByText('.:: Detail ::.')).toBeVisible({ timeout: 15000 });
+    await detail.getByLabel('Inv No.').fill(`OPN-NEW-${suffix}`);
+    await detail.getByLabel('Inv Name').fill(`Duplikat ${suffix}`);
+    await detail.getByRole('button', { name: 'Submit' }).click();
+    await expect(page.getByText(new RegExp(`Barcode / Inv No\\. sudah dipakai barang OPN-NEW-${suffix}`))).toBeVisible();
+    await expect(page.getByText('1 Jenis', { exact: true })).toBeVisible();
+    const dup = await (await page.request.get(`/api/inventory?q=7771${suffix}`)).json();
+    expect(dup.data || []).toHaveLength(0);
+  });
+
+  test('7. Create-on-scan API: required fields, and a non-admin without INVENTORY_EDIT is refused', async ({ page }) => {
+    await loginAs(page, 'admin', '5555');
+    const noName = await page.request.post('/api/inventory/opname/item', { data: { barcode: '1', inventoryNo: 'X', inventoryName: ' ' } });
+    expect(noName.status()).toBe(400);
+    const noBarcode = await page.request.post('/api/inventory/opname/item', { data: { inventoryNo: 'X', inventoryName: 'Y' } });
+    expect(noBarcode.status()).toBe(400);
+
+    const staffUser = process.env.E2E_STAFF_USER;
+    const staffPassword = process.env.E2E_STAFF_PASSWORD;
+    test.skip(!staffUser || !staffPassword, 'Set E2E_STAFF_USER and E2E_STAFF_PASSWORD to a non-admin login');
+    const staff = await page.context().browser()!.newContext({ baseURL: 'http://localhost:3000' });
+    const login = await staff.request.post('/api/auth/login', { data: { username: staffUser, password: staffPassword } });
+    expect(login.status()).toBe(200);
+    const res = await staff.request.post('/api/inventory/opname/item', {
+      data: { barcode: `7772${Date.now()}`, inventoryNo: `OPN-RBAC-${Date.now()}`, inventoryName: 'Tidak boleh dibuat' },
+    });
+    expect([403]).toContain(res.status());
+    // Purchase prices stay Admin-only as well
+    expect((await staff.request.get('/api/inventory/251/hpp-history')).status()).toBe(403);
+    await staff.close();
   });
 });

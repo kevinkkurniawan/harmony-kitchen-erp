@@ -1,20 +1,20 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-async function loginAsAdmin(page: any) {
+async function loginAsAdmin(page: Page) {
   await page.goto('/');
-  await page.fill('input[placeholder="Masukkan username"]', 'admin');
+  await page.fill('input[placeholder="Enter Username"]', 'admin');
   await page.fill('input[placeholder="••••••••"]', '5555');
-  await page.click('button:has-text("Login ke ERP")');
+  await page.click('button:has-text("Log on")');
   await expect(page.locator('aside')).toBeVisible({ timeout: 15000 });
 }
 
-async function openMasterPromoMenu(page: any) {
+async function openMasterPromoMenu(page: Page) {
   const menuBtn = page.locator('aside button:has-text("Master Promo")');
   if (!(await menuBtn.isVisible())) {
     await page.click('aside button:has-text("Master Data")');
   }
   await menuBtn.click();
-  await expect(page.locator('input[placeholder*="Cari Aturan Promo"]')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('text=.:: Header ::.')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 5: Master Promo — End-to-End Audit Suite', () => {
@@ -23,125 +23,175 @@ test.describe('Menu 5: Master Promo — End-to-End Audit Suite', () => {
     await openMasterPromoMenu(page);
   });
 
-  test('1. Renders no summary cards, Aturan Promo & Kelompok Group tabs, and column sorting', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+  test('1. Legacy Frm_Promo layout: Header group, global and grosir grids with old captions, grouped by Promo Name', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Summary cards were removed (not in the legacy screen)
-    await expect(page.locator('text=Total Aturan Promo')).toHaveCount(0);
+    await expect(page.getByText('Master Promo', { exact: true }).first()).toBeVisible();
+    await expect(page.locator('button:has-text("New Promo")')).toBeVisible();
+    await expect(page.locator('button:has-text("Refresh")')).toBeVisible();
 
-    // Sort columns
-    await page.click('th:has-text("Nama Aturan Promo")');
-    await page.click('th:has-text("Qty Min")');
-    await page.click('th:has-text("Qty Max")');
+    // Global promo grid (old GV_GroupPromo)
+    for (const caption of ['Promo Global No.', 'Promo Global Name', 'Promo Percentage', 'Description', 'Aktif']) {
+      await expect(page.locator(`th:has-text("${caption}")`).first()).toBeVisible();
+    }
+    // Grosir promo grid (old GV_Promo), rows grouped by Promo Name
+    for (const caption of ['Promo Grosir', 'Qty Min', 'Qty Max', 'Keterangan']) {
+      await expect(page.locator(`th:has-text("${caption}")`).first()).toBeVisible();
+    }
+    await expect(page.locator('td:has-text("Promo Name: ")').first()).toBeVisible();
+    await expect(page.locator('td', { hasText: /^Grosir [123]$/ }).first()).toBeVisible();
 
-    // Switch between Aturan Promo and Kelompok Group tabs
-    await page.click('button:has-text("Kelompok Group (")');
-    await expect(page.locator('th:has-text("Nama Kelompok Promo")')).toBeVisible();
-    await page.click('button:has-text("Aturan Promo (")');
-    await expect(page.locator('th:has-text("Nama Aturan Promo")')).toBeVisible();
+    // New-only elements are gone
+    await expect(page.locator('button:has-text("Export CSV")')).toHaveCount(0);
+    await expect(page.locator('text=Hanya Promo Aktif')).toHaveCount(0);
+    await expect(page.locator('text=Kelompok Group')).toHaveCount(0);
   });
 
-  test('2. Full CRUD on Aturan Promo: slash character input, qtyMin > qtyMax validation, Hanya Promo Aktif filter, and delete', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+  test('2. Grosir promo CRUD: slash in name, qtyMin > qtyMax validation, edit via right-click, Aktif, delete', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
     const uniqueName = `E2E Rule / Grosir ${Date.now().toString().slice(-4)}`;
 
-    // Open Create Rule Modal
-    await page.click('button:has-text("Tambah Aturan Promo")');
-    await expect(page.locator('span:has-text("Tambah Aturan Promo Baru")')).toBeVisible();
+    // New Promo opens the Detail group
+    await page.click('button:has-text("New Promo")');
+    await expect(page.locator('text=.:: Detail ::.')).toBeVisible();
+    await expect(page.locator('text=Promo Grosir Jumlah Barang')).toBeVisible();
 
-    // Type name with '/' to ensure '/' shortcut does not steal focus from modal input
-    const nameInput = page.locator('input[placeholder*="Contoh: Tier Grosir"]');
+    // Typing '/' must stay in the input
+    const nameInput = page.locator('label:has-text("Promo Name:") input');
     await nameInput.click();
     await page.keyboard.type(uniqueName);
     await expect(nameInput).toHaveValue(uniqueName);
 
-    // Test invalid qtyMin > qtyMax validation
-    const numberInputs = page.locator('form input[type="number"]');
-    await numberInputs.nth(0).fill('50');
-    await numberInputs.nth(1).fill('10');
-    await page.click('button:has-text("Simpan Aturan Promo")');
+    // qtyMin > qtyMax is rejected
+    const qtyMin = page.locator('label:has-text("Qty Min:") input');
+    const qtyMax = page.locator('label:has-text("Qty Max:") input');
+    await qtyMin.fill('50');
+    await qtyMax.fill('10');
+    await page.click('button:has-text("Submit")');
     await expect(page.locator('text=Qty Minimum tidak boleh lebih besar dari Qty Maksimum')).toBeVisible();
 
-    // Fix qtyMin <= qtyMax and save
-    await numberInputs.nth(0).fill('5');
-    await numberInputs.nth(1).fill('50');
-    await page.click('button:has-text("Simpan Aturan Promo")');
-    await expect(page.locator('span:has-text("Tambah Aturan Promo Baru")')).toHaveCount(0, { timeout: 10000 });
+    await qtyMin.fill('5');
+    await qtyMax.fill('50');
+    await page.locator('label:has-text("Keterangan Promo :") textarea').fill('E2E keterangan');
+    await page.click('button:has-text("Submit")');
+    await expect(page.locator('text=Promo baru dibuat!')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=.:: Detail ::.')).toHaveCount(0);
 
-    // Search for our created rule
-    const searchInput = page.locator('input[placeholder*="Cari Aturan Promo"]');
-    await searchInput.fill(uniqueName);
-    await expect(page.locator(`tbody tr:has-text("${uniqueName}")`)).toBeVisible({ timeout: 10000 });
+    // New row shows under its own Promo Name group
+    await expect(page.locator(`td:has-text("Promo Name: ${uniqueName}")`)).toBeVisible({ timeout: 10000 });
+    const row = page.locator('tr', { hasText: 'E2E keterangan' });
+    await expect(row).toBeVisible();
 
-    // Edit rule and set it to inactive
-    await page.locator(`tbody tr:has-text("${uniqueName}") button[title="Edit Promo"]`).click();
-    await expect(page.locator('span:has-text("Edit Aturan Promo")')).toBeVisible();
-    await page.click('label:has-text("Status Promo Aktif")');
-    await page.click('button:has-text("Simpan Aturan Promo")');
-    await expect(page.locator('span:has-text("Edit Aturan Promo")')).toHaveCount(0, { timeout: 10000 });
+    // Right-click -> Edit Promo, untick Aktif, Submit
+    await row.click({ button: 'right' });
+    await expect(page.locator('button:has-text("Add Promo")')).toBeVisible();
+    await page.click('button:has-text("Edit Promo")');
+    await expect(page.locator('label:has-text("Promo Name:") input')).toHaveValue(uniqueName);
+    await page.locator('label:has-text("Aktif") input[type="checkbox"]').uncheck();
+    await page.click('button:has-text("Submit")');
+    await expect(page.locator('text=Promo diperbarui!')).toBeVisible({ timeout: 10000 });
 
-    // Since "Hanya Promo Aktif" is checked by default, the now-inactive rule should be hidden!
-    await expect(page.locator(`tbody tr:has-text("${uniqueName}")`)).toHaveCount(0, { timeout: 10000 });
+    // Inactive rows stay listed (muted)
+    await expect(row).toHaveClass(/line-through/, { timeout: 10000 });
 
-    // Uncheck "Hanya Promo Aktif" -> inactive rule appears with NON-AKTIF badge
-    await page.click('label:has-text("Hanya Promo Aktif")');
-    const row = page.locator(`tbody tr:has-text("${uniqueName}")`);
-    await expect(row).toBeVisible({ timeout: 10000 });
-    await expect(row.locator('span:has-text("NON-AKTIF")')).toBeVisible();
-
-    // Delete the rule
-    page.once('dialog', (dialog: any) => dialog.accept());
-    await row.locator('button[title="Hapus Promo"]').click();
-    await expect(page.locator(`tbody tr:has-text("${uniqueName}")`)).toHaveCount(0, { timeout: 10000 });
+    // Right-click -> Hapus Promo, confirm in the app dialog
+    await row.click({ button: 'right' });
+    await page.click('button:has-text("Hapus Promo")');
+    await page.getByRole('button', { name: 'Hapus', exact: true }).click();
+    await expect(page.locator(`td:has-text("Promo Name: ${uniqueName}")`)).toHaveCount(0, { timeout: 10000 });
   });
 
-  test('3. Full CRUD on Kelompok Group: create, edit (persisted in DB), CSV export, and delete', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+  test('3. Global promo: Edit Promo opens the global detail with read-only Qty and Promo %', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Switch to Kelompok Group tab
-    await page.click('button:has-text("Kelompok Group (")');
-    await expect(page.locator('th:has-text("Nama Kelompok Promo")')).toBeVisible();
+    const globalRow = page.locator('table').first().locator('tbody tr').first();
+    test.skip((await globalRow.locator('td').count()) < 2, 'No global promo rows in this database');
 
-    const groupName = `E2E Group ${Date.now().toString().slice(-4)}`;
-    const updatedGroupName = `${groupName} Updated`;
+    await globalRow.click({ button: 'right' });
+    await expect(page.locator('button:has-text("Add Promo")')).toHaveCount(0);
+    await page.click('button:has-text("Edit Promo")');
+    await expect(page.locator('text=.:: Detail ::.')).toBeVisible();
+    await expect(page.locator('text=Promo Grosir Jumlah Barang')).toHaveCount(0);
+    await expect(page.locator('label:has-text("Promo % :") input')).toBeDisabled();
+    await expect(page.locator('label:has-text("Qty Min:") input')).toBeDisabled();
 
-    // Open Create Group modal
-    await page.click('button:has-text("Tambah Kelompok Group")');
-    await expect(page.locator('span:has-text("Tambah Kelompok Promo Baru")')).toBeVisible();
+    // Back closes the Detail group without saving
+    await page.click('button:has-text("Back")');
+    await expect(page.locator('text=.:: Detail ::.')).toHaveCount(0);
+  });
 
-    await page.fill('input[placeholder*="Contoh: Promo Grosir Dapur Utama"]', groupName);
-    await page.click('button:has-text("Simpan Kelompok Promo")');
-    await expect(page.locator('span:has-text("Tambah Kelompok Promo Baru")')).toHaveCount(0, { timeout: 10000 });
+  test('4. Grosir tiers: New Promo picks the tier, Add Promo joins the same bundle, rename keeps the bundle together', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
+    const name = `E2E Tier ${Date.now().toString().slice(-5)}`;
+    const renamed = `${name} R`;
+    const nameInput = page.locator('label:has-text("Promo Name:") input');
+    const note = page.locator('label:has-text("Keterangan Promo :") textarea');
+    const radio = (n: number) => page.getByRole('radio', { name: `Grosir ${n}` });
+    const groupHeader = (promoName: string) => page.locator('td', { hasText: new RegExp(`^Promo Name: ${promoName}$`) });
+    // Rows are found by their unique Keterangan
+    const tierRow = (n: number) => page.locator('tr', { hasText: `${name} t${n}` });
+    let bundle = 0;
 
-    // Search for the created group
-    const searchInput = page.locator('input[placeholder*="Cari Kelompok Promo"]');
-    await searchInput.fill(groupName);
-    const groupRow = page.locator(`tbody tr:has-text("${groupName}")`);
-    await expect(groupRow).toBeVisible({ timeout: 10000 });
+    try {
+      // New Promo: tier radio is selectable (default Grosir 1); pick Grosir 2
+      await page.click('button:has-text("New Promo")');
+      await expect(radio(1)).toBeChecked();
+      await radio(2).check();
+      await nameInput.fill(name);
+      await note.fill(`${name} t2`);
+      const created = page.waitForResponse((r) => r.url().endsWith('/api/promos/items') && r.request().method() === 'POST');
+      await page.click('button:has-text("Submit")');
+      const first = await (await created).json();
+      expect(first.data.promogrosir).toBe(2);
+      bundle = first.data.promobundle;
 
-    // Click Edit Group -> verify input is populated with groupName, update it, and save
-    await groupRow.locator('button[title="Edit Group"]').click();
-    await expect(page.locator('span:has-text("Edit Kelompok Promo")')).toBeVisible();
-    const groupNameInput = page.locator('input[placeholder*="Contoh: Promo Grosir Dapur Utama"]');
-    await expect(groupNameInput).toHaveValue(groupName);
-    await groupNameInput.fill(updatedGroupName);
-    await page.click('button:has-text("Simpan Kelompok Promo")');
-    await expect(page.locator('span:has-text("Edit Kelompok Promo")')).toHaveCount(0, { timeout: 10000 });
+      // Add Promo on that row: same bundle, used tier disabled, first free tier preselected, name fixed
+      await expect(tierRow(2)).toBeVisible({ timeout: 10000 });
+      await tierRow(2).click({ button: 'right' });
+      await page.click('button:has-text("Add Promo")');
+      await expect(page.locator('label:has-text("Promo Bundle:") input')).toHaveValue(String(bundle));
+      await expect(radio(2)).toBeDisabled();
+      await expect(radio(1)).toBeChecked();
+      await expect(nameInput).toBeDisabled();
+      await page.getByRole('radiogroup', { name: 'Promo Grosir' }).getByText('Grosir 3', { exact: true }).click();
+      await expect(radio(3)).toBeChecked();
+      await note.fill(`${name} t3`);
+      const added = page.waitForResponse((r) => r.url().endsWith('/api/promos/items') && r.request().method() === 'POST');
+      await page.click('button:has-text("Submit")');
+      const second = await (await added).json();
+      expect(second.data.promobundle).toBe(bundle);
+      expect(second.data.promogrosir).toBe(3);
+      await expect(tierRow(3)).toBeVisible({ timeout: 10000 });
+      await expect(groupHeader(name)).toHaveCount(1);
 
-    // Verify updated group name is persisted in the table
-    const updatedRow = page.locator(`tbody tr:has-text("${updatedGroupName}")`);
-    await expect(updatedRow).toBeVisible({ timeout: 10000 });
+      // API: a duplicate tier in the bundle is refused, an out-of-range tier too
+      const dup = await page.request.post('/api/promos/items', { data: { promoName: name, promoBundle: bundle, promoGrosir: 3, isGroup: false } });
+      expect(dup.status()).toBe(409);
+      const badTier = await page.request.post('/api/promos/items', { data: { promoName: name, promoBundle: bundle, promoGrosir: 4, isGroup: false } });
+      expect(badTier.status()).toBe(400);
 
-    // Test Export CSV on Kelompok Group
-    const downloadPromise = page.waitForEvent('download');
-    await page.click('button:has-text("Export CSV")');
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^Master_Promo_Groups_\d{4}-\d{2}-\d{2}\.csv$/);
-
-    // Delete the group and verify it is removed from DB
-    page.once('dialog', (dialog: any) => dialog.accept());
-    await updatedRow.locator('button[title="Hapus Group"]').click();
-    await expect(page.locator(`tbody tr:has-text("${updatedGroupName}")`)).toHaveCount(0, { timeout: 10000 });
+      // Rename one row (tier fixed in Edit): both tiers move to the new name, still one group
+      await tierRow(2).click({ button: 'right' });
+      await page.click('button:has-text("Edit Promo")');
+      await expect(radio(2)).toBeChecked();
+      await expect(radio(1)).toBeDisabled();
+      await nameInput.fill(renamed);
+      await page.click('button:has-text("Submit")');
+      await expect(page.locator('text=Promo diperbarui!')).toBeVisible({ timeout: 10000 });
+      await expect(groupHeader(renamed)).toHaveCount(1, { timeout: 10000 });
+      await expect(groupHeader(name)).toHaveCount(0);
+      const list = await (await page.request.get(`/api/promos/items?q=${encodeURIComponent(name)}`)).json();
+      const names = list.data.filter((r: { promoBundle: number }) => r.promoBundle === bundle).map((r: { promoName: string }) => r.promoName);
+      expect(names).toEqual([renamed, renamed]);
+    } finally {
+      // Clean up every row of the test bundle
+      if (bundle) {
+        const list = await (await page.request.get(`/api/promos/items?q=${encodeURIComponent(name)}`)).json();
+        for (const r of list.data.filter((x: { promoBundle: number }) => x.promoBundle === bundle)) {
+          await page.request.delete(`/api/promos/items/${r.id}`);
+        }
+      }
+    }
   });
 });

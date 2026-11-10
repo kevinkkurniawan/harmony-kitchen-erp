@@ -13,15 +13,9 @@ export default function BarcodePage() {
     <AuthGuard>
       {({ user, permissions }) => {
         const isAdmin = user.userLevel === 'Admin' || user.username.toLowerCase() === 'admin';
-        const hasBarcodeAccess =
-          isAdmin ||
-          permissions.some(
-            (p) =>
-              (p.moduleCode === 'BARCODE_MANAGE' ||
-                p.moduleCode === 'BARCODE_PRINT' ||
-                p.moduleCode === 'MD_INVENTORY') &&
-              p.canView
-          );
+        // Same rule as the dashboard menu: the "Cetak Barcode" module tick, and no saved row means allowed
+        const barcodePerm = permissions.find((p) => p.moduleCode === 'cetak-barcode');
+        const hasBarcodeAccess = isAdmin || !barcodePerm || barcodePerm.canView;
 
         if (!hasBarcodeAccess) {
           return (
@@ -31,7 +25,7 @@ export default function BarcodePage() {
               </div>
               <h1 className="text-xl font-black text-slate-900 mb-2">Akses Ditolak (403 Forbidden)</h1>
               <p className="text-xs text-slate-600 max-w-md mb-6">
-                Akun Anda (@{user.username}) tidak memiliki izin <code className="font-mono font-bold text-rose-600">BARCODE_MANAGE</code> atau <code className="font-mono font-bold text-rose-600">BARCODE_PRINT</code> untuk mengakses halaman pembuatan barcode ini.
+                Akun Anda (@{user.username}) tidak memiliki hak akses modul <b>Cetak Barcode</b>.
               </p>
               <button
                 onClick={() => router.push('/')}

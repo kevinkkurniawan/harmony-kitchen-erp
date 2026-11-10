@@ -1,40 +1,27 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Search,
-  Archive,
-  RefreshCw,
-  Store,
-  FileSpreadsheet,
-  Printer,
-  ChevronDown,
-  ChevronUp,
-  History,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { RefreshCw, X } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
-import ColumnFilterRow, { columnFilterQuery } from '@/components/ColumnFilterRow';
+import {
+  LegacyWindow, LegacyButton, LegacyGrid, LegacyPager, LegacyInput, GroupBox, fmtN0, fmtDate, lx, type LegacyColumn,
+} from '@/components/legacy';
 
 interface InventoryItem {
   id: string;
   barcode: string;
   inventoryNo: string;
   inventoryName: string;
-  categoryName: string;
-  stokAkhir: number;
-  minStock: number;
+  price: number;
   hpp: number;
+  stokAkhir: number;
+  syncDate: string | null;
 }
 
-interface Warehouse {
-  id: number;
-  whCode: number;
-  location: string;
-}
-
-interface MovementLedger {
-  id: number;
-  date: string;
+/** One row of /api/inventory/[id]/movement (the Kartu Stok ledger, newest first). */
+export interface MovementRow {
+  id: string;
+  date: string | null;
   transactionNo: string;
   type: string;
   qtyIn: number;
@@ -43,71 +30,121 @@ interface MovementLedger {
   balance: number;
 }
 
+export interface MonthRow {
+  key: string;
+  year: number;
+  month: number;
+  monthName: string;
+  qty: number;
+}
+
+const YEAR_MONTH = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' });
+const MONTH_NAME = new Intl.DateTimeFormat('id-ID', { month: 'long', timeZone: 'UTC' });
+
+/** "YYYY-MM" of a movement date in shop time (Asia/Bangkok), or null when the row has no date. */
+export function movementMonthKey(date: string | null): string | null {
+  if (!date) return null;
+  const d = new Date(date);
+  return Number.isNaN(d.getTime()) ? null : YEAR_MONTH.format(d).slice(0, 7);
+}
+
+/**
+ * Legacy "Tahun / Bulan / Qty" summary of the stock card: net quantity (in - out) per month, newest month first.
+ * Built from the movement ledger because the ERP has no per-month stock table.
+ */
+export function groupMovementByMonth(rows: MovementRow[]): MonthRow[] {
+  const byMonth = new Map<string, number>();
+  for (const r of rows) {
+    const key = movementMonthKey(r.date);
+    if (key) byMonth.set(key, (byMonth.get(key) ?? 0) + Number(r.qtyIn || 0) - Number(r.qtyOut || 0));
+  }
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([key, qty]) => {
+      const year = Number(key.slice(0, 4));
+      const month = Number(key.slice(5, 7));
+      return { key, year, month, monthName: MONTH_NAME.format(new Date(Date.UTC(year, month - 1, 1))), qty };
+    });
+}
+
+/** Full stock card of one item (limit 5000: enough for the monthly summary to cover every month). */
+export async function fetchMovement(inventoryId: string): Promise<{ rows: MovementRow[]; total: number; lastOpnameDate: string | null }> {
+  const json = await fetch(`/api/inventory/${inventoryId}/movement?limit=5000`).then((r) => r.json());
+  if (!json.success || !Array.isArray(json.data)) throw new Error(json.error || 'Gagal memuat kartu stok');
+  return { rows: json.data, total: json.total ?? json.data.length, lastOpnameDate: json.lastOpnameDate ?? null };
+}
+
 interface InventoryStockManagerProps {
   canViewPrice?: boolean;
   isDark: boolean;
 }
 
-export default function InventoryStockManager({ isDark }: InventoryStockManagerProps) {
-  // State
+const PAGE_SIZE = 100;
+/** Batch size for the full-catalog report (the API maximum) */
+const REPORT_BATCH = 5000;
+
+/** Report preview window of the legacy app: overlay with a title bar (same look as Master Barang's). */
+function ReportDialog({ title, isDark, onClose, children }: { title: string; isDark: boolean; onClose: () => void; children: React.ReactNode }) {
+  const c = lx(isDark);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full max-w-5xl max-h-[90vh] flex flex-col border rounded shadow-2xl text-xs ${c.panel} ${isDark ? 'text-slate-100' : 'text-slate-900'}`}
+      >
+        <div className={`px-3 py-1.5 border-b flex items-center justify-between font-bold text-[13px] ${c.bar}`}>
+          <span>{title}</span>
+          <button type="button" onClick={onClose} title="Close" className="p-0.5 rounded hover:bg-rose-600 hover:text-white cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Legacy Frm_InventoryStock (" Sync Stok dan Laporan"): stock list plus a ".:: Detail" side group with the stock card. */
+export default function InventoryStockManager({ isDark, canViewPrice = false }: InventoryStockManagerProps) {
+  const c = lx(isDark);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  // Server-side pages: the catalog has ~11k items, one page holds PAGE_SIZE
-  const PAGE_SIZE = 100;
-  const [pageState, setPageState] = useState<{ filterKey: string; page: number }>({ filterKey: '', page: 1 });
   const [totalItems, setTotalItems] = useState(0);
-  
-  // Filters
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const debouncedColumnFilters = useDebounce(columnFilters, 500);
-  const [warehouseId, setWarehouseId] = useState('ALL');
-  const [minusStockOnly, setMinusStockOnly] = useState(false);
+  const [sort, setSort] = useState<{ key: string; order: 'asc' | 'desc' } | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
-  // The page belongs to one filter combination; any filter change starts again at page 1
-  const filterKey = JSON.stringify([debouncedSearchQuery, debouncedColumnFilters, warehouseId, minusStockOnly]);
+  // The page belongs to one search + sort; changing either starts again at page 1
+  const filterKey = JSON.stringify([debouncedSearchQuery, sort]);
+  const [pageState, setPageState] = useState<{ filterKey: string; page: number }>({ filterKey: '', page: 1 });
   const page = pageState.filterKey === filterKey ? pageState.page : 1;
-  const setPage = (update: (p: number) => number) => setPageState({ filterKey, page: update(page) });
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
-  // Drill-down State
-  const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [ledgerData, setLedgerData] = useState<MovementLedger[]>([]);
+  // ".:: Detail" group: the item opened with "=>" and its stock card
+  const [detailItem, setDetailItem] = useState<InventoryItem | null>(null);
+  const [ledger, setLedger] = useState<MovementRow[]>([]);
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [lastOpnameDate, setLastOpnameDate] = useState<string | null>(null);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
-  const [fullLedgerItem, setFullLedgerItem] = useState<InventoryItem | null>(null);
-  const [ledgerSearch, setLedgerSearch] = useState('');
+  const months = useMemo(() => groupMovementByMonth(ledger), [ledger]);
 
-  // Sorting State
-  const [sortField, setSortField] = useState<string>('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  // "Laporan Stok Akhir" (legacy Rpt_InventoryStock): null while loading
+  const [isStockReportOpen, setIsStockReportOpen] = useState(false);
+  const [reportItems, setReportItems] = useState<InventoryItem[] | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
 
-  const handleSort = (field: string) => {
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField('');
-      setSortOrder('asc');
-    }
-  };
-
-  // Fetch Items (guarded against out-of-order responses)
-  const itemsReqIdRef = React.useRef(0);
+  // Server-side page and sort over the whole active catalog; responses older than the latest request are dropped
+  const itemsReqIdRef = useRef(0);
   const fetchItems = useCallback(async () => {
     const reqId = ++itemsReqIdRef.current;
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&page=${page}&limit=${PAGE_SIZE}&onlyActive=true${columnFilterQuery(debouncedColumnFilters)}`;
-      if (minusStockOnly) url += '&minusStock=true';
-      if (warehouseId !== 'ALL') url += `&warehouseId=${warehouseId}`;
-      
-      const res = await fetch(url);
-      const json = await res.json();
+      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&page=${page}&limit=${PAGE_SIZE}&onlyActive=true`;
+      if (sort) url += `&sort=${sort.key}&order=${sort.order}`;
+      const json = await fetch(url).then((r) => r.json());
       if (reqId === itemsReqIdRef.current && json.success && Array.isArray(json.data)) {
         setItems(json.data);
         setTotalItems(json.pagination?.total ?? json.data.length);
@@ -115,488 +152,252 @@ export default function InventoryStockManager({ isDark }: InventoryStockManagerP
     } catch (e) {
       console.error('Failed to fetch inventory items', e);
     } finally {
-      if (reqId === itemsReqIdRef.current) {
-        setIsLoading(false);
-      }
+      if (reqId === itemsReqIdRef.current) setIsLoading(false);
     }
-  }, [debouncedSearchQuery, debouncedColumnFilters, warehouseId, minusStockOnly, page]);
-
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
-
-  const fetchWarehouses = useCallback(async () => {
-    try {
-      const res = await fetch('/api/inventory/lookups');
-      const json = await res.json();
-      if (json.success && json.data.warehouses) {
-        setWarehouses(json.data.warehouses);
-      }
-    } catch (e) {
-      console.error('Failed to fetch warehouses', e);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchWarehouses();
-  }, [fetchWarehouses]);
+  }, [debouncedSearchQuery, sort, page]);
 
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
 
-  const sortedItems = React.useMemo(() => {
-    return [...items].sort((a, b) => {
-      if (!sortField) return 0;
-      let valA: any = a[sortField as keyof InventoryItem];
-      let valB: any = b[sortField as keyof InventoryItem];
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [items, sortField, sortOrder]);
-
-  const fetchLedgerForItem = async (inventoryId: string) => {
+  // Stock card of the detail item; a newer "=>" click wins over a slower earlier one
+  const ledgerReqIdRef = useRef(0);
+  const loadLedger = useCallback(async (item: InventoryItem) => {
+    const reqId = ++ledgerReqIdRef.current;
     setIsLoadingLedger(true);
-    setLedgerData([]);
+    setLedger([]);
     setLedgerTotal(0);
     setLastOpnameDate(null);
     try {
-      const res = await fetch(`/api/inventory/${inventoryId}/movement`);
-      const json = await res.json();
-      if (json.success) {
-        setLedgerData(json.data);
-        setLedgerTotal(json.total ?? json.data.length);
-        setLastOpnameDate(json.lastOpnameDate ?? null);
-      }
+      const result = await fetchMovement(item.id);
+      if (reqId !== ledgerReqIdRef.current) return;
+      setLedger(result.rows);
+      setLedgerTotal(result.total);
+      setLastOpnameDate(result.lastOpnameDate);
     } catch (e) {
       console.error('Failed to fetch ledger', e);
     } finally {
-      setIsLoadingLedger(false);
+      if (reqId === ledgerReqIdRef.current) setIsLoadingLedger(false);
     }
-  };
+  }, []);
 
-  // Handle Drill-down
-  const toggleRowExpand = async (inventoryId: string) => {
-    if (expandedRow === inventoryId) {
-      setExpandedRow(null);
-      return;
-    }
-    setExpandedRow(inventoryId);
-    await fetchLedgerForItem(inventoryId);
+  const openDetail = (item: InventoryItem) => {
+    setFocusedId(item.id);
+    setDetailItem(item);
+    loadLedger(item);
   };
 
   const handleRefresh = async () => {
     await fetchItems();
-    if (expandedRow) {
-      await fetchLedgerForItem(expandedRow);
+    if (detailItem) await loadLedger(detailItem);
+  };
+
+  // Every active item (the list this screen shows, without its search), fetched in API-max batches.
+  // A newer open (or a close) makes an older load obsolete.
+  const reportReqIdRef = useRef(0);
+  const openStockReport = async () => {
+    const reqId = ++reportReqIdRef.current;
+    setReportItems(null);
+    setReportError(null);
+    setIsStockReportOpen(true);
+    try {
+      const all: InventoryItem[] = [];
+      for (let p = 1; ; p++) {
+        const json = await fetch(`/api/inventory?page=${p}&limit=${REPORT_BATCH}&onlyActive=true&sort=inventoryNo&order=asc`).then((r) => r.json());
+        if (!json.success || !Array.isArray(json.data)) throw new Error(json.error || 'Gagal memuat Laporan Stok Akhir');
+        all.push(...json.data);
+        if (json.data.length < REPORT_BATCH || all.length >= (json.pagination?.total ?? 0)) break;
+      }
+      if (reqId === reportReqIdRef.current) setReportItems(all);
+    } catch (e) {
+      console.error('Failed to fetch stock report', e);
+      if (reqId === reportReqIdRef.current) setReportError('Gagal memuat Laporan Stok Akhir.');
     }
   };
-
-  const handleExportCSV = () => {
-    const headers = ['Kode Barang', 'Barcode', 'Nama Barang', 'Kategori', 'Stok Akhir', 'Min Stock', 'Status'];
-    const rows = sortedItems.map((item) => {
-      const onHand = Number(item.stokAkhir || 0);
-      const status = onHand <= 0 ? 'KOSONG' : onHand <= item.minStock ? 'TIPIS' : 'TERSEDIA';
-      return [
-        `"${(item.inventoryNo || '').replace(/"/g, '""')}"`,
-        `"${(item.barcode || '').replace(/"/g, '""')}"`,
-        `"${(item.inventoryName || '').replace(/"/g, '""')}"`,
-        `"${(item.categoryName || '').replace(/"/g, '""')}"`,
-        onHand,
-        Number(item.minStock || 0),
-        status,
-      ].join(',');
-    });
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `kartu-stok-inventory-${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const closeStockReport = () => {
+    reportReqIdRef.current++;
+    setIsStockReportOpen(false);
   };
 
-  return (
-    <div className={`h-full flex flex-col ${isDark ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
-      
-      {/* 🎛️ FILTERS & ACTIONS BAR */}
-      <div className={`px-5 py-3 border-y flex flex-wrap items-center justify-between gap-4 shrink-0 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Gudang Selector */}
-          <div className="flex items-center gap-2">
-            <Store className={`w-4 h-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
-            <select
-              value={warehouseId}
-              onChange={(e) => setWarehouseId(e.target.value)}
-              className={`text-xs font-bold p-2 rounded-lg border outline-none ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-              }`}
-            >
-              <option value="ALL">Semua Gudang & Lokasi</option>
-              {warehouses.map(w => (
-                <option key={w.id} value={w.whCode}>{w.location}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="w-px h-6 bg-slate-700/30"></div>
+  // Legacy report columns: IN HPP = HPP x Stok (admin only), IN H. Jual = Stok x Harga, footer = sums.
+  // "|| 0" turns the -0 of a negative stock x 0 price into 0 (it would print as "-0").
+  const reportSum = useMemo(() => (reportItems ?? []).reduce(
+    (acc, r) => {
+      const stock = Number(r.stokAkhir || 0);
+      acc.stock += stock;
+      acc.hpp += stock * Number(r.hpp || 0);
+      acc.retail += stock * Number(r.price || 0);
+      return acc;
+    },
+    { stock: 0, hpp: 0, retail: 0 },
+  ), [reportItems]);
+  const reportColumns: LegacyColumn<InventoryItem>[] = [
+    { key: 'inventoryNo', caption: 'PLU' },
+    { key: 'barcode', caption: 'Barcode' },
+    { key: 'inventoryName', caption: 'Nama Barang' },
+    { key: 'price', caption: 'H. Jual', format: 'n0' },
+    { key: 'stokAkhir', caption: 'Stok', format: 'n0', footer: fmtN0(reportSum.stock) },
+    ...(canViewPrice
+      ? ([{ key: 'inHpp', caption: 'IN HPP', format: 'n0', footer: fmtN0(reportSum.hpp), render: (r) => fmtN0(Number(r.stokAkhir || 0) * Number(r.hpp || 0) || 0) }] as LegacyColumn<InventoryItem>[])
+      : []),
+    { key: 'inRetail', caption: 'IN H. Jual', format: 'n0', footer: fmtN0(reportSum.retail), render: (r) => fmtN0(Number(r.stokAkhir || 0) * Number(r.price || 0) || 0) },
+  ];
 
-          {/* Search */}
-          <div className="relative">
-            <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
-            <input
-              type="text"
-              placeholder="Cari SKU atau Nama..."
+  const handleSort = (key: string) => {
+    setSort((prev) => (prev?.key !== key ? { key, order: 'asc' } : prev.order === 'asc' ? { key, order: 'desc' } : null));
+  };
+
+  // Row number across pages ("No"); a map keeps the lookup O(1) per cell
+  const rowIndex = useMemo(() => new Map(items.map((row, i) => [row.id, i])), [items]);
+
+  // Legacy GV_Header columns and order; HPP and Total (HPP x stock) are admin-only like everywhere else
+  const columns: LegacyColumn<InventoryItem>[] = [
+    { key: 'no', caption: 'No', align: 'right', render: (row) => fmtN0((page - 1) * PAGE_SIZE + (rowIndex.get(row.id) ?? 0) + 1) },
+    { key: 'inventoryNo', caption: 'PLU', sortKey: 'inventoryNo' },
+    { key: 'barcode', caption: 'Barcode', sortKey: 'barcode' },
+    { key: 'inventoryName', caption: 'Nama Barang', sortKey: 'inventoryName' },
+    { key: 'price', caption: 'Price', format: 'n0', sortKey: 'price' },
+    ...(canViewPrice
+      ? ([
+          { key: 'hpp', caption: 'HPP', format: 'n0', sortKey: 'hpp' },
+          { key: 'total', caption: 'Total', format: 'n0', render: (row) => fmtN0(Number(row.hpp || 0) * Number(row.stokAkhir || 0)) },
+        ] as LegacyColumn<InventoryItem>[])
+      : []),
+    {
+      key: 'stokAkhir', caption: 'Stok Terbaru', format: 'n0', sortKey: 'stokAkhir',
+      render: (row) => <span className={row.stokAkhir < 0 ? 'text-rose-600 font-semibold' : ''}>{fmtN0(row.stokAkhir)}</span>,
+    },
+    {
+      key: 'detail', caption: '=>', align: 'center', width: 40,
+      render: (row) => (
+        <button
+          type="button"
+          title="Detail"
+          onClick={(e) => { e.stopPropagation(); openDetail(row); }}
+          className={`px-1.5 rounded border font-bold cursor-pointer ${isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-400 hover:bg-slate-100'}`}
+        >
+          =&gt;
+        </button>
+      ),
+    },
+    { key: 'syncDate', caption: 'Last Sync', format: 'date' },
+  ];
+
+  const monthColumns: LegacyColumn<MonthRow>[] = [
+    { key: 'year', caption: 'Tahun', render: (r) => String(r.year) },
+    { key: 'monthName', caption: 'Bulan' },
+    { key: 'qty', caption: 'Qty Transaksi', format: 'n0' },
+  ];
+
+  // Stock card (client doc item 5: transaction history), captions from the legacy "Laporan Detail" report
+  const ledgerColumns: LegacyColumn<MovementRow>[] = [
+    { key: 'date', caption: 'Tgl. Transaksi', format: 'date' },
+    { key: 'transactionNo', caption: 'No. Transaksi' },
+    { key: 'type', caption: 'Mode' },
+    { key: 'qtyIn', caption: 'Masuk', format: 'n0', render: (r) => (r.qtyIn ? fmtN0(r.qtyIn) : '') },
+    { key: 'qtyOut', caption: 'Keluar', format: 'n0', render: (r) => (r.qtyOut ? fmtN0(r.qtyOut) : '') },
+    { key: 'balance', caption: 'Saldo Akhir', format: 'n0' },
+  ];
+
+  return (
+    <LegacyWindow
+      title="Sync Stok dan Laporan"
+      isDark={isDark}
+      toolbar={
+        <>
+          <LegacyButton isDark={isDark} onClick={handleRefresh} icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />}>
+            Refresh
+          </LegacyButton>
+          <LegacyButton isDark={isDark} onClick={openStockReport}>Laporan Stok Akhir</LegacyButton>
+          <div className="w-full sm:w-72 sm:ml-auto">
+            <LegacyInput
+              isDark={isDark}
+              type="search"
+              placeholder="Enter text to search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-64 pl-9 pr-3 py-1.5 rounded-lg border text-xs font-semibold focus:ring-2 focus:ring-indigo-500 outline-none ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-              }`}
             />
           </div>
+        </>
+      }
+    >
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2">
+        <div className="flex-1 min-w-0 min-h-[240px] flex flex-col gap-2">
+          <LegacyGrid
+            isDark={isDark}
+            columns={columns}
+            rows={items}
+            rowKey={(row) => row.id}
+            loading={isLoading}
+            emptyText="Tidak ada barang yang cocok dengan filter."
+            focusedKey={focusedId}
+            onRowClick={(row) => setFocusedId(row.id)}
+            sort={sort}
+            onSort={handleSort}
+          />
+          <LegacyPager
+            isDark={isDark}
+            page={page}
+            totalPages={totalPages}
+            total={totalItems}
+            shown={items.length}
+            unit="barang"
+            onPage={(p) => setPageState({ filterKey, page: Math.min(Math.max(1, p), totalPages) })}
+          />
+        </div>
 
-          <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
-            <input
-              type="checkbox"
-              checked={minusStockOnly}
-              onChange={(e) => setMinusStockOnly(e.target.checked)}
-              className="w-4 h-4 rounded text-indigo-500"
+        {/* Shown once an item is opened with "=>", so the grid keeps its full width until then */}
+        {detailItem && (
+        <GroupBox caption=".:: Detail" isDark={isDark} className="lg:w-[400px] shrink-0 min-h-[320px]">
+          <div className="font-bold text-[13px] truncate" title={detailItem?.inventoryName}>{detailItem?.inventoryName || ' '}</div>
+          {detailItem && (
+            <div className={c.muted}>
+              Terakhir opname: <span className="font-semibold">{lastOpnameDate ? fmtDate(lastOpnameDate) : '-'}</span>
+            </div>
+          )}
+          <div className="h-40 shrink-0 flex flex-col">
+            <LegacyGrid
+              isDark={isDark}
+              columns={monthColumns}
+              rows={months}
+              rowKey={(r) => r.key}
+              loading={isLoadingLedger}
+              emptyText={detailItem ? 'Belum ada transaksi.' : 'Klik => pada barang.'}
             />
-            <span className={minusStockOnly ? 'text-rose-500' : ''}>Tampilkan Stok Minus</span>
-          </label>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleExportCSV}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Excel
-          </button>
-          <button
-            onClick={() => window.print()}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
-          >
-            <Printer className="w-4 h-4 text-indigo-500" /> Cetak
-          </button>
-          <button
-            onClick={handleRefresh}
-            title="Refresh Data"
-            className={`p-2 rounded-xl border transition-all ${isDark ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* 📋 DATA GRID */}
-      <div className="flex-1 min-h-0 overflow-auto p-5">
-        <div className={`rounded-2xl border shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 z-20">
-              <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors w-16 text-center"><div className="flex items-center justify-center gap-1"><span>Kode Barang</span>{sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Barang</span>{sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('stokAkhir')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-right"><div className="flex items-center justify-end gap-1"><span>Stok Akhir</span>{sortField === 'stokAkhir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('minStock')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'minStock' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th className="py-1.5 px-2 text-center w-24">Aksi</th>
-              </tr>
-              <ColumnFilterRow
-                cells={[{ key: 'inventoryno' }, { key: 'inventoryname' }, {}, {}, {}]}
-                values={columnFilters}
-                onChange={(key, value) => setColumnFilters((prev) => ({ ...prev, [key]: value }))}
-                isDark={isDark}
-              />
-            </thead>
-            <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="py-20 text-center animate-pulse">
-                    <RefreshCw className="w-8 h-8 mx-auto mb-3 animate-spin text-indigo-500" />
-                    <p className="font-bold text-slate-500">Memuat Kartu Stok...</p>
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-20 text-center">
-                    <Archive className="w-12 h-12 mx-auto mb-3 text-slate-500 opacity-50" />
-                    <p className="font-bold text-slate-500">Tidak ada barang yang cocok dengan filter.</p>
-                  </td>
-                </tr>
-              ) : (
-                sortedItems.map((item) => {
-                  const onHand = Number(item.stokAkhir || 0);
-                  const isExpanded = expandedRow === item.id;
-
-                  return (
-                    <React.Fragment key={item.id}>
-                      <tr className={`transition-colors cursor-pointer group ${isExpanded ? (isDark ? 'bg-slate-700 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-900 font-bold border-l-4 border-amber-600') : (isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800')}`}>
-                        <td className="px-4 py-3 text-center font-mono font-bold text-amber-500">{item.inventoryNo}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-bold text-sm text-slate-900 dark:text-white">{item.inventoryName}</div>
-                          <div className="text-[10px] text-slate-500">{item.barcode} • {item.categoryName}</div>
-                        </td>
-                        
-                        <td className={`px-4 py-3 text-right font-mono font-black text-sm ${onHand <= 0 ? 'text-rose-500' : onHand <= item.minStock ? 'text-amber-500' : 'text-emerald-500'}`}>
-                          {onHand.toLocaleString()}
-                        </td>
-                        
-                        <td className="px-4 py-3 text-center">
-                          {onHand <= 0 ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/10 text-rose-500 border border-rose-500/20">KOSONG</span>
-                          ) : onHand <= item.minStock ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/10 text-amber-500 border border-amber-500/20">TIPIS</span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">TERSEDIA</span>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => toggleRowExpand(item.id)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 mx-auto ${
-                              isExpanded 
-                                ? 'bg-indigo-500 text-white shadow-md' 
-                                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-indigo-400' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600'
-                            }`}
-                          >
-                            <History className="w-3.5 h-3.5" />
-                            Kartu Stok
-                          </button>
-                        </td>
-                      </tr>
-
-                      {/* 📖 KARTU STOK DRILL-DOWN LEDGER (Phase 2 Requirement) */}
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={5} className="p-0 border-b-2 border-indigo-500/30">
-                            <div className={`p-4 ${isDark ? 'bg-slate-950 shadow-inner' : 'bg-slate-100 shadow-inner'}`}>
-                              <div className="flex items-center justify-between mb-4">
-                                <h4 className="text-sm font-black flex items-center gap-2">
-                                  <History className="w-4 h-4 text-indigo-500" />
-                                  Buku Besar Kartu Stok - <span className="text-amber-500">{item.inventoryName}</span>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-bold">
-                                    {ledgerTotal} Mutasi
-                                  </span>
-                                  <span className="text-[10px] font-semibold text-slate-500">
-                                    Terakhir opname: {lastOpnameDate ? new Date(lastOpnameDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}
-                                  </span>
-                                </h4>
-                                <button
-                                  onClick={() => {
-                                    setLedgerSearch('');
-                                    setFullLedgerItem(item);
-                                  }}
-                                  className="px-3 py-1 rounded border text-[10px] font-bold border-indigo-500/30 text-indigo-500 hover:bg-indigo-500 hover:text-white transition-all"
-                                >
-                                  Lihat Kartu Lengkap
-                                </button>
-                              </div>
-
-                              <div className={`rounded-xl border overflow-hidden ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
-                                <table className="w-full text-left">
-                                  <thead className={`text-[10px] font-bold uppercase ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
-                                    <tr>
-                                      <th className="px-4 py-2">Tanggal</th>
-                                      <th className="px-4 py-2">No. Dokumen</th>
-                                      <th className="px-4 py-2">Keterangan Transaksi</th>
-                                      <th className="px-4 py-2 text-right">Masuk (In)</th>
-                                      <th className="px-4 py-2 text-right">Keluar (Out)</th>
-                                      <th className="px-4 py-2 text-right">Saldo Akhir</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className={`divide-y text-xs font-medium ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                                    {isLoadingLedger ? (
-                                      <tr>
-                                        <td colSpan={6} className="px-4 py-8 text-center animate-pulse text-indigo-500">
-                                          Memuat mutasi...
-                                        </td>
-                                      </tr>
-                                    ) : ledgerData.length === 0 ? (
-                                      <tr>
-                                        <td colSpan={6} className="px-4 py-8 text-center text-slate-500 italic">
-                                          Belum ada riwayat mutasi / pergerakan stok untuk barang ini.
-                                        </td>
-                                      </tr>
-                                    ) : (
-                                      ledgerData.slice(0, 10).map((movement, idx) => (
-                                        <tr key={movement.id || idx} className={`hover:bg-slate-500/5 transition-colors ${movement.qtyIn > 0 ? (isDark ? 'bg-emerald-500/5' : 'bg-emerald-50') : movement.qtyOut > 0 ? (isDark ? 'bg-rose-500/5' : 'bg-rose-50') : ''}`}>
-                                          <td className="px-4 py-2 text-[11px] whitespace-nowrap">
-                                            {new Date(movement.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                          </td>
-                                          <td className="px-4 py-2 font-mono text-indigo-400">{movement.transactionNo}</td>
-                                          <td className="px-4 py-2">{movement.type}</td>
-                                          <td className="px-4 py-2 text-right font-mono font-bold text-emerald-500">
-                                            {movement.qtyIn > 0 ? `+${movement.qtyIn.toLocaleString()}` : '-'}
-                                          </td>
-                                          <td className="px-4 py-2 text-right font-mono font-bold text-rose-500">
-                                            {movement.qtyOut > 0 ? `-${movement.qtyOut.toLocaleString()}` : '-'}
-                                          </td>
-                                          <td className="px-4 py-2 text-right font-mono font-black">
-                                            {movement.balance.toLocaleString()}
-                                          </td>
-                                        </tr>
-                                      ))
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                              {ledgerData.length > 10 && (
-                                <p className="mt-2 text-[10px] text-slate-500">
-                                  Menampilkan 10 mutasi terbaru dari {ledgerTotal}. Klik &quot;Lihat Kartu Lengkap&quot; untuk semua riwayat.
-                                </p>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-      </div>
-
-      {/* PAGINATION FOOTER */}
-      <div className={`mx-5 mb-3 px-3 py-2 rounded-xl border shrink-0 flex items-center justify-between text-xs font-black ${
-        isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
-      }`}>
-        <span>Menampilkan {items.length} dari total {totalItems} barang</span>
-        <div className="flex items-center gap-2">
-          <button
-            disabled={page === 1 || isLoading}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className={`px-3 py-1 rounded-lg border font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
-              isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'
-            }`}
-          >
-            Sebelumnya
-          </button>
-          <span>Halaman {page} / {totalPages}</span>
-          <button
-            disabled={page >= totalPages || isLoading}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className={`px-3 py-1 rounded-lg border font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
-              isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'
-            }`}
-          >
-            Berikutnya
-          </button>
-        </div>
-      </div>
-
-      {/* 📖 FULL KARTU STOK MODAL */}
-      {fullLedgerItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-4xl max-h-[85vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-900'}`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-              <div>
-                <h3 className="text-base font-black flex items-center gap-2">
-                  <History className="w-5 h-5 text-indigo-500" />
-                  Kartu Stok Lengkap — <span className="text-amber-500">{fullLedgerItem.inventoryName}</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Kode: <span className="font-mono font-bold">{fullLedgerItem.inventoryNo}</span> • Barcode: <span className="font-mono">{fullLedgerItem.barcode}</span> • Kategori: {fullLedgerItem.categoryName}
-                  {' '}• Terakhir opname: <span className="font-bold">{lastOpnameDate ? new Date(lastOpnameDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' }) : '-'}</span>
-                </p>
-              </div>
-              <button
-                onClick={() => setFullLedgerItem(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
-              >
-                Tutup
-              </button>
-            </div>
-
-            <div className={`px-6 py-3 border-b grid grid-cols-3 gap-4 ${isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-100/70 border-slate-200'}`}>
-              <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-                <p className="text-[10px] font-bold uppercase text-slate-500">Total Masuk (In)</p>
-                <p className="text-lg font-black text-emerald-500 font-mono">
-                  +{ledgerData.reduce((acc, m) => acc + (m.qtyIn || 0), 0).toLocaleString()}
-                </p>
-              </div>
-              <div className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5">
-                <p className="text-[10px] font-bold uppercase text-slate-500">Total Keluar (Out)</p>
-                <p className="text-lg font-black text-rose-500 font-mono">
-                  -{ledgerData.reduce((acc, m) => acc + (m.qtyOut || 0), 0).toLocaleString()}
-                </p>
-              </div>
-              <div className="p-2.5 rounded-xl border border-indigo-500/20 bg-indigo-500/5">
-                <p className="text-[10px] font-bold uppercase text-slate-500">Stok Akhir Saat Ini</p>
-                <p className="text-lg font-black text-indigo-500 font-mono">
-                  {Number(fullLedgerItem.stokAkhir || 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            <div className="px-6 py-3 border-b flex items-center justify-between gap-4 border-slate-700/30">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Filter No. Dokumen / Transaksi..."
-                  value={ledgerSearch}
-                  onChange={(e) => setLedgerSearch(e.target.value)}
-                  className={`w-full pl-8 pr-3 py-1.5 rounded-lg border text-xs font-semibold outline-none ${isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
-                />
-              </div>
-              <span className="text-xs font-bold text-slate-500">
-                Total {ledgerTotal} Riwayat Mutasi{ledgerTotal > ledgerData.length ? ` (${ledgerData.length} terbaru ditampilkan)` : ''}
-              </span>
-            </div>
-
-            <div className="flex-1 overflow-auto p-6">
-              <div className={`rounded-xl border overflow-hidden ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
-                <table className="w-full text-left">
-                  <thead className={`text-[10px] font-bold uppercase ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
-                    <tr>
-                      <th className="px-4 py-2">Tanggal</th>
-                      <th className="px-4 py-2">No. Dokumen</th>
-                      <th className="px-4 py-2">Keterangan Transaksi</th>
-                      <th className="px-4 py-2 text-right">Masuk (In)</th>
-                      <th className="px-4 py-2 text-right">Keluar (Out)</th>
-                      <th className="px-4 py-2 text-right">Saldo Akhir</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y text-xs font-medium ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                    {ledgerData
-                      .filter((m) =>
-                        !ledgerSearch.trim() ||
-                        m.transactionNo.toLowerCase().includes(ledgerSearch.toLowerCase()) ||
-                        m.type.toLowerCase().includes(ledgerSearch.toLowerCase())
-                      )
-                      .map((movement, idx) => (
-                        <tr key={movement.id || idx} className="hover:bg-slate-500/5">
-                          <td className="px-4 py-2 text-[11px] whitespace-nowrap">
-                            {new Date(movement.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="px-4 py-2 font-mono text-indigo-400">{movement.transactionNo}</td>
-                          <td className="px-4 py-2">{movement.type}</td>
-                          <td className="px-4 py-2 text-right font-mono font-bold text-emerald-500">
-                            {movement.qtyIn > 0 ? `+${movement.qtyIn.toLocaleString()}` : '-'}
-                          </td>
-                          <td className="px-4 py-2 text-right font-mono font-bold text-rose-500">
-                            {movement.qtyOut > 0 ? `-${movement.qtyOut.toLocaleString()}` : '-'}
-                          </td>
-                          <td className="px-4 py-2 text-right font-mono font-black">
-                            {movement.balance.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
-        </div>
+          <div className="flex-1 min-h-[160px] flex flex-col">
+            <LegacyGrid
+              isDark={isDark}
+              columns={ledgerColumns}
+              rows={ledger}
+              rowKey={(r) => r.id}
+              loading={isLoadingLedger}
+              emptyText={detailItem ? 'Belum ada riwayat mutasi stok untuk barang ini.' : ''}
+              rowClassName={(r) => (r.qtyIn > 0 ? (isDark ? 'text-emerald-300' : 'text-emerald-800') : r.qtyOut > 0 ? (isDark ? 'text-rose-300' : 'text-rose-800') : '')}
+            />
+          </div>
+          {ledgerTotal > ledger.length && (
+            <div className={c.muted}>Menampilkan {fmtN0(ledger.length)} dari {fmtN0(ledgerTotal)} mutasi terbaru.</div>
+          )}
+        </GroupBox>
+        )}
+      </div>
+
+      {isStockReportOpen && (
+        <ReportDialog title="Laporan Stok Akhir" isDark={isDark} onClose={closeStockReport}>
+          <div className="flex-1 min-h-[300px] flex flex-col">
+            <LegacyGrid
+              isDark={isDark}
+              columns={reportColumns}
+              rows={reportItems ?? []}
+              rowKey={(r) => r.id}
+              loading={reportItems === null && !reportError}
+              emptyText={reportError || 'Tidak ada data barang.'}
+              showFooter
+            />
+          </div>
+        </ReportDialog>
       )}
-    </div>
+    </LegacyWindow>
   );
 }

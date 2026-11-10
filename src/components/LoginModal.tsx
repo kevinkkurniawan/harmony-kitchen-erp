@@ -69,8 +69,7 @@ export default function LoginModal({ isOpen, onLoginSuccess, onClose }: LoginMod
           <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 font-black flex items-center justify-center mx-auto mb-3 shadow-lg shadow-amber-500/20">
             <Store className="w-6 h-6" />
           </div>
-          <h2 className="font-black text-lg text-slate-900 tracking-tight">Login Module Manager ERP</h2>
-          <p className="text-xs text-slate-600 mt-1">Masukan Akun Administrator / Staff User ERP</p>
+          <h2 className="font-black text-lg text-slate-900 tracking-tight">User Login</h2>
         </div>
 
         {/* Quick Demo Preset Selection */}
@@ -142,7 +141,7 @@ export default function LoginModal({ isOpen, onLoginSuccess, onClose }: LoginMod
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. admin"
+              placeholder="Enter Username"
               className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-900 placeholder:text-slate-400 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
           </div>
@@ -165,10 +164,10 @@ export default function LoginModal({ isOpen, onLoginSuccess, onClose }: LoginMod
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-98 text-slate-950 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer transition-all mt-2"
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-98 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer transition-all mt-2"
           >
             <LogIn className="w-4 h-4" />
-            <span>{isLoading ? 'Memproses Authentikasi...' : 'Masuk ERP System'}</span>
+            <span>{isLoading ? 'Memproses Authentikasi...' : 'Log on'}</span>
           </button>
         </form>
       </div>

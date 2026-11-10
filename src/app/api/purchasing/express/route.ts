@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { parseColumnFilters } from '@/lib/column-filter';
 import { apiError } from '@/lib/api-response';
+import { getCurrentUser } from '@/lib/session';
 
 export async function GET(req: Request) {
   try {
@@ -10,13 +11,19 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
 
-    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(searchParams, {
-      whitelist: ['mrno', 'suppliername', 'whid', 'isvoid', 'mrdate', 'dono', 'drivername', 'vehicleno', 'page', 'limit'],
+    // "Terbayar" / "Belum Terbayar" toggle: paid=true | false (legacy rows have ispaid NULL = not paid)
+    const paid = searchParams.get('paid');
+    const filterParams = new URLSearchParams(searchParams);
+    filterParams.delete('paid');
+
+    const { where: columnWhere, unsupportedFilters } = parseColumnFilters(filterParams, {
+      // page / limit stay out: whitelisting them made the parser treat them as column filters
+      whitelist: ['mrno', 'suppliername', 'whid', 'isvoid', 'mrdate', 'dono', 'drivername', 'vehicleno'],
       exactMatchFields: ['mrno', 'dono'],
       containsFields: ['suppliername', 'drivername', 'vehicleno'],
       numberFields: ['whid'],
       booleanFields: ['isvoid'],
-      dateRangeFields: ['mrdate'],
+      dateOnlyFields: ['mrdate'], // DATE column
     });
 
     if (unsupportedFilters.length > 0) {
@@ -31,6 +38,8 @@ export async function GET(req: Request) {
     const where: any = {
       ...columnWhere,
     };
+    if (paid === 'true') where.ispaid = true;
+    else if (paid === 'false') where.AND = [{ OR: [{ ispaid: false }, { ispaid: null }] }];
 
     if (q) {
       where.OR = [
@@ -184,50 +193,58 @@ export async function POST(req: Request) {
     }
 
     const generatedMrNo = mr_no || `MR-EXP-${Date.now().toString().slice(-6)}`;
-    const authUser = req.headers.get('x-user') || 'admin';
+    // The logged-in user, not a request header (no client sent one, so every receipt read "admin")
+    const sessionUser = await getCurrentUser();
+    if (!sessionUser) return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
+    const authUser = sessionUser.username;
 
-    const created = await prisma.t_materialreceiveheader.create({
-      data: {
-        mrno: generatedMrNo,
-        mrdate: mr_date ? new Date(mr_date) : new Date(),
-        poid: null,
-        dono: do_no || null,
-        supplierid: Number(supplier.id),
-        suppliername: supplier.suppliername,
-        drivername: driver_name || null,
-        vehicleno: vehicle_no || null,
-        transporter: transporter || null,
-        whid: Number(wh_id) || null,
-        description: description || null,
-        isvoid: false,
-        ispaid: false,
-        createduser: authUser,
-        createddate: new Date(),
-        modifieduser: authUser,
-        modifieddate: new Date(),
-        t_materialreceivedetail: {
-          create: Array.from(mergedItemsMap.values()).map(({ inv, qty, description: itemDesc }) => ({
-            inventoryid: String(inv.id),
-            qty,
-            uomid: inv.uomid ? Number(inv.uomid) : null,
-            description: itemDesc,
-            isinventory: true,
-            createduser: authUser,
-            createddate: new Date(),
-            modifieduser: authUser,
-            modifieddate: new Date(),
-          })),
+    // Header, lines and stock in one transaction: a failure halfway must not leave stock partly added
+    const created = await prisma.$transaction(async (tx) => {
+      const header = await tx.t_materialreceiveheader.create({
+        data: {
+          mrno: generatedMrNo,
+          mrdate: mr_date ? new Date(mr_date) : new Date(),
+          poid: null,
+          dono: do_no || null,
+          supplierid: Number(supplier.id),
+          suppliername: supplier.suppliername,
+          drivername: driver_name || null,
+          vehicleno: vehicle_no || null,
+          transporter: transporter || null,
+          whid: Number(wh_id) || null,
+          description: description || null,
+          isvoid: false,
+          ispaid: false,
+          createduser: authUser,
+          createddate: new Date(),
+          modifieduser: authUser,
+          modifieddate: new Date(),
+          t_materialreceivedetail: {
+            create: Array.from(mergedItemsMap.values()).map(({ inv, qty, description: itemDesc }) => ({
+              inventoryid: String(inv.id),
+              qty,
+              uomid: inv.uomid ? Number(inv.uomid) : null,
+              description: itemDesc,
+              isinventory: true,
+              createduser: authUser,
+              createddate: new Date(),
+              modifieduser: authUser,
+              modifieddate: new Date(),
+            })),
+          },
         },
-      },
-    });
-
-    // Update inventory stock
-    for (const { inv, qty } of mergedItemsMap.values()) {
-      await prisma.m_inventory.update({
-        where: { id: inv.id },
-        data: { stokupdate: { increment: qty } },
       });
-    }
+
+      // Update inventory stock
+      for (const { inv, qty } of mergedItemsMap.values()) {
+        await tx.m_inventory.update({
+          where: { id: inv.id },
+          data: { stokupdate: { increment: qty } },
+        });
+      }
+      return header;
+      // One stock update per line: long receipts need more than the 5 s default (same limits as opname)
+    }, { maxWait: 15000, timeout: 60000 });
 
     return NextResponse.json({
       success: true,

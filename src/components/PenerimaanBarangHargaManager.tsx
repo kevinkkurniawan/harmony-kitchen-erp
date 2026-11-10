@@ -1,64 +1,109 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  RefreshCw,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  X,
-  AlertTriangle,
-  Zap,
-  Printer,
-  ScanLine,
-  Search,
-  Plus,
-  ArrowLeft,
-  Eye,
-  ChevronUp,
-  ChevronDown,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { RefreshCw, Trash2, CheckCircle, XCircle, AlertTriangle, Zap, Printer, X, Plus } from 'lucide-react';
 import { ERPProduct, Supplier } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
 import { searchInventory, lookupInventoryByScan } from '@/lib/inventory-lookup';
+import { getTodayBangkok } from '@/lib/date-utils';
+import { receiptLineAmounts, receiptHeaderAmounts, dueDateFromTerm } from '@/lib/receipt-totals';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
+import IntegerCellInput from '@/components/IntegerCellInput';
+import { InputSupplierDialog, DailyReportDialog, CashPaymentDialog, StockDialog, PaidToggle } from '@/components/PenerimaanBarangDialogs';
+import {
+  LegacyWindow,
+  LegacyButton,
+  LegacyGrid,
+  LegacyPager,
+  LegacyInput,
+  LegacySelect,
+  GroupBox,
+  FieldRow,
+  ContextMenu,
+  menuAt,
+  fmtN0,
+  fmtDate,
+  lx,
+  type LegacyColumn,
+  type ContextMenuState,
+} from '@/components/legacy';
 
 export interface PricedReceiptItem {
+  /** Row key: inventory id for a new line, detail id for a saved one */
   inventoryId: string;
+  /** m_inventory id (also set on saved lines, for "Lihat Stok") */
+  stockId: string;
   barcode: string;
   inventoryNo: string;
   inventoryName: string;
   uomName: string;
   qty: number;
-  price: number;
+  // null when the server masks purchase prices (non-admin viewing a saved receipt)
+  price: number | null;
   discPercentage: number;
-  subtotal: number;
+  disc2: number;
+  disc3: number;
+  // null when masked (non-admin viewing a saved receipt)
+  discRp: number | null;
+  subtotal: number | null;
   description: string;
 }
 
+/** One row of GET /api/purchasing/priced (only the fields this page shows). */
 export interface PricedReceiptHeader {
-  id: string;
+  id: number;
   mrNo: string;
   mrDate: string;
   supplierId: string;
   supplierName: string;
-  poNo: string;
-  doNo: string;
-  driverName: string;
-  vehicleNo: string;
-  whName: string;
+  description: string;
   paymentType: string;
   dueDate: string;
-  downPayment: number;
-  discPercentage: number;
-  discValue: number;
-  ppnPercentage: number;
-  ppnValue: number;
-  grandTotal: number;
+  grandTotal: number | null;
+}
+
+/** A saved receipt shown in the detail view (lines read-only, header editable via "Apply  Changes"). */
+interface ViewedReceipt {
+  id: number;
+  mrNo: string;
+  mrDate: string;
+  supplierId: string;
+  supplierName: string;
+  whId: string;
   description: string;
-  isExpress: boolean;
-  isVoid: boolean;
-  totalQty?: number;
-  itemCount?: number;
+  paymentType: string;
+  longTerm: number;
+  dueDate: string;
+  discPercentage: number;
+  isMultiDisc: boolean;
+  disc2: number;
+  disc3: number;
+  discValue: number | null;
+  ppnPercentage: number;
+  ppnValue: number | null;
+  grandTotal: number | null;
+  /** null for non-admins (masked by the API) */
+  downPayment: number | null;
+  isPaid: boolean;
+  /** Settled by "Cash Payment": the header can no longer change */
+  hasPayment: boolean;
+  items: PricedReceiptItem[];
+}
+
+/** Header fields of the receipt in the detail view (a new one, or a saved one being changed). */
+interface HeaderForm {
+  mrDate: string;
+  whId: string;
+  supplierId: string;
+  description: string;
+  paymentType: string;
+  longTerm: number;
+  discPercentage: number;
+  isMultiDisc: boolean;
+  disc2: number;
+  disc3: number;
+  ppnPercentage: number;
+  downPayment: number;
 }
 
 interface ToastMessage {
@@ -72,86 +117,154 @@ interface PenerimaanBarangHargaManagerProps {
   canViewPrice?: boolean;
 }
 
-export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = false }: PenerimaanBarangHargaManagerProps) {
-  // Saved purchase prices become HPP, so non-admins see them masked
-  const formatMoney = (value: number) => (canViewPrice ? `Rp ${value.toLocaleString('id-ID')}` : 'Rp ••••••');
-  // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
-  const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
+const PAGE_SIZE_DEFAULT = 100;
+const MASK = '••••••';
+// Credit terms default to 30 days (the ERP's previous default due date)
+const DEFAULT_TERM_DAYS = 30;
+const newMrNo = () => 'MR-RCV-' + Math.floor(100000 + Math.random() * 900000);
+const pctText = (v: number) => v.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Sorting States
+// Default list range: the last 30 days up to today (Bangkok time)
+function daysAgoBangkok(days: number): string {
+  const d = new Date(`${getTodayBangkok()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+const emptyHeader = (mrDate: string, whId: string, supplierId: string): HeaderForm => ({
+  mrDate,
+  whId,
+  supplierId,
+  description: '',
+  paymentType: 'TEMPO',
+  longTerm: DEFAULT_TERM_DAYS,
+  discPercentage: 0,
+  isMultiDisc: false,
+  disc2: 0,
+  disc3: 0,
+  ppnPercentage: 11,
+  downPayment: 0,
+});
+
+const headerOf = (v: ViewedReceipt): HeaderForm => ({
+  mrDate: v.mrDate,
+  whId: v.whId,
+  supplierId: v.supplierId,
+  description: v.description,
+  paymentType: v.paymentType,
+  longTerm: v.longTerm,
+  discPercentage: v.discPercentage,
+  isMultiDisc: v.isMultiDisc,
+  disc2: v.disc2,
+  disc3: v.disc3,
+  ppnPercentage: v.ppnPercentage,
+  downPayment: v.downPayment ?? 0,
+});
+
+const lineSubtotal = (it: PricedReceiptItem) =>
+  receiptLineAmounts({ qty: it.qty, price: it.price ?? 0, disc1: it.discPercentage, disc2: it.disc2, disc3: it.disc3, discRp: it.discRp ?? 0 }).subtotal;
+
+/** Legacy Mod_Purchasing.Frm_PurchaseReceivement: list view, and the detail view in the same window ("Back"). */
+export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = false }: PenerimaanBarangHargaManagerProps) {
+  const c = lx(isDark);
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
+  // Saved purchase prices become HPP, so non-admins see them masked
+  const money = (value: number | null | undefined) => (canViewPrice && value != null ? fmtN0(value) : MASK);
+
+  const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
+
+  // List view
+  const [receiptsList, setReceiptsList] = useState<PricedReceiptHeader[]>([]);
+  const [dateStart, setDateStartRaw] = useState<string>(() => daysAgoBangkok(30));
+  const [dateEnd, setDateEndRaw] = useState<string>(() => getTodayBangkok());
+  // Old ToggleSwitch1: off = "Belum Terbayar", on = "Terbayar" (t_materialreceiveheader.ispaid)
+  const [showPaid, setShowPaidRaw] = useState(false);
+  const [listSearch, setListSearchRaw] = useState<string>('');
+  const debouncedListSearch = useDebounce(listSearch, 500);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeRaw] = useState(PAGE_SIZE_DEFAULT);
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  // Filters change the result set, so paging restarts at page 1
+  const withPageReset = <T,>(set: (v: T) => void) => (v: T) => { setPage(1); set(v); };
+  const setDateStart = withPageReset(setDateStartRaw);
+  const setDateEnd = withPageReset(setDateEndRaw);
+  const setListSearch = withPageReset(setListSearchRaw);
+  const setPageSize = withPageReset(setPageSizeRaw);
+  const setShowPaid = withPageReset(setShowPaidRaw);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
+  const [focusedId, setFocusedId] = useState<number | null>(null);
   const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  const handleSort = (field: string) => {
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField('');
-      setSortOrder('asc');
-    }
-  };
+  // Detail view: a saved receipt or a new one being entered
+  const [viewed, setViewed] = useState<ViewedReceipt | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  // "Cetak": print voucher of the saved receipt; "Lunas" (old CE_Print next to it) stamps it LUNAS
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printLunas, setPrintLunas] = useState(false);
+  const [isDailyReportOpen, setIsDailyReportOpen] = useState(false);
+  const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+  const [isCashPaymentOpen, setIsCashPaymentOpen] = useState(false);
+  const [stockIds, setStockIds] = useState<string[] | null>(null);
 
-  // List View States
-  const [receiptsList, setReceiptsList] = useState<PricedReceiptHeader[]>([]);
-  const [listSearch, setListSearch] = useState<string>('');
-  const debouncedListSearch = useDebounce(listSearch, 500);
-  const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
-
-  // Form Header States
-  const [mrNo, setMrNo] = useState<string>(() => 'MR-RCV-' + Math.floor(100000 + Math.random() * 900000));
+  // Lookups
   const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
-  const [selectedSupplierName, setSelectedSupplierName] = useState<string>('');
-  const [poNo, setPoNo] = useState<string>('');
-  const [doNo, setDoNo] = useState<string>('');
-  const [driverName, setDriverName] = useState<string>('');
-  const [vehicleNo, setVehicleNo] = useState<string>('');
-  const [whName, setWhName] = useState<string>('Gudang Utama Dapur');
-  const [paymentType, setPaymentType] = useState<string>('TEMPO');
-  const [dueDate, setDueDate] = useState<string>(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
-  const [downPayment, setDownPayment] = useState<number>(0);
-  const [discPercentage, setDiscPercentage] = useState<number>(0);
-  const [ppnPercentage, setPpnPercentage] = useState<number>(11);
-  const [headerDesc, setHeaderDesc] = useState<string>('');
+  const [supplierReloadKey, setSupplierReloadKey] = useState(0);
+  const [warehouses, setWarehouses] = useState<{ id: number; whCode: string; location: string }[]>([]);
+  const defaultSupplierId = suppliersList.length > 0 ? String(suppliersList[0].id) : '';
+  const defaultWhId = warehouses.length > 0 ? String(warehouses[0].id) : '';
 
-  // Item Entry States
+  // Header of the receipt in the detail view
+  const [mrNo, setMrNo] = useState<string>(newMrNo);
+  const [formState, setForm] = useState<HeaderForm>(() => emptyHeader(getTodayBangkok(), '', ''));
+  // A new receipt opened before the lookups arrived uses the first supplier / warehouse
+  const form = viewed ? formState : { ...formState, supplierId: formState.supplierId || defaultSupplierId, whId: formState.whId || defaultWhId };
+  const setField = <K extends keyof HeaderForm>(key: K, value: HeaderForm[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  // Item entry: "#" qty + barcode / name search
   const [items, setItems] = useState<PricedReceiptItem[]>([]);
+  const [entryQty, setEntryQty] = useState<number>(1);
   const [productSearch, setProductSearch] = useState<string>('');
   const debouncedProductSearch = useDebounce(productSearch, 500);
   const [searchResults, setSearchResults] = useState<ERPProduct[]>([]);
   const [isSearchingProduct, setIsSearchingProduct] = useState<boolean>(false);
+  const [itemMenu, setItemMenu] = useState<ContextMenuState<PricedReceiptItem> | null>(null);
+  const closeItemMenu = useCallback(() => setItemMenu(null), []);
 
-  // General Loading & Toasts
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  // Print Modal
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
-  const [printData, setPrintData] = useState<{ header: PricedReceiptHeader; items: PricedReceiptItem[] } | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, type, text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
   }, []);
 
-  // Fetch Priced Receipts List
+  const supplierById = useMemo(() => new Map(suppliersList.map((s) => [String(s.id), s])), [suppliersList]);
+
+  // Fetch the receipt list for the date range (server-side mrdate range filter), paid toggle and search text
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       setIsLoadingList(true);
       try {
-        const res = await fetch(`/api/purchasing/priced?q=${encodeURIComponent(debouncedListSearch)}`);
+        const params = new URLSearchParams({ q: debouncedListSearch, page: String(page), limit: String(pageSize), paid: String(showPaid) });
+        if (dateStart) params.set('start_mrdate', dateStart);
+        if (dateEnd) params.set('end_mrdate', dateEnd);
+        const res = await fetch(`/api/purchasing/priced?${params}`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setReceiptsList(json.data);
+          setTotalRows(json.pagination?.total ?? json.data.length);
+          setTotalPages(json.pagination?.totalPages ?? 1);
+        } else if (isMounted && !json.success) {
+          addToast(typeof json.error === 'string' ? json.error : json.error?.message || 'Gagal memuat daftar penerimaan', 'error');
         }
       } catch (err) {
         console.error('Error fetching priced receipts:', err);
@@ -161,101 +274,35 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = fa
     }
     loadData();
     return () => { isMounted = false; };
-  }, [debouncedListSearch]);
+  }, [debouncedListSearch, dateStart, dateEnd, page, pageSize, reloadKey, showPaid, addToast]);
 
-  const reloadReceipts = async () => {
-    setIsLoadingList(true);
-    try {
-      const res = await fetch(`/api/purchasing/priced?q=${encodeURIComponent(debouncedListSearch)}`);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setReceiptsList(json.data);
-      }
-    } catch (err) {
-      console.error('Error fetching priced receipts:', err);
-    } finally {
-      setIsLoadingList(false);
-    }
-  };
+  const reloadReceipts = () => setReloadKey((k) => k + 1);
 
-  const handleViewReceiptDetail = async (id: string | number) => {
-    try {
-      const res = await fetch(`/api/purchasing/priced/${id}`);
-      const json = await res.json();
-      if (json.success) {
-        const rawDate = json.data.mr_date || json.data.mrDate;
-        const parsedDate = rawDate ? new Date(rawDate) : new Date();
-        const formattedDate = isNaN(parsedDate.getTime())
-          ? String(rawDate || '-')
-          : parsedDate.toISOString().slice(0, 10);
-
-        setPrintData({
-          header: {
-            id: String(json.data.id),
-            mrNo: json.data.mr_no || json.data.mrNo,
-            mrDate: formattedDate,
-            supplierId: '0',
-            supplierName: json.data.supplier_name || json.data.supplierName,
-            doNo: json.data.do_no || json.data.doNo || '-',
-            poNo: json.data.po_no || json.data.poNo || '-',
-            driverName: json.data.driver_name || json.data.driverName || '-',
-            vehicleNo: json.data.vehicle_no || json.data.vehicleNo || '-',
-            whName: json.data.wh_name || json.data.whName || 'Gudang Utama Dapur',
-            paymentType: json.data.payment_type || json.data.paymentType || '-',
-            dueDate: json.data.due_date || json.data.dueDate || '-',
-            downPayment: json.data.down_payment || json.data.downPayment || 0,
-            discPercentage: json.data.disc_percentage || json.data.discPercentage || 0,
-            discValue: json.data.disc_value || json.data.discValue || 0,
-            ppnPercentage: json.data.ppn_percentage || json.data.ppnPercentage || 0,
-            ppnValue: json.data.tax || json.data.ppnValue || 0,
-            grandTotal: json.data.grand_total || json.data.grandTotal || 0,
-            description: json.data.description || '-',
-            isExpress: false,
-            isVoid: false,
-          },
-          items: (json.data.items || []).map((it: any) => ({
-            inventoryId: String(it.id || it.inventoryId),
-            inventoryNo: it.inventory_no || it.inventoryNo || '-',
-            inventoryName: it.inventory_name || it.inventoryName || '-',
-            uomName: it.uom_name || it.uomName || 'PCS',
-            qty: Number(it.qty) || 0,
-            price: Number(it.price || it.unit_price) || 0,
-            discPercentage: Number(it.disc_percentage || it.discPercentage) || 0,
-            subtotal: Number(it.subtotal) || 0,
-            barcode: it.barcode || '',
-            description: it.description || '',
-          })),
-        });
-        setIsPrintModalOpen(true);
-      }
-    } catch (err) {
-      console.error('Error fetching priced receipt detail:', err);
-    }
-  };
-
-  // Fetch Suppliers for dropdown
+  // Suppliers; "Refresh Supplier" reloads them (the chosen supplier stays chosen)
   useEffect(() => {
     let isMounted = true;
-    async function loadSuppliers() {
-      try {
-        const res = await fetch('/api/suppliers?onlyActive=true&all=true');
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setSuppliersList(json.data);
-          if (json.data.length > 0) {
-            setSelectedSupplierId(String(json.data[0].id));
-            setSelectedSupplierName(json.data[0].supplierName);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching suppliers:', err);
-      }
-    }
-    loadSuppliers();
+    fetch('/api/suppliers?onlyActive=true&all=true')
+      .then((res) => res.json())
+      .then((supJson) => {
+        if (isMounted && supJson.success && Array.isArray(supJson.data)) setSuppliersList(supJson.data);
+      })
+      .catch((err) => console.error('Error fetching suppliers:', err));
+    return () => { isMounted = false; };
+  }, [supplierReloadKey]);
+
+  // Warehouses
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/inventory/lookups')
+      .then((res) => res.json())
+      .then((lookupJson) => {
+        if (isMounted && lookupJson.success && lookupJson.data?.warehouses) setWarehouses(lookupJson.data.warehouses);
+      })
+      .catch((err) => console.error('Error fetching warehouses:', err));
     return () => { isMounted = false; };
   }, []);
 
-  // Live product search for Barcode / SKU input in create mode (request-id guard drops out-of-order responses)
+  // Live product search for the barcode / name input (request-id guard drops out-of-order responses)
   const productSearchReqIdRef = useRef(0);
   useEffect(() => {
     const reqId = ++productSearchReqIdRef.current;
@@ -274,6 +321,45 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = fa
     };
     runSearch();
   }, [debouncedProductSearch, addToast]);
+
+  // Add a product with the "#" qty; scanning the same item again adds to its qty
+  const handleAddProductToItems = (prod: ERPProduct, keepSearch = false) => {
+    const addQty = Math.max(1, Math.floor(entryQty) || 1);
+    // Non-admins don't get the last buy price, so they type it from the supplier invoice
+    const initialPrice = canViewPrice ? (prod.priceBuy > 0 ? prod.priceBuy : (prod.hpp > 0 ? prod.hpp : 10000)) : 0;
+    setItems((prev) => {
+      const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        const line = { ...updated[existingIndex], qty: updated[existingIndex].qty + addQty };
+        updated[existingIndex] = { ...line, subtotal: lineSubtotal(line) };
+        return updated;
+      }
+      const line: PricedReceiptItem = {
+        inventoryId: String(prod.id),
+        stockId: String(prod.id),
+        barcode: prod.barcode || '',
+        inventoryNo: prod.inventoryNo || '',
+        inventoryName: prod.inventoryName,
+        uomName: prod.uomName || 'PCS',
+        qty: addQty,
+        price: initialPrice,
+        discPercentage: 0,
+        disc2: 0,
+        disc3: 0,
+        discRp: 0,
+        subtotal: 0,
+        description: '',
+      };
+      return [...prev, { ...line, subtotal: lineSubtotal(line) }];
+    });
+    setEntryQty(1);
+    if (!keepSearch) {
+      setProductSearch('');
+      setSearchResults([]);
+    }
+    addToast(`"${prod.inventoryName}" ditambahkan`, 'info');
+  };
 
   // Enter / barcode scan: look up the current input directly instead of waiting for the debounced dropdown
   const handleProductSearchEnter = async () => {
@@ -295,148 +381,177 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = fa
     }
   };
 
-  // Add Product to Receipt Line Items
-  const handleAddProductToItems = (prod: ERPProduct, keepSearch = false) => {
-    // Non-admins don't get the last buy price, so they type it from the supplier invoice
-    const initialPrice = canViewPrice ? (prod.priceBuy > 0 ? prod.priceBuy : (prod.hpp > 0 ? prod.hpp : 10000)) : 0;
-    setItems((prev) => {
-      const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        const line = updated[existingIndex];
-        const qty = line.qty + 1;
-        updated[existingIndex] = { ...line, qty, subtotal: qty * line.price * (1 - line.discPercentage / 100) };
-        return updated;
-      }
-      return [
-        ...prev,
-        {
-          inventoryId: String(prod.id),
-          barcode: prod.barcode || '',
-          inventoryNo: prod.inventoryNo || '',
-          inventoryName: prod.inventoryName,
-          uomName: prod.uomName || 'PCS',
-          qty: 1,
-          price: initialPrice,
-          discPercentage: 0,
-          subtotal: initialPrice,
-          description: '',
-        },
-      ];
-    });
-    if (!keepSearch) {
-      setProductSearch('');
-      setSearchResults([]);
-    }
-    addToast(`"${prod.inventoryName}" ditambahkan`, 'info');
+  // Edit one line of the new receipt; subtotal follows qty / price / discounts (old detail SP formula)
+  const updateLine = (inventoryId: string, patch: Partial<PricedReceiptItem>) => {
+    setItems((prev) => prev.map((it) => {
+      if (it.inventoryId !== inventoryId) return it;
+      const next = { ...it, ...patch };
+      return { ...next, subtotal: lineSubtotal(next) };
+    }));
   };
 
-  // Keyboard shortcuts
+  // A new receipt; "Recreate Invoice" keeps the date of the receipt just finished (old SB_CreateNew_Click)
+  const startNewReceipt = (date: string) => {
+    setMrNo(newMrNo());
+    setForm(emptyHeader(date, defaultWhId, defaultSupplierId));
+    setItems([]);
+    setEntryQty(1);
+    setProductSearch('');
+    setSearchResults([]);
+    setViewed(null);
+    setIsPrintModalOpen(false);
+    setViewMode('detail');
+    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  };
+
+  // "New": open an empty detail view
+  const handleNew = () => startNewReceipt(getTodayBangkok());
+
+  const handleRecreateInvoice = () => startNewReceipt(viewed?.mrDate && viewed.mrDate !== '-' ? viewed.mrDate : form.mrDate);
+
+  const isViewing = viewed !== null;
+  const canEditHeader = !viewed || !viewed.hasPayment;
+  const isDirty = viewed !== null && JSON.stringify(headerOf(viewed)) !== JSON.stringify(form);
+
+  // "Back": return to the list; unsaved input asks first
+  const handleBack = async () => {
+    if ((!viewed && items.length > 0) || isDirty) {
+      const ok = await confirmDialog(
+        isDirty ? 'Perubahan belum disimpan (Apply  Changes). Kembali ke daftar?' : 'Barang yang sudah diinput belum disimpan. Kembali ke daftar?',
+        { title: 'Penerimaan Barang', confirmText: 'Kembali' },
+      );
+      if (!ok) return;
+    }
+    setIsPrintModalOpen(false);
+    setViewMode('list');
+  };
+
+  // Show a saved receipt in the detail view; resolves true when it loaded
+  const loadReceipt = async (id: number): Promise<boolean> => {
+    setIsLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/purchasing/priced/${id}`);
+      const json = await res.json();
+      if (json.success) {
+        const d = json.data;
+        const numOrNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+        const receipt: ViewedReceipt = {
+          id: Number(d.id),
+          mrNo: d.mr_no || '-',
+          mrDate: d.mr_date && d.mr_date !== '-' ? d.mr_date : getTodayBangkok(),
+          supplierId: d.supplier_id != null ? String(d.supplier_id) : '',
+          supplierName: d.supplier_name || '-',
+          whId: d.wh_id != null ? String(d.wh_id) : '',
+          description: d.description && d.description !== '-' ? d.description : '',
+          paymentType: d.payment_type || 'TEMPO',
+          longTerm: Number(d.long_term || 0),
+          dueDate: d.due_date && d.due_date !== '-' ? d.due_date : '',
+          discPercentage: Number(d.disc_percentage || 0),
+          isMultiDisc: Boolean(d.is_multi_disc),
+          disc2: Number(d.disc2 || 0),
+          disc3: Number(d.disc3 || 0),
+          discValue: numOrNull(d.disc_value),
+          ppnPercentage: Number(d.ppn_percentage || 0),
+          ppnValue: numOrNull(d.tax),
+          grandTotal: numOrNull(d.grand_total),
+          downPayment: numOrNull(d.down_payment),
+          isPaid: Boolean(d.is_paid),
+          hasPayment: Boolean(d.has_payment),
+          items: (d.items || []).map((it: any) => ({
+            inventoryId: String(it.id),
+            stockId: String(it.inventory_id ?? ''),
+            inventoryNo: it.inventory_no || '',
+            inventoryName: it.inventory_name || '-',
+            uomName: it.uom_name || 'PCS',
+            qty: Number(it.qty) || 0,
+            price: numOrNull(it.price),
+            discPercentage: Number(it.disc_percentage || 0),
+            disc2: Number(it.disc2 || 0),
+            disc3: Number(it.disc3 || 0),
+            discRp: numOrNull(it.disc_rp),
+            subtotal: numOrNull(it.subtotal),
+            barcode: it.barcode || '',
+            description: it.description || '',
+          })),
+        };
+        setViewed(receipt);
+        setForm(headerOf(receipt));
+        setPrintLunas(receipt.isPaid);
+        setViewMode('detail');
+        return true;
+      }
+      addToast(json.error?.message || 'Gagal memuat detail penerimaan', 'error');
+    } catch (err) {
+      console.error('Error fetching priced receipt detail:', err);
+      addToast('Gagal memuat detail penerimaan', 'error');
+    } finally {
+      setIsLoadingDetail(false);
+    }
+    return false;
+  };
+
+  // Keyboard shortcuts: Alt+N = New (list view), "/" = focus the barcode input (new receipt)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
       if (e.key === 'Escape') {
         setIsPrintModalOpen(false);
-      } else if (e.key === '/' && viewMode === 'create' && !isInputFocused) {
+      } else if (e.key === '/' && viewMode === 'detail' && !viewed && !isInputFocused) {
         e.preventDefault();
         barcodeInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n' && viewMode === 'list') {
         e.preventDefault();
-        setViewMode('create');
+        handleNew();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode]);
+  });
 
-  // Financial Calculations
-  const rawSubtotal = items.reduce((acc, i) => acc + (i.qty * i.price * (1 - i.discPercentage / 100)), 0);
-  const discValue = rawSubtotal * (discPercentage / 100);
-  const afterDiscSubtotal = rawSubtotal - discValue;
-  const ppnValue = afterDiscSubtotal * (ppnPercentage / 100);
-  const grandTotal = afterDiscSubtotal + ppnValue;
+  const headerPayload = () => ({
+    mrDate: form.mrDate,
+    supplierId: form.supplierId,
+    supplierName: supplierById.get(form.supplierId)?.supplierName || '',
+    whId: form.whId,
+    paymentType: form.paymentType,
+    longTerm: form.paymentType === 'CASH' ? 0 : form.longTerm,
+    downPayment: form.downPayment,
+    discPercentage: form.discPercentage,
+    isMultiDisc: form.isMultiDisc,
+    disc2: form.isMultiDisc ? form.disc2 : 0,
+    disc3: form.isMultiDisc ? form.disc3 : 0,
+    ppnPercentage: form.ppnPercentage,
+    description: form.description,
+  });
 
-  // Handle Submit Receipt Transaction
+  // "Submit Header": save the receipt (adds stock, updates buy price / HPP), then show it
   const handleSubmitReceipt = async () => {
     if (items.length === 0) {
       return addToast('Wajib menginput minimal 1 item barang yang diterima', 'warning');
     }
     // A zero price would overwrite the item's HPP with 0
-    if (items.some((it) => !(it.price > 0))) {
+    if (items.some((it) => !((it.price ?? 0) > 0))) {
       return addToast('Harga beli setiap barang wajib diisi (lebih dari 0)', 'warning');
+    }
+    if (items.some((it) => (it.subtotal ?? 0) < 0)) {
+      return addToast('Diskon barang melebihi harga', 'warning');
     }
     setIsSubmitting(true);
     try {
-      const payload = {
-        mrNo,
-        supplierId: selectedSupplierId,
-        supplierName: selectedSupplierName,
-        poNo,
-        doNo,
-        driverName,
-        vehicleNo,
-        whName,
-        paymentType,
-        dueDate,
-        downPayment,
-        discPercentage,
-        ppnPercentage,
-        description: headerDesc,
-        items,
-      };
-
       const res = await fetch('/api/purchasing/priced', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ mrNo, ...headerPayload(), items: items.map((it) => ({ ...it, inventoryId: it.stockId })) }),
       });
 
       const json = await res.json();
       if (json.success) {
         addToast(json.message, 'success');
-
-        // Prepare print preview modal data
-        setPrintData({
-          header: {
-            id: json.id,
-            mrNo: json.mrNo,
-            mrDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
-            supplierId: selectedSupplierId,
-            supplierName: selectedSupplierName,
-            poNo,
-            doNo,
-            driverName,
-            vehicleNo,
-            whName,
-            paymentType,
-            dueDate,
-            downPayment,
-            discPercentage,
-            discValue,
-            ppnPercentage,
-            ppnValue,
-            grandTotal: json.grandTotal || grandTotal,
-            description: headerDesc,
-            isExpress: false,
-            isVoid: false,
-          },
-          items,
-        });
-
-        // Reset form & return to list mode
-        setMrNo('MR-RCV-' + Math.floor(100000 + Math.random() * 900000));
-        setPoNo('');
-        setDoNo('');
-        setDriverName('');
-        setVehicleNo('');
-        setDownPayment(0);
-        setDiscPercentage(0);
-        setHeaderDesc('');
         setItems([]);
-        setIsPrintModalOpen(true);
-        setViewMode('list');
         reloadReceipts();
+        // Like before: the print voucher opens right after a successful save
+        if (json.id && (await loadReceipt(Number(json.id)))) setIsPrintModalOpen(true);
       } else {
         addToast(`Gagal menyimpan: ${json.error}`, 'error');
       }
@@ -448,625 +563,523 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = fa
     }
   };
 
+  // "Apply  Changes": save the header of the shown receipt (lines, stock and HPP stay as saved)
+  const handleApplyChanges = async () => {
+    if (!viewed) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/purchasing/priced/${viewed.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(headerPayload()),
+      });
+      const json = await res.json();
+      if (json.success) {
+        addToast(json.message || 'Perubahan berhasil disimpan', 'success');
+        reloadReceipts();
+        await loadReceipt(viewed.id);
+      } else {
+        addToast(`Gagal menyimpan: ${json.error?.message || json.error}`, 'error');
+      }
+    } catch (err: unknown) {
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
+  // After "Proses": old MsgBox — continue with a new receipt ("Recreate Invoice") or go back to the list
+  const handleCashPaid = async (message: string) => {
+    setIsCashPaymentOpen(false);
+    addToast(message, 'success');
+    reloadReceipts();
+    if (viewed) await loadReceipt(viewed.id);
+    const next = await confirmDialog('Transaksi telah berhasil dilunasi, apakah anda ingin melanjutkan transaksi penerimaan', {
+      title: 'Transaksi Berhasil',
+      confirmText: 'Ya',
+    });
+    if (next) handleRecreateInvoice();
+    else setViewMode('list');
+  };
+
+  // Old rows may have no stored supplier name; fall back to the supplier master by id
+  const supplierLabel = useCallback(
+    (row: { supplierName: string; supplierId: string }) =>
+      row.supplierName && row.supplierName !== '-' ? row.supplierName : supplierById.get(String(row.supplierId))?.supplierName || '-',
+    [supplierById],
+  );
+
+  // Local sort of the current page (header click)
+  const sortedReceipts = useMemo(() => {
+    if (!sortField) return receiptsList;
+    const val = (r: PricedReceiptHeader): string | number =>
+      sortField === 'grandTotal' ? Number(r.grandTotal ?? 0) : (sortField === 'supplier' ? supplierLabel(r) : String((r as any)[sortField] ?? '')).toLowerCase();
+    return [...receiptsList].sort((a, b) => {
+      const va = val(a);
+      const vb = val(b);
+      const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [receiptsList, sortField, sortOrder, supplierLabel]);
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
+
+  const pageGrandTotal = receiptsList.reduce((sum, r) => sum + Number(r.grandTotal ?? 0), 0);
+
+  // Legacy GV_Header columns; GrandTotal footer sums the rows shown
+  const listColumns: LegacyColumn<PricedReceiptHeader>[] = [
+    { key: 'mrNo', caption: 'MR No', sortKey: 'mrNo' },
+    { key: 'mrDate', caption: 'MR Date', format: 'date', sortKey: 'mrDate' },
+    { key: 'supplier', caption: 'Supplier', sortKey: 'supplier', render: supplierLabel },
+    { key: 'description', caption: 'Keterangan', render: (r) => (r.description === '-' ? '' : r.description) },
+    { key: 'dueDate', caption: 'Jatuh Tempo', sortKey: 'dueDate', render: (r) => (r.paymentType !== 'CASH' && r.dueDate && r.dueDate !== '-' ? fmtDate(r.dueDate) : '') },
+    { key: 'grandTotal', caption: 'GrandTotal', align: 'right', sortKey: 'grandTotal', render: (r) => money(r.grandTotal), footer: money(pageGrandTotal) },
+  ];
+
+  const detailItems = viewed ? viewed.items : items;
+  const numInput = `px-1.5 py-0.5 rounded border text-right tabular-nums outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`;
+  const pctCell = (it: PricedReceiptItem, key: 'discPercentage' | 'disc2' | 'disc3', label: string) =>
+    isViewing ? pctText(it[key]) : (
+      <input type="number" min={0} max={100} step="0.01" value={it[key]} aria-label={`${label} ${it.inventoryName}`}
+        onChange={(e) => updateLine(it.inventoryId, { [key]: Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)) })}
+        className={`w-16 ${numInput}`} />
+    );
+
+  // Legacy GV_Detail columns: Barang | Qty | Harga | Disc 1(%) | Disc 2(%) | Disc 3(%) | Disc (Rp) | Subtotal | Description
+  const detailColumns: LegacyColumn<PricedReceiptItem>[] = [
+    {
+      key: 'inventoryName', caption: 'Barang',
+      render: (it) => <span title={`${it.inventoryNo}${it.barcode ? ` | ${it.barcode}` : ''}`}>{it.inventoryName}</span>,
+    },
+    {
+      key: 'qty', caption: 'Qty', align: 'right', width: 80,
+      render: (it) => isViewing ? fmtN0(it.qty) : (
+        <IntegerCellInput value={it.qty} min={1} label={`Qty ${it.inventoryName}`}
+          onChange={(qty) => updateLine(it.inventoryId, { qty })}
+          className={`w-16 ${numInput}`} />
+      ),
+    },
+    {
+      key: 'price', caption: 'Harga', align: 'right', width: 120,
+      render: (it) => isViewing ? money(it.price) : (
+        <input type="number" min={0} value={it.price ?? 0} aria-label={`Harga ${it.inventoryName}`}
+          onChange={(e) => updateLine(it.inventoryId, { price: parseFloat(e.target.value) || 0 })}
+          className={`w-24 ${numInput}`} />
+      ),
+    },
+    { key: 'discPercentage', caption: 'Disc 1(%)', align: 'right', width: 80, render: (it) => pctCell(it, 'discPercentage', 'Disc 1') },
+    { key: 'disc2', caption: 'Disc 2(%)', align: 'right', width: 80, render: (it) => pctCell(it, 'disc2', 'Disc 2') },
+    { key: 'disc3', caption: 'Disc 3(%)', align: 'right', width: 80, render: (it) => pctCell(it, 'disc3', 'Disc 3') },
+    {
+      key: 'discRp', caption: 'Disc (Rp)', align: 'right', width: 100,
+      render: (it) => isViewing ? money(it.discRp) : (
+        <input type="number" min={0} value={it.discRp ?? 0} aria-label={`Disc (Rp) ${it.inventoryName}`}
+          onChange={(e) => updateLine(it.inventoryId, { discRp: Math.max(0, parseFloat(e.target.value) || 0) })}
+          className={`w-20 ${numInput}`} />
+      ),
+    },
+    {
+      key: 'subtotal', caption: 'Subtotal', align: 'right',
+      // New lines show what the user typed; saved lines follow the server's masking
+      render: (it) => (isViewing ? money(it.subtotal) : fmtN0(it.subtotal ?? 0)),
+    },
+    {
+      key: 'description', caption: 'Description',
+      render: (it) => isViewing ? it.description : (
+        <input type="text" value={it.description} aria-label={`Description ${it.inventoryName}`}
+          onChange={(e) => updateLine(it.inventoryId, { description: e.target.value })}
+          className={`w-full min-w-32 px-1.5 py-0.5 rounded border outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`} />
+      ),
+    },
+  ];
+
+  const detailSupplier = supplierById.get(form.supplierId);
+  const viewedWarehouse = viewed ? warehouses.find((w) => String(w.id) === viewed.whId)?.location || '-' : '';
+  const isCredit = form.paymentType !== 'CASH';
+  const dueDate = dueDateFromTerm(form.mrDate, form.longTerm);
+
+  // Totals: a saved receipt shows its stored amounts until its header is changed; then the preview of "Apply  Changes"
+  const lineSubtotals = detailItems.map((it) => it.subtotal);
+  const subtotal = lineSubtotals.some((v) => v == null) ? null : lineSubtotals.reduce<number>((s, v) => s + (v as number), 0);
+  const computed = subtotal == null ? null : receiptHeaderAmounts({
+    subtotal, disc1: form.discPercentage, isMultiDisc: form.isMultiDisc, disc2: form.disc2, disc3: form.disc3,
+    ppnPercentage: form.ppnPercentage, downPayment: form.downPayment,
+  });
+  const totals = viewed && !isDirty
+    ? {
+        discValue: viewed.discValue,
+        ppnValue: viewed.ppnValue,
+        grandTotal: viewed.grandTotal,
+        balance: viewed.grandTotal == null ? null : viewed.grandTotal - (viewed.downPayment ?? 0),
+      }
+    : computed ?? { discValue: null, ppnValue: null, grandTotal: null, balance: null };
+  // New lines are typed by the user, so they always see their own amounts
+  const shown = (v: number | null | undefined) => (viewed ? money(v) : fmtN0(v ?? 0));
+  const canCashPay = viewed !== null && !viewed.isPaid && !viewed.hasPayment && !isDirty && (viewed.grandTotal == null || viewed.grandTotal - (viewed.downPayment ?? 0) > 0);
+
+  const toastStack = (
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`pointer-events-auto px-4 py-3 rounded shadow-xl border text-xs font-bold flex items-center gap-2.5 ${
+            t.type === 'success'
+              ? 'bg-emerald-700 text-white border-emerald-800'
+              : t.type === 'error'
+              ? 'bg-rose-700 text-white border-rose-800'
+              : t.type === 'warning'
+              ? 'bg-amber-700 text-white border-amber-800'
+              : 'bg-indigo-700 text-white border-indigo-800'
+          }`}
+        >
+          {t.type === 'success' && <CheckCircle className="w-4 h-4 shrink-0" />}
+          {t.type === 'error' && <XCircle className="w-4 h-4 shrink-0" />}
+          {t.type === 'warning' && <AlertTriangle className="w-4 h-4 shrink-0" />}
+          {t.type === 'info' && <Zap className="w-4 h-4 shrink-0" />}
+          <span>{t.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  // The old report always printed today's receipts (its constructor ignored the date passed in)
+  const dailyReport = isDailyReportOpen && (
+    <DailyReportDialog isDark={isDark} date={getTodayBangkok()} variant="summary" onClose={() => setIsDailyReportOpen(false)} />
+  );
+
+  // ---- List view ----
+  if (viewMode === 'list') {
+    return (
+      <LegacyWindow
+        title="Penerimaan Barang"
+        isDark={isDark}
+        toolbar={
+          <>
+            <div className="w-52">
+              <FieldRow label="Date Start" isDark={isDark} labelWidth="w-auto">
+                <LegacyInput isDark={isDark} type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} />
+              </FieldRow>
+            </div>
+            <div className="w-52">
+              <FieldRow label="Date End" isDark={isDark} labelWidth="w-auto">
+                <LegacyInput isDark={isDark} type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} />
+              </FieldRow>
+            </div>
+            <PaidToggle isDark={isDark} checked={showPaid} onChange={setShowPaid} />
+            <LegacyButton isDark={isDark} onClick={() => setIsDailyReportOpen(true)}>Daily Report</LegacyButton>
+            <div className="w-64">
+              <LegacyInput isDark={isDark} placeholder="Search No. MR / Supplier..." value={listSearch} onChange={(e) => setListSearch(e.target.value)} />
+            </div>
+            <LegacyButton isDark={isDark} onClick={reloadReceipts} icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoadingList ? 'animate-spin' : ''}`} />}>
+              Refresh
+            </LegacyButton>
+            <LegacyButton isDark={isDark} variant="primary" onClick={handleNew}>New</LegacyButton>
+          </>
+        }
+      >
+        {toastStack}
+        <LegacyGrid
+          isDark={isDark}
+          columns={listColumns}
+          rows={sortedReceipts}
+          rowKey={(r) => r.id}
+          loading={isLoadingList || isLoadingDetail}
+          emptyText="Tidak ada penerimaan pada rentang tanggal ini."
+          focusedKey={focusedId}
+          onRowClick={(r) => setFocusedId(r.id)}
+          onRowDoubleClick={(r) => loadReceipt(r.id)}
+          sort={sortField ? { key: sortField, order: sortOrder } : null}
+          onSort={handleSort}
+          showFooter
+        />
+        <LegacyPager
+          isDark={isDark}
+          page={page}
+          totalPages={totalPages}
+          total={totalRows}
+          shown={receiptsList.length}
+          onPage={setPage}
+          pageSize={pageSize}
+          onPageSize={setPageSize}
+          unit="nota"
+        />
+        {dailyReport}
+        {confirmDialogEl}
+      </LegacyWindow>
+    );
+  }
+
+  // Supplier / warehouse of a saved receipt may be inactive (not in the lookups); keep it selectable
+  const supplierOptions = viewed && viewed.supplierId && !supplierById.has(viewed.supplierId)
+    ? [{ id: viewed.supplierId, label: viewed.supplierName }, ...suppliersList.map((s) => ({ id: String(s.id), label: `${s.supplierName} (${s.supplierNo})` }))]
+    : suppliersList.map((s) => ({ id: String(s.id), label: `${s.supplierName} (${s.supplierNo})` }));
+  const warehouseOptions = viewed && viewed.whId && !warehouses.some((w) => String(w.id) === viewed.whId)
+    ? [{ id: viewed.whId, label: viewedWarehouse }, ...warehouses.map((w) => ({ id: String(w.id), label: w.location }))]
+    : warehouses.map((w) => ({ id: String(w.id), label: w.location }));
+  const ro = !canEditHeader;
+
+  // ---- Detail view (same window) ----
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
-      {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
-      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`pointer-events-auto px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2.5 animate-in slide-in-from-top-4 fade-in duration-200 ${
-              t.type === 'success'
-                ? isDark ? 'bg-emerald-950/90 border-emerald-800 text-emerald-300' : 'bg-emerald-800 text-white border-emerald-900'
-                : t.type === 'error'
-                ? isDark ? 'bg-rose-950/90 border-rose-800 text-rose-300' : 'bg-rose-800 text-white border-rose-900'
-                : t.type === 'warning'
-                ? isDark ? 'bg-amber-950/90 border-amber-800 text-amber-300' : 'bg-amber-800 text-white border-amber-900'
-                : isDark ? 'bg-indigo-950/90 border-indigo-800 text-indigo-300' : 'bg-indigo-800 text-white border-indigo-900'
-            }`}
-          >
-            {t.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-300 shrink-0" />}
-            {t.type === 'error' && <XCircle className="w-4 h-4 text-rose-300 shrink-0" />}
-            {t.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />}
-            {t.type === 'info' && <Zap className="w-4 h-4 text-indigo-300 shrink-0" />}
-            <span>{t.text}</span>
+    <LegacyWindow title="Penerimaan Barang" isDark={isDark}>
+      {toastStack}
+      <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-auto">
+        {/* Header fields */}
+        <div className={`px-2 py-2 border rounded grid grid-cols-1 lg:grid-cols-3 gap-x-6 gap-y-2 ${c.panel}`}>
+          <div className="flex flex-col gap-2">
+            <FieldRow label="No. Order :" isDark={isDark} labelWidth="w-24">
+              <LegacyInput isDark={isDark} readOnly value={viewed ? viewed.mrNo : mrNo} className="font-mono" />
+            </FieldRow>
+            <FieldRow label="Tanggal :" isDark={isDark} labelWidth="w-24">
+              <LegacyInput isDark={isDark} type="date" readOnly={ro} value={form.mrDate} onChange={(e) => e.target.value && setField('mrDate', e.target.value)} />
+            </FieldRow>
+            <FieldRow label="Keterangan :" isDark={isDark} labelWidth="w-24">
+              <LegacyInput isDark={isDark} readOnly={ro} value={form.description} onChange={(e) => setField('description', e.target.value)} />
+            </FieldRow>
           </div>
-        ))}
-      </div>
+          <div className="flex flex-col gap-2">
+            <FieldRow label="Gudang :" isDark={isDark} labelWidth="w-24">
+              <LegacySelect isDark={isDark} disabled={ro} value={form.whId} onChange={(e) => setField('whId', e.target.value)}>
+                <option value="" disabled>-- Pilih Tujuan Gudang --</option>
+                {warehouseOptions.map((w) => (
+                  <option key={w.id} value={w.id}>{w.label}</option>
+                ))}
+              </LegacySelect>
+            </FieldRow>
+          </div>
+          <div className="flex flex-col gap-2">
+            <FieldRow label="Supplier :" isDark={isDark} labelWidth="w-24">
+              <LegacySelect isDark={isDark} disabled={ro} value={form.supplierId} onChange={(e) => setField('supplierId', e.target.value)}>
+                {supplierOptions.map((sup) => (
+                  <option key={sup.id} value={sup.id}>{sup.label}</option>
+                ))}
+              </LegacySelect>
+              {/* Old supplier lookup "add new" button opened Frm_InputSupplier */}
+              <LegacyButton isDark={isDark} onClick={() => setIsAddSupplierOpen(true)} disabled={ro} title="Tambah Supplier" aria-label="Tambah Supplier"
+                icon={<Plus className="w-3.5 h-3.5" />} className="px-1.5" />
+            </FieldRow>
+            <FieldRow label="Alamat Supp. :" isDark={isDark} labelWidth="w-24">
+              <LegacyInput isDark={isDark} readOnly value={detailSupplier?.address || ''} />
+            </FieldRow>
+            <FieldRow label="Kota Supp. :" isDark={isDark} labelWidth="w-24">
+              <LegacyInput isDark={isDark} readOnly value={detailSupplier?.city || ''} />
+            </FieldRow>
+          </div>
+        </div>
 
-      {/* MAIN TOOLBAR */}
-      <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-end gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        {/* View Switcher & Action Buttons */}
-        <div className="flex items-center gap-2">
-          {viewMode === 'create' ? (
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3.5 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer ${
-                isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
-              }`}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Kembali ke Daftar Faktur</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => setViewMode('create')}
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-lg cursor-pointer active:scale-95"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Input Penerimaan Baru (Alt+N)</span>
-            </button>
+        {/* Old button row: Back | # qty + barcode | Refresh Supplier | Recreate Invoice | Submit Header ... Apply  Changes */}
+        <div className="flex flex-wrap items-center gap-2">
+          <LegacyButton isDark={isDark} onClick={handleBack}>Back</LegacyButton>
+          {!isViewing && (
+            <>
+              <span className={`shrink-0 ${c.muted}`}>#</span>
+              <LegacyInput isDark={isDark} type="number" min={1} value={entryQty} aria-label="Qty"
+                onChange={(e) => setEntryQty(parseInt(e.target.value) || 1)} className="w-16 flex-none text-right" />
+              <div className="relative flex-1 min-w-48">
+                <LegacyInput
+                  ref={barcodeInputRef}
+                  isDark={isDark}
+                  placeholder="Scan Barcode / Cari Barang (SKU/Nama)... [/]"
+                  value={productSearch}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setProductSearch(val);
+                    if (!val.trim()) setSearchResults([]);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleProductSearchEnter();
+                    } else if (e.key === 'Escape') {
+                      setSearchResults([]);
+                    }
+                  }}
+                  className="pr-7"
+                />
+                {isSearchingProduct && (
+                  <RefreshCw className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />
+                )}
+                {searchResults.length > 0 && (
+                  <div className={`absolute left-0 right-0 top-full mt-1 z-40 rounded border shadow-xl max-h-64 overflow-y-auto ${c.panel}`}>
+                    {searchResults.map((prod) => (
+                      <div key={prod.id} onClick={() => handleAddProductToItems(prod)}
+                        className={`px-3 py-1.5 border-b last:border-b-0 cursor-pointer ${c.border} ${c.rowHover}`}>
+                        <div className="font-semibold">{prod.inventoryName}</div>
+                        <div className={`text-[11px] font-mono ${c.muted}`}>
+                          SKU: {prod.inventoryNo}{canViewPrice ? ` | Harga Beli: ${fmtN0(prod.priceBuy || prod.hpp || 0)}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+          <LegacyButton isDark={isDark} onClick={() => setSupplierReloadKey((k) => k + 1)} title="Refresh Supplier" aria-label="Refresh Supplier"
+            icon={<RefreshCw className="w-3.5 h-3.5" />} className="px-1.5" />
+          {isViewing && <LegacyButton isDark={isDark} onClick={handleRecreateInvoice}>Recreate Invoice</LegacyButton>}
+          {!isViewing && (
+            <LegacyButton isDark={isDark} variant="primary" onClick={handleSubmitReceipt} disabled={isSubmitting}>
+              {isSubmitting ? 'Menyimpan...' : 'Submit Header'}
+            </LegacyButton>
+          )}
+          {isViewing && (
+            <LegacyButton isDark={isDark} variant="primary" className="ml-auto whitespace-pre" onClick={handleApplyChanges}
+              disabled={isSubmitting || !isDirty || !canEditHeader}
+              title={canEditHeader ? undefined : 'Nota sudah dibayar (Cash Payment), tidak bisa diubah'}>
+              {isSubmitting ? 'Menyimpan...' : 'Apply  Changes'}
+            </LegacyButton>
+          )}
+        </div>
+
+        <div className="flex-1 min-h-[360px] flex flex-col lg:flex-row gap-2">
+          {/* Items */}
+          <div className="flex-1 min-w-0 min-h-[320px] flex flex-col gap-2">
+            <LegacyGrid
+              isDark={isDark}
+              columns={detailColumns}
+              rows={detailItems}
+              rowKey={(it) => it.inventoryId}
+              loading={isLoadingDetail}
+              emptyText={isViewing ? 'Tidak ada barang.' : 'Belum ada barang diinput. Scan barcode atau cari barang di atas.'}
+              onRowContextMenu={isViewing ? undefined : (it, e) => setItemMenu(menuAt(e, it, 1))}
+            />
+            <span className="font-semibold">{detailItems.length} Jenis</span>
+          </div>
+
+          {/* Right column: payment / discount / PPn group, Cash Payment, totals group ".::." */}
+          <div className="lg:w-[22rem] shrink-0 flex flex-col gap-2">
+            <div className={`px-2 py-2 border rounded flex flex-col gap-2 ${c.panel}`}>
+              <FieldRow label="Pembayaran :" isDark={isDark} labelWidth="w-24">
+                <LegacySelect isDark={isDark} disabled={ro} value={form.paymentType} onChange={(e) => setField('paymentType', e.target.value)}>
+                  <option value="CASH">Cash</option>
+                  <option value="TEMPO">Credit</option>
+                </LegacySelect>
+              </FieldRow>
+              {/* Old LCItem_LongTerm / "Hari" / due date: shown for Credit only */}
+              {isCredit && (
+                <FieldRow label="Lama Termin :" isDark={isDark} labelWidth="w-24">
+                  <IntegerCellInput value={form.longTerm} min={0} label="Lama Termin" disabled={ro}
+                    onChange={(v) => setField('longTerm', v)} className={`w-16 flex-none ${numInput}`} />
+                  <span className="shrink-0">Hari</span>
+                  <LegacyInput isDark={isDark} readOnly aria-label="Jatuh Tempo" value={fmtDate(dueDate)} />
+                </FieldRow>
+              )}
+              <div className="flex items-center gap-2">
+                <label className="w-24 shrink-0 flex items-center justify-end gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={form.isMultiDisc} disabled={ro} onChange={(e) => setField('isMultiDisc', e.target.checked)} />
+                  <span>Multi Disc</span>
+                </label>
+                <LegacyInput isDark={isDark} readOnly aria-label="Diskon (Rp)" className="text-right tabular-nums" value={shown(totals.discValue)} />
+                <span className={`shrink-0 ${c.muted}`}>PPn :</span>
+                <LegacyInput isDark={isDark} type="number" min={0} max={100} readOnly={ro} aria-label="PPn (%)" className="w-14 flex-none text-right"
+                  value={form.ppnPercentage} onChange={(e) => setField('ppnPercentage', Math.max(0, parseFloat(e.target.value) || 0))} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`w-24 shrink-0 text-right ${c.muted}`}>Diskon :</span>
+                <LegacyInput isDark={isDark} type="number" min={0} max={100} readOnly={ro} aria-label="Diskon (%)" className="w-14 flex-none text-right"
+                  value={form.discPercentage} onChange={(e) => setField('discPercentage', Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))} />
+                {/* Disc 2 / Disc 3 count only with Multi Disc */}
+                <LegacyInput isDark={isDark} type="number" min={0} max={100} disabled={ro || !form.isMultiDisc} aria-label="Diskon 2 (%)" className="w-14 flex-none text-right"
+                  value={form.disc2} onChange={(e) => setField('disc2', Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))} />
+                <LegacyInput isDark={isDark} type="number" min={0} max={100} disabled={ro || !form.isMultiDisc} aria-label="Diskon 3 (%)" className="w-14 flex-none text-right"
+                  value={form.disc3} onChange={(e) => setField('disc3', Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))} />
+                <LegacyInput isDark={isDark} readOnly aria-label="PPn (Rp)" className="text-right tabular-nums" value={shown(totals.ppnValue)} />
+              </div>
+            </div>
+
+            {isViewing && (
+              <LegacyButton isDark={isDark} className="w-full justify-center" onClick={() => setIsCashPaymentOpen(true)} disabled={!canCashPay}
+                title={viewed?.isPaid ? 'Nota sudah lunas' : undefined}>
+                Cash Payment
+              </LegacyButton>
+            )}
+
+            <GroupBox caption=".::." isDark={isDark}>
+              <div className="p-2 flex flex-col gap-2">
+                <FieldRow label="Sub Total :" isDark={isDark} labelWidth="w-32">
+                  <LegacyInput isDark={isDark} readOnly className="text-right tabular-nums" value={shown(subtotal)} />
+                </FieldRow>
+                <FieldRow label="Diskon :" isDark={isDark} labelWidth="w-32">
+                  <LegacyInput isDark={isDark} readOnly className="text-right tabular-nums" value={shown(totals.discValue)} />
+                </FieldRow>
+                <FieldRow label="Total Keseluruhan :" isDark={isDark} labelWidth="w-32">
+                  <LegacyInput isDark={isDark} readOnly className="text-right tabular-nums font-bold" value={shown(totals.grandTotal)} />
+                </FieldRow>
+                <FieldRow label="Uang Muka :" isDark={isDark} labelWidth="w-32">
+                  {viewed && !canViewPrice ? (
+                    <LegacyInput isDark={isDark} readOnly aria-label="Uang Muka" className="text-right tabular-nums" value={MASK} />
+                  ) : (
+                    <LegacyInput isDark={isDark} type="number" min={0} readOnly={ro} aria-label="Uang Muka" className="text-right tabular-nums"
+                      value={form.downPayment} onChange={(e) => setField('downPayment', Math.max(0, parseFloat(e.target.value) || 0))} />
+                  )}
+                </FieldRow>
+                <FieldRow label="Saldo Terhutang :" isDark={isDark} labelWidth="w-32">
+                  <LegacyInput isDark={isDark} readOnly className="text-right tabular-nums font-bold" value={shown(totals.balance)} />
+                </FieldRow>
+              </div>
+            </GroupBox>
+          </div>
+        </div>
+
+        {/* Old bottom row: Lihat Stok (left) ... Lunas + Cetak (right) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <LegacyButton isDark={isDark} className="flex-1 max-w-xl justify-center" disabled={detailItems.length === 0}
+            onClick={() => setStockIds(Array.from(new Set(detailItems.map((it) => it.stockId).filter(Boolean))))}>
+            Lihat Stok
+          </LegacyButton>
+          {isViewing && (
+            <div className="ml-auto flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" checked={printLunas} onChange={(e) => setPrintLunas(e.target.checked)} />
+                <span>Lunas</span>
+              </label>
+              <LegacyButton isDark={isDark} onClick={() => setIsPrintModalOpen(true)} icon={<Printer className="w-3.5 h-3.5" />}>Cetak</LegacyButton>
+            </div>
           )}
         </div>
       </div>
 
-      {/* 🟢 MODE 1: DAFTAR TRANSAKSI PENERIMAAN DENGAN HARGA (LIST VIEW) */}
-      {viewMode === 'list' && (
-        <div className="flex-1 overflow-hidden flex flex-col p-4 gap-4">
-          {/* Search & Filter Toolbar */}
-          <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <div className="relative flex-1 max-w-md">
-              <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-              <input
-                type="text"
-                placeholder="Cari No MR / PO / Supplier / Surat Jalan..."
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-                className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              />
-            </div>
-
-            <button
-              onClick={reloadReceipts}
-              className={`p-2 rounded-xl border hover:bg-slate-800 text-slate-400 cursor-pointer ${
-                isDark ? 'border-slate-800' : 'border-slate-300'
-              }`}
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoadingList ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-
-          {/* Main Table Grid of Priced Receipts WORKBENCH */}
-          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <table className="w-full text-left border-separate border-spacing-0 text-xs">
-              <thead className="sticky top-0 z-20">
-                <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                  <th onClick={() => handleSort('mrNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>No MR</span>{sortField === 'mrNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('mrDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal MR</span>{sortField === 'mrDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Supplier Pemasok</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('poNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>No. PO</span>{sortField === 'poNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('dueDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Termin / Due Date</span>{sortField === 'dueDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('grandTotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-end gap-1"><span>Grand Total</span>{sortField === 'grandTotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('isVoid')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isVoid' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th className="py-1.5 px-2 text-center w-28">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                {isLoadingList ? (
-                  <tr>
-                    <td colSpan={8} className="py-24">
-                      <div className="flex flex-col items-center justify-center animate-pulse">
-                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      </div>
-                    </td>
-                  </tr>
-                ) : receiptsList.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                      Belum ada faktur penerimaan barang dengan harga. Klik tombol <strong>&quot;+ Input Penerimaan Baru&quot;</strong> di atas.
-                    </td>
-                  </tr>
-                ) : (
-                  [...receiptsList].sort((a: any, b: any) => {
-                    if (!sortField) return 0;
-                    
-                    let valA = a[sortField];
-                    let valB = b[sortField];
-                    
-                    if (sortField === 'mrNo') { valA = a.mrNo || a.mr_no || ''; valB = b.mrNo || b.mr_no || ''; }
-                    else if (sortField === 'mrDate') { valA = a.mrDate || a.mr_date || ''; valB = b.mrDate || b.mr_date || ''; }
-                    else if (sortField === 'supplierName') { valA = a.supplierName || a.supplier_name || ''; valB = b.supplierName || b.supplier_name || ''; }
-                    else if (sortField === 'poNo') { valA = a.poNo || a.po_no || ''; valB = b.poNo || b.po_no || ''; }
-                    else if (sortField === 'dueDate') { valA = a.paymentType || ''; valB = b.paymentType || ''; }
-                    else if (sortField === 'grandTotal') { valA = a.grandTotal ?? a.totalAmount ?? a.total_amount ?? 0; valB = b.grandTotal ?? b.totalAmount ?? b.total_amount ?? 0; }
-                    else if (sortField === 'isVoid') { valA = a.isVoid ? 1 : 0; valB = b.isVoid ? 1 : 0; }
-
-                    if (typeof valA === 'string') valA = valA.toLowerCase();
-                    if (typeof valB === 'string') valB = valB.toLowerCase();
-                    
-                    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-                    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-                    return 0;
-                  }).map((row: any) => {
-                    const mrNo = row.mrNo || row.mr_no || '-';
-                    const mrDate = row.mrDate || row.mr_date || '-';
-                    const supplier = row.supplierName || row.supplier_name || 'Supplier General';
-                    const poNo = row.poNo || row.po_no || '-';
-                    const payType = row.paymentType || 'CASH';
-                    const grandTotal = row.grandTotal ?? row.totalAmount ?? row.total_amount ?? 0;
-
-                    return (
-                      <tr
-                        key={row.id}
-                        tabIndex={0}
-                        onDoubleClick={() => handleViewReceiptDetail(row.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleViewReceiptDetail(row.id);
-                          }
-                        }}
-                        className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}`}
-                        title="Double-click atau tekan Enter untuk melihat detail"
-                      >
-                        <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
-                        <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
-                        <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
-                        <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
-                        <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{payType}</td>
-                        <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
-                          {formatMoney(Number(grandTotal))}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          {row.isVoid ? (
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                              VOID
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              SELESAI
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleViewReceiptDetail(row.id);
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                              title="Lihat & Cetak Faktur"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                  );
-                })
-              )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {itemMenu && (
+        <ContextMenu
+          isDark={isDark}
+          x={itemMenu.x}
+          y={itemMenu.y}
+          onClose={closeItemMenu}
+          items={[
+            {
+              label: 'Hapus',
+              icon: <Trash2 className="w-3.5 h-3.5" />,
+              danger: true,
+              onClick: () => setItems((prev) => prev.filter((it) => it.inventoryId !== itemMenu.row.inventoryId)),
+            },
+          ]}
+        />
       )}
-
-      {/* 🟠 MODE 2: FORM INPUT TRANSAKSI PENERIMAAN DENGAN HARGA BARU (CREATE VIEW) */}
-      {viewMode === 'create' && (
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Form Header */}
-          <div className={`p-5 border-b shadow-sm ${
-            isDark ? 'bg-slate-800/90 border-slate-700' : 'bg-white border-slate-300'
-          }`}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-bold">
-              <div>
-                <label className="block mb-1 text-amber-400 font-black">No. Bukti MR (Dengan Harga) *</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={mrNo}
-                  className={`w-full p-2.5 rounded-xl border font-mono font-black text-amber-400 focus:outline-none ${
-                    isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Pemasok *</label>
-                <select
-                  value={selectedSupplierId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedSupplierId(id);
-                    const found = suppliersList.find((s) => String(s.id) === String(id));
-                    if (found) setSelectedSupplierName(found.supplierName);
-                  }}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                >
-                  {suppliersList.map((sup) => (
-                    <option key={sup.id} value={sup.id}>
-                      {sup.supplierName} ({sup.supplierNo})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. PO (Purchase Order)</label>
-                <input
-                  type="text"
-                  placeholder="PO-2026-0881"
-                  value={poNo}
-                  onChange={(e) => setPoNo(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Surat Jalan / DO *</label>
-                <input
-                  type="text"
-                  placeholder="DO-8899221"
-                  value={doNo}
-                  onChange={(e) => setDoNo(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Tipe Pembayaran</label>
-                <select
-                  value={paymentType}
-                  onChange={(e) => setPaymentType(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                >
-                  <option value="TEMPO">Credit / Tempo Pembayaran</option>
-                  <option value="CASH">Cash / Tunai Lunas</option>
-                  <option value="TRANSFER">Bank Transfer</option>
-                </select>
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Jatuh Tempo Pembayaran</label>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Sopir / Driver</label>
-                <input
-                  type="text"
-                  placeholder="Bpk. Joko"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Tujuan</label>
-                <input
-                  type="text"
-                  value={whName}
-                  onChange={(e) => setWhName(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Polisi Kendaraan</label>
-                <input
-                  type="text"
-                  placeholder="L 9872 AB"
-                  value={vehicleNo}
-                  onChange={(e) => setVehicleNo(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Barcode Scanner Toolbar */}
-          <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-            isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
-          }`}>
-            <div className="relative flex-1 min-w-[320px] max-w-xl group">
-              <ScanLine className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                isDark ? 'text-amber-400' : 'text-slate-950'
-              }`} />
-              <input
-                ref={barcodeInputRef}
-                type="text"
-                placeholder="Scan Barcode / Cari Barang (SKU/Nama)... [/]"
-                value={productSearch}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setProductSearch(val);
-                  if (!val.trim()) setSearchResults([]);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleProductSearchEnter();
-                  }
-                }}
-                className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
-                }`}
-              />
-              {isSearchingProduct && (
-                <RefreshCw className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-amber-400" />
-              )}
-
-              {/* Search Dropdown Results */}
-              {searchResults.length > 0 && (
-                <div className={`absolute left-0 right-0 top-full mt-1.5 z-40 rounded-2xl border shadow-2xl overflow-hidden max-h-64 overflow-y-auto ${
-                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}>
-                  {searchResults.map((prod) => (
-                    <div
-                      key={prod.id}
-                      onClick={() => handleAddProductToItems(prod)}
-                      className={`p-3 border-b text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                        isDark ? 'hover:bg-slate-800 border-slate-800' : 'hover:bg-slate-100 border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-black text-amber-400">{prod.inventoryName}</div>
-                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo}{canViewPrice ? ` | Harga Beli: Rp ${(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}` : ''}</div>
-                      </div>
-                      <div className="text-right">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[10px]">
-                          + Tambah Item
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-3.5 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
-                  isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-200 hover:bg-slate-300 text-slate-900 border-slate-300'
-                }`}
-              >
-                Batal
-              </button>
-
-              <button
-                onClick={handleSubmitReceipt}
-                disabled={isSubmitting}
-                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-lg cursor-pointer disabled:opacity-50"
-              >
-                <CheckCircle className="w-4 h-4 stroke-[3]" />
-                <span>{isSubmitting ? 'Menyimpan...' : 'Simpan & Update HPP'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Line Items Table & Financial Calculations */}
-          <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
-            <div className={`rounded-2xl border overflow-hidden shadow-lg flex-1 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className={`font-black uppercase tracking-wider ${
-                  isDark ? 'bg-slate-800/90 text-amber-400' : 'bg-slate-200 text-slate-950'
-                }`}>
-                  <tr>
-                    <th className="py-3 px-3.5 text-center w-12">No</th>
-                    <th className="py-3 px-4">Barcode</th>
-                    <th className="py-3 px-4">Kode Barang</th>
-                    <th className="py-3 px-4">Nama Barang</th>
-                    <th className="py-3 px-3 text-center">Satuan</th>
-                    <th className="py-3 px-3 text-center w-24">Qty Masuk *</th>
-                    <th className="py-3 px-4 text-right w-36">Harga Beli (Rp) *</th>
-                    <th className="py-3 px-3 text-center w-24">Diskon %</th>
-                    <th className="py-3 px-4 text-right w-36">Subtotal</th>
-                    <th className="py-3 px-3 text-center w-16">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                  {items.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                        <ScanLine className="w-8 h-8 mx-auto mb-2 text-slate-500 animate-pulse" />
-                        Belum ada barang diinput. Gunakan pencarian barcode di atas untuk menambah barang dengan harga beli.
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((item, idx) => (
-                      <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
-                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
-                        <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
-                        <td className="py-3 px-4 font-black">{item.inventoryName}</td>
-                        <td className="py-3 px-3 text-center font-bold">{item.uomName}</td>
-                        <td className="py-3 px-3 text-center">
-                          <input
-                            type="number"
-                            min={1}
-                            value={item.qty}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 1;
-                              setItems((prev) => prev.map((it, i) => {
-                                if (i !== idx) return it;
-                                const sub = val * it.price * (1 - it.discPercentage / 100);
-                                return { ...it, qty: val, subtotal: sub };
-                              }));
-                            }}
-                            className={`w-16 p-1.5 rounded-lg border font-mono font-black text-center focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-800 border-slate-700 text-emerald-400' : 'bg-slate-100 border-slate-300 text-emerald-700'
-                            }`}
-                          />
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <input
-                            type="number"
-                            min={0}
-                            value={item.price}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setItems((prev) => prev.map((it, i) => {
-                                if (i !== idx) return it;
-                                const sub = it.qty * val * (1 - it.discPercentage / 100);
-                                return { ...it, price: val, subtotal: sub };
-                              }));
-                            }}
-                            className={`w-28 p-1.5 rounded-lg border font-mono font-black text-right focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-800 border-slate-700 text-amber-300' : 'bg-slate-100 border-slate-300 text-amber-700'
-                            }`}
-                          />
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={item.discPercentage}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setItems((prev) => prev.map((it, i) => {
-                                if (i !== idx) return it;
-                                const sub = it.qty * it.price * (1 - val / 100);
-                                return { ...it, discPercentage: val, subtotal: sub };
-                              }));
-                            }}
-                            className={`w-16 p-1.5 rounded-lg border font-mono font-black text-center focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-800 border-slate-700 text-purple-300' : 'bg-slate-100 border-slate-300 text-purple-700'
-                            }`}
-                          />
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-black text-emerald-400">
-                          Rp {item.subtotal.toLocaleString('id-ID')}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
-                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                            title="Hapus item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Financial Footer Card */}
-            <div className={`p-5 rounded-2xl border shadow-xl flex flex-wrap items-center justify-between gap-6 ${
-              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-6 flex-1 text-xs">
-                <div>
-                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Subtotal Item Barang:</div>
-                  <div className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"}`}>Rp {rawSubtotal.toLocaleString('id-ID')}</div>
-                </div>
-
-                <div>
-                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Diskon Faktur (%):</div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={discPercentage}
-                      onChange={(e) => setDiscPercentage(parseFloat(e.target.value) || 0)}
-                      className={`w-16 p-1 rounded-lg border font-mono font-black text-center focus:outline-none ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-amber-400' : 'bg-slate-100 border-slate-300'
-                      }`}
-                    />
-                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(- Rp {discValue.toLocaleString('id-ID')})</span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className={`font-bold mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>PPn Pajak (%):</div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={ppnPercentage}
-                      onChange={(e) => setPpnPercentage(parseFloat(e.target.value) || 0)}
-                      className={`w-16 p-1 rounded-lg border font-mono font-black text-center focus:outline-none ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-purple-400' : 'bg-slate-100 border-slate-300'
-                      }`}
-                    />
-                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>(+ Rp {ppnValue.toLocaleString('id-ID')})</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-right border-l pl-6 border-slate-700">
-                <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Grand Total Tagihan:</div>
-                <div className="text-2xl font-black text-emerald-400 font-mono">
-                  Rp {grandTotal.toLocaleString('id-ID')}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🖨️ PRINTABLE RECEIPT INVOICE MODAL */}
-      {isPrintModalOpen && printData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-4xl ${isDark ? "bg-slate-900 text-slate-100 border-2 border-slate-700" : "bg-white text-slate-900"} rounded-3xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto`}>
-            {/* Action Header */}
-            <div className="flex items-center justify-between pb-6 border-b border-slate-300 print:hidden">
-              <div className="font-black text-slate-800 text-sm flex items-center gap-2">
-                <Printer className="w-4 h-4 text-amber-500" />
-                <span>Nota Bukti Penerimaan Barang & HPP Update</span>
-              </div>
+      {/* Print voucher of the saved receipt (prices masked for non-admins, as the server sends them) */}
+      {isPrintModalOpen && viewed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className={`w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded border shadow-2xl ${c.panel}`}>
+            <div className={`px-4 py-2 border-b flex items-center justify-between gap-2 print:hidden ${c.bar}`}>
+              <span className="font-bold text-sm">Nota Bukti Penerimaan Barang & HPP Update</span>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center gap-2 cursor-pointer"
-                >
-                  <Printer className="w-4 h-4 text-amber-400" />
-                  <span>Cetak Nota Official</span>
-                </button>
-                <button
-                  onClick={() => setIsPrintModalOpen(false)}
-                  className="p-2 rounded-xl hover:bg-slate-200 text-slate-500 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <LegacyButton isDark={isDark} variant="primary" onClick={() => window.print()} icon={<Printer className="w-3.5 h-3.5" />}>
+                  Cetak Nota Official
+                </LegacyButton>
+                <LegacyButton isDark={isDark} onClick={() => setIsPrintModalOpen(false)} aria-label="Tutup" icon={<X className="w-3.5 h-3.5" />} />
               </div>
             </div>
 
-            {/* Printable Voucher Content */}
-            <div className="printable-priced-voucher pt-6 space-y-6 text-xs">
+            <div className="printable-priced-voucher relative p-6 flex flex-col gap-5 text-xs bg-white text-slate-900">
               <style>{`
                 @media print {
                   body {
@@ -1095,80 +1108,86 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = fa
                   }
                 }
               `}</style>
+              {printLunas && (
+                <div className="absolute right-8 top-20 rotate-[-12deg] border-4 border-emerald-700 text-emerald-700 px-4 py-1 text-2xl font-black tracking-widest opacity-80">
+                  LUNAS
+                </div>
+              )}
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-lg font-black tracking-tight text-slate-900">HARMONY KITCHEN ERP</h2>
+                  <h2 className="text-base font-bold">HARMONY KITCHEN ERP</h2>
                   <p className="text-[11px] text-slate-600">FAKTUR PENERIMAAN BARANG DENGAN HARGA (PURCHASING)</p>
                 </div>
                 <div className="text-right font-mono">
-                  <div className="text-base font-black text-amber-600">{printData.header.mrNo}</div>
-                  <div className="text-[11px] text-slate-500">{printData.header.mrDate}</div>
+                  <div className="text-sm font-bold">{viewed.mrNo}</div>
+                  <div className="text-[11px] text-slate-600">{fmtDate(viewed.mrDate)}</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-100 rounded-2xl">
+              <div className="grid grid-cols-2 gap-4 p-3 border border-slate-300 rounded">
                 <div>
-                  <div className="text-[10px] uppercase font-bold text-slate-500">Supplier / Pemasok:</div>
-                  <div className="font-black text-slate-900 text-sm">{printData.header.supplierName}</div>
-                  <div className="text-slate-600">No. PO: {printData.header.poNo || '-'} | Surat Jalan: {printData.header.doNo || '-'}</div>
+                  <div className="text-[10px] font-bold text-slate-500">Supplier :</div>
+                  <div className="font-bold text-sm">{supplierById.get(viewed.supplierId)?.supplierName || viewed.supplierName}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase font-bold text-slate-500">Ketentuan Pembayaran:</div>
-                  <div className="font-bold text-slate-800">Tipe: {printData.header.paymentType} | Jatuh Tempo: {printData.header.dueDate || '-'}</div>
-                  <div className="font-bold text-slate-800">Gudang: {printData.header.whName}</div>
+                  <div className="font-semibold">
+                    Pembayaran : {viewed.paymentType === 'CASH' ? 'Cash' : 'Credit'}
+                    {viewed.paymentType !== 'CASH' && viewed.dueDate ? ` | Jatuh Tempo : ${fmtDate(viewed.dueDate)}` : ''}
+                  </div>
+                  <div className="font-semibold">Gudang : {viewedWarehouse}</div>
                 </div>
               </div>
 
-              {/* Line Items Table */}
-              <table className="w-full text-left border-collapse text-xs border border-slate-300">
-                <thead className="bg-slate-200 font-bold uppercase text-[10px] text-slate-800 border-b border-slate-300">
+              <table className="w-full border-collapse border border-slate-300">
+                <thead className="bg-slate-100 font-bold text-[10px]">
                   <tr>
-                    <th className="p-2 text-center border-r border-slate-300">No</th>
-                    <th className="p-2 border-r border-slate-300">Kode</th>
-                    <th className="p-2 border-r border-slate-300">Nama Barang</th>
-                    <th className="p-2 text-center border-r border-slate-300">Satuan</th>
-                    <th className="p-2 text-center border-r border-slate-300">Qty</th>
-                    <th className="p-2 text-right border-r border-slate-300">Harga Beli</th>
-                    <th className="p-2 text-center border-r border-slate-300">Disc %</th>
-                    <th className="p-2 text-right">Subtotal</th>
+                    <th className="p-1.5 text-center border border-slate-300">No</th>
+                    <th className="p-1.5 text-left border border-slate-300">Kode</th>
+                    <th className="p-1.5 text-left border border-slate-300">Barang</th>
+                    <th className="p-1.5 text-center border border-slate-300">Satuan</th>
+                    <th className="p-1.5 text-right border border-slate-300">Qty</th>
+                    <th className="p-1.5 text-right border border-slate-300">Harga</th>
+                    <th className="p-1.5 text-right border border-slate-300">Disc 1(%)</th>
+                    <th className="p-1.5 text-right border border-slate-300">Disc 2(%)</th>
+                    <th className="p-1.5 text-right border border-slate-300">Disc 3(%)</th>
+                    <th className="p-1.5 text-right border border-slate-300">Disc (Rp)</th>
+                    <th className="p-1.5 text-right border border-slate-300">Subtotal</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-300 font-medium">
-                  {printData.items.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="p-2 text-center border-r border-slate-300 font-mono">{idx + 1}</td>
-                      <td className="p-2 font-mono border-r border-slate-300">{it.inventoryNo || '-'}</td>
-                      <td className="p-2 font-bold border-r border-slate-300">{it.inventoryName}</td>
-                      <td className="p-2 text-center border-r border-slate-300">{it.uomName}</td>
-                      <td className="p-2 text-center font-black border-r border-slate-300">{it.qty}</td>
-                      <td className="p-2 text-right font-mono border-r border-slate-300">{formatMoney(it.price || 0)}</td>
-                      <td className="p-2 text-center border-r border-slate-300">{it.discPercentage ? `${it.discPercentage}%` : '-'}</td>
-                      <td className="p-2 text-right font-mono font-bold">{formatMoney(it.subtotal || 0)}</td>
+                <tbody>
+                  {viewed.items.map((it, idx) => (
+                    <tr key={it.inventoryId}>
+                      <td className="p-1.5 text-center border border-slate-300 font-mono">{idx + 1}</td>
+                      <td className="p-1.5 border border-slate-300 font-mono">{it.inventoryNo || '-'}</td>
+                      <td className="p-1.5 border border-slate-300 font-semibold">{it.inventoryName}</td>
+                      <td className="p-1.5 text-center border border-slate-300">{it.uomName}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums">{fmtN0(it.qty)}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums">{money(it.price)}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums">{it.discPercentage ? `${it.discPercentage}%` : '-'}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums">{it.disc2 ? `${it.disc2}%` : '-'}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums">{it.disc3 ? `${it.disc3}%` : '-'}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums">{it.discRp === 0 ? '-' : money(it.discRp)}</td>
+                      <td className="p-1.5 text-right border border-slate-300 tabular-nums font-semibold">{money(it.subtotal)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
-              {/* Financial Footer Summary */}
-              <div className="flex justify-end pt-2 text-xs font-bold">
-                <div className="w-64 space-y-1.5 border p-4 rounded-xl bg-slate-50">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Diskon Faktur:</span>
-                    <span>{formatMoney(printData.header.discValue || 0)}</span>
+              <div className="flex justify-end">
+                <div className="w-64 flex flex-col gap-1 border border-slate-300 rounded p-3 font-semibold">
+                  <div className="flex justify-between"><span>Diskon :</span><span>{money(viewed.discValue)}</span></div>
+                  <div className="flex justify-between"><span>PPn ({viewed.ppnPercentage}%) :</span><span>{money(viewed.ppnValue)}</span></div>
+                  <div className="flex justify-between pt-1 border-t border-slate-300 text-sm font-bold">
+                    <span>Total Keseluruhan :</span><span>{money(viewed.grandTotal)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>PPn Pajak ({printData.header.ppnPercentage}%):</span>
-                    <span>{formatMoney(printData.header.ppnValue || 0)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-900 font-black text-sm pt-2 border-t border-slate-300">
-                    <span>Grand Total:</span>
-                    <span className="text-amber-600">{formatMoney(printData.header.grandTotal || 0)}</span>
+                  <div className="flex justify-between"><span>Uang Muka :</span><span>{money(viewed.downPayment)}</span></div>
+                  <div className="flex justify-between font-bold">
+                    <span>Saldo Terhutang :</span><span>{money(viewed.grandTotal == null ? null : viewed.grandTotal - (viewed.downPayment ?? 0))}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Signatures Footer */}
-              <div className="grid grid-cols-3 gap-4 pt-12 text-center font-bold text-[11px] text-slate-700">
+              <div className="grid grid-cols-3 gap-4 pt-10 text-center font-bold text-[11px] text-slate-700">
                 <div>
                   <div className="mb-12">Dibuat Oleh (Purchasing)</div>
                   <div className="border-t border-slate-400 pt-1 font-normal">( ........................ )</div>
@@ -1186,6 +1205,34 @@ export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = fa
           </div>
         </div>
       )}
-    </div>
+      {isAddSupplierOpen && (
+        <InputSupplierDialog
+          isDark={isDark}
+          onClose={() => setIsAddSupplierOpen(false)}
+          onError={(msg) => addToast(msg, 'error')}
+          onSaved={(sup) => {
+            setIsAddSupplierOpen(false);
+            addToast('Success On Save Supplier', 'success');
+            setField('supplierId', String(sup.id));
+            setSupplierReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+      {isCashPaymentOpen && viewed && (
+        <CashPaymentDialog
+          isDark={isDark}
+          receiptId={viewed.id}
+          mrNo={viewed.mrNo}
+          mrDate={fmtDate(viewed.mrDate)}
+          supplierName={supplierById.get(viewed.supplierId)?.supplierName || viewed.supplierName}
+          balance={canViewPrice && viewed.grandTotal != null ? viewed.grandTotal - (viewed.downPayment ?? 0) : null}
+          onClose={() => setIsCashPaymentOpen(false)}
+          onPaid={handleCashPaid}
+          onError={(msg) => addToast(msg, 'error')}
+        />
+      )}
+      {stockIds && <StockDialog isDark={isDark} inventoryIds={stockIds} onClose={() => setStockIds(null)} />}
+      {confirmDialogEl}
+    </LegacyWindow>
   );
 }

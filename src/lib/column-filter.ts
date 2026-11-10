@@ -1,4 +1,4 @@
-import { parseBangkokStartOfDay, parseBangkokEndOfDay } from './date-utils';
+import { parseBangkokStartOfDay, parseBangkokEndOfDay, dateColumnDay } from './date-utils';
 
 export interface ColumnFilterConfig {
   whitelist: string[];
@@ -8,6 +8,7 @@ export interface ColumnFilterConfig {
   numericRangeFields?: string[]; // will look for min_field, max_field or field
   booleanFields?: string[];
   dateRangeFields?: string[]; // will look for start_field, end_field, or field
+  dateOnlyFields?: string[]; // like dateRangeFields, for Postgres DATE columns: compared by calendar day, not +07:00 instants
   containsFields?: string[];
 }
 
@@ -40,7 +41,8 @@ export function parseColumnFilters(
   const numberSet = new Set(config.numberFields || []);
   const numericRangeSet = new Set(config.numericRangeFields || []);
   const booleanSet = new Set(config.booleanFields || []);
-  const dateRangeSet = new Set(config.dateRangeFields || []);
+  const dateOnlySet = new Set(config.dateOnlyFields || []);
+  const dateRangeSet = new Set([...(config.dateRangeFields || []), ...dateOnlySet]);
   const containsSet = new Set(config.containsFields || []);
 
   // Handled keys set to prevent processing subkeys twice
@@ -83,6 +85,21 @@ export function parseColumnFilters(
       const startVal = searchParams.get(`start_${baseField}`) || (key === `start_${baseField}` ? trimmed : null);
       const endVal = searchParams.get(`end_${baseField}`) || (key === `end_${baseField}` ? trimmed : null);
       const exactVal = searchParams.get(baseField);
+
+      // A DATE column holds UTC midnight; a +07:00 start instant would also match the previous day
+      if (dateOnlySet.has(baseField)) {
+        const start = dateColumnDay(startVal);
+        const end = dateColumnDay(endVal);
+        const exact = dateColumnDay(exactVal);
+        if (start || end) {
+          where[baseField] = {};
+          if (start) where[baseField].gte = start;
+          if (end) where[baseField].lte = end;
+        } else if (exact) {
+          where[baseField] = exact;
+        }
+        return;
+      }
 
       if (startVal || endVal) {
         where[baseField] = {};

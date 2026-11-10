@@ -74,7 +74,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const subtotal = lineTotal + lineDisc;
     // Same amounts as the reports: legacy net = transactionvalue minus the bill discount (voucher + discount)
     const legacyPayments = isLegacySale(header) ? payments : [];
-    const billDisc = legacyPayments.reduce((acc: number, p: any) => acc + Number(p.voucher || 0) + Number(p.discount || 0), 0);
+    // New POS: the payment row holds the whole bill discount (member + voucher + manual)
+    const billDisc = isLegacySale(header)
+      ? legacyPayments.reduce((acc: number, p: any) => acc + Number(p.voucher || 0) + Number(p.discount || 0), 0)
+      : payments.length > 0 ? Number(payments[0].discount || 0) : Number(header.manualdiscountamount || 0);
     const discValue = lineDisc + billDisc;
     const grandTotal = normalizeSale(header, details, legacyPayments).net;
     const pay = payments[0];
@@ -93,6 +96,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         id: String(header.id),
         invoiceNo: header.salesposno,
         salesposdate: header.salesposdate,
+        createdAt: header.createddate,
         invoiceDate: txDate,
         transactionDate: txDate,
         customerName: header.customername || 'Pelanggan Umum',
@@ -223,7 +227,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id: headerId, isvoid: false },
           data: {
             isvoid: true,
-            status: 'VOID',
+            // Legacy sales are recognised by status = null; keep it so their amounts still come from t_salespayment
+            ...(isLegacySale(existingHeader) ? {} : { status: 'VOID' }),
             modifieduser: actor,
             modifieddate: new Date(),
           },
@@ -299,7 +304,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           where: { id: headerId, isvoid: true },
           data: {
             isvoid: false,
-            status: 'COMPLETED',
+            ...(isLegacySale(existingHeader) ? {} : { status: 'COMPLETED' }),
             modifieduser: actor,
             modifieddate: new Date(),
           },

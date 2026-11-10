@@ -2,12 +2,15 @@
  * Minimal barcode encoders for the label printer (no dependency).
  * Output is a string of modules, '1' = bar and '0' = space, each one module wide.
  * Symbology: EAN-13 / EAN-8 only for values that already are valid EAN codes (nearly all items),
- * Code 128-B for anything else, so a scan always returns exactly the stored value.
+ * Code 128 for anything else (subset C for digit strings, B otherwise), so a scan always returns
+ * exactly the stored value.
  */
 
 export interface EncodedBarcode {
   modules: string;
   symbology: 'EAN13' | 'EAN8' | 'CODE128';
+  /** Blank modules to leave on each side: 11 for EAN, 10 for Code 128. */
+  quietZone: number;
   /** Text printed under the bars (always the stored value). */
   text: string;
 }
@@ -69,12 +72,32 @@ function widthsToModules(widths: string): string {
   return m;
 }
 
+const C128_START_B = 104;
+const C128_START_C = 105;
+const C128_CODE_B = 100;
+const C128_STOP = 106;
+
+/** Code 128 symbol values -> modules, with the mod-103 checksum and the stop pattern appended. */
+function code128Modules(values: number[]): string {
+  const checksum = values.reduce((sum, v, i) => sum + v * (i === 0 ? 1 : i), 0) % 103;
+  return [...values, checksum, C128_STOP].map((v) => widthsToModules(C128[v])).join('');
+}
+
 /** Code 128 subset B (printable ASCII 32..126). */
 function encodeCode128B(text: string): string {
-  const START_B = 104;
-  const values = [START_B, ...Array.from(text).map((ch) => ch.charCodeAt(0) - 32)];
-  const checksum = values.reduce((sum, v, i) => sum + v * (i === 0 ? 1 : i), 0) % 103;
-  return [...values, checksum, 106].map((v) => widthsToModules(C128[v])).join('');
+  return code128Modules([C128_START_B, ...Array.from(text).map((ch) => ch.charCodeAt(0) - 32)]);
+}
+
+/**
+ * Code 128 subset C: two digits per symbol, so long digit strings get about half as many (wider) bars as B.
+ * An odd last digit is sent after CODE B as a B character.
+ */
+function encodeCode128C(digits: string): string {
+  const values = [C128_START_C];
+  const even = digits.length - (digits.length % 2);
+  for (let i = 0; i < even; i += 2) values.push(Number(digits.slice(i, i + 2)));
+  if (even < digits.length) values.push(C128_CODE_B, digits.charCodeAt(even) - 32);
+  return code128Modules(values);
 }
 
 /** Encodes a stored barcode value; null when there is nothing printable to encode. */
@@ -83,13 +106,16 @@ export function encodeBarcode(raw: string | null | undefined): EncodedBarcode | 
   if (!value) return null;
 
   if (/^\d{13}$/.test(value) && eanCheckDigit(value.slice(0, 12)) === Number(value[12])) {
-    return { modules: encodeEan13(value.slice(0, 12)), symbology: 'EAN13', text: value };
+    return { modules: encodeEan13(value.slice(0, 12)), symbology: 'EAN13', quietZone: 11, text: value };
   }
   if (/^\d{8}$/.test(value) && eanCheckDigit(value.slice(0, 7)) === Number(value[7])) {
-    return { modules: encodeEan8(value.slice(0, 7)), symbology: 'EAN8', text: value };
+    return { modules: encodeEan8(value.slice(0, 7)), symbology: 'EAN8', quietZone: 11, text: value };
+  }
+  if (/^\d{2,}$/.test(value)) {
+    return { modules: encodeCode128C(value), symbology: 'CODE128', quietZone: 10, text: value };
   }
   if (/^[\x20-\x7e]+$/.test(value)) {
-    return { modules: encodeCode128B(value), symbology: 'CODE128', text: value };
+    return { modules: encodeCode128B(value), symbology: 'CODE128', quietZone: 10, text: value };
   }
   return null;
 }

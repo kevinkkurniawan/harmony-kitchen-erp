@@ -1,29 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Printer,
-  Search,
-  Plus,
-  Trash2,
-  RefreshCw,
-  CheckCircle,
-  XCircle,
-  AlertTriangle,
-  Zap,
-  ArrowLeft,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { createPortal, flushSync } from 'react-dom';
+import { Printer, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Zap, ArrowLeft } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
 import { searchInventory, lookupInventoryByScan } from '@/lib/inventory-lookup';
 import { encodeBarcode } from '@/lib/barcode';
+import {
+  LegacyWindow, LegacyButton, GroupBox, FieldRow, LegacyInput, LegacyGrid, ContextMenu, menuAt, lx, fmtN0,
+  type LegacyColumn, type ContextMenuState,
+} from '@/components/legacy';
 
 /** Real scannable bars for a stored barcode value, drawn as SVG (one unit = one module). */
-function BarcodeBars({ value, height }: { value: string; height: string }) {
+export function BarcodeBars({ value, height }: { value: string; height: string }) {
   const encoded = encodeBarcode(value);
   if (!encoded) return <div style={{ height }} />;
-  // Quiet zone of 10 modules each side so scanners find the start/stop patterns
-  const quiet = 10;
+  // Blank quiet zone each side (11 modules EAN, 10 Code 128) so scanners find the start/stop patterns
+  const quiet = encoded.quietZone;
   const total = encoded.modules.length + quiet * 2;
   return (
     <svg
@@ -42,10 +36,17 @@ function BarcodeBars({ value, height }: { value: string; height: string }) {
   );
 }
 
+/** One row of the saved print list (GET /api/barcode-list, table m_invprintbarcode). */
 interface BarcodeQueueItem {
-  product: ERPProduct;
-  printQty: number;
+  inventoryId: number;
+  barcode: string;
+  inventoryNo: string;
+  inventoryName: string;
+  price: number;
+  qty: number;
 }
+
+type LabelItem = Pick<BarcodeQueueItem, 'barcode' | 'inventoryNo' | 'inventoryName' | 'price'>;
 
 interface ToastMessage {
   id: string;
@@ -58,22 +59,82 @@ interface BarcodePrintManagerProps {
   onBack?: () => void;
 }
 
+// "Print A4" = old Rpt_PrintOpname: A4, margins 10.85 / 11.1 / 9.2 / 10.6 mm (top/right/bottom/left), 3 columns
+// across then down, 24.08 mm rows: Code 128 bars 58.2 x 12.96 mm with the value under them, then the name (Lato 10).
+// Pages are cut by hand (11 rows x 3 fit the 276.95 mm between the margins) so every page has the same grid.
+const A4_LABELS_PER_PAGE = 33;
+const A4_PRINT_CSS = `
+  @media print {
+    @page { size: A4; margin: 0; }
+    body { display: block !important; background: white !important; color: black !important; margin: 0 !important; padding: 0 !important; }
+    body > :not(#print-label-area) { display: none !important; }
+    #print-label-area { display: block !important; margin: 0 !important; padding: 0 !important; }
+  }
+`;
+
+/** Old Rpt_PrintOpname sheet: one cell per label (qty copies of each list row). */
+function A4LabelSheet({ labels }: { labels: LabelItem[] }) {
+  const pages: LabelItem[][] = [];
+  for (let i = 0; i < labels.length; i += A4_LABELS_PER_PAGE) pages.push(labels.slice(i, i + A4_LABELS_PER_PAGE));
+  return (
+    <>
+      {pages.map((page, pageIdx) => (
+        <div
+          key={pageIdx}
+          className="a4-page bg-white text-black"
+          style={{
+            width: '210mm', height: '296mm', boxSizing: 'border-box', padding: '10.85mm 11.1mm 9.2mm 10.6mm',
+            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridAutoRows: '24.08mm', alignContent: 'start',
+            overflow: 'hidden', breakAfter: pageIdx < pages.length - 1 ? 'page' : 'auto',
+          }}
+        >
+          {page.map((label, idx) => {
+            const value = label.barcode || label.inventoryNo;
+            return (
+              <div key={idx} className="a4-label" style={{ paddingLeft: '2.42mm', overflow: 'hidden' }}>
+                <div style={{ width: '58.2mm', height: '12.96mm', padding: '0 2.6mm', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <BarcodeBars value={value} height="8.8mm" />
+                  <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '9pt', lineHeight: 1.2 }}>{value}</div>
+                </div>
+                <div style={{ width: '58.2mm', height: '6.35mm', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontFamily: 'Lato, Arial, sans-serif', fontSize: '10pt', lineHeight: 1.1, textAlign: 'center' }}>
+                  {label.inventoryName}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+}
+
+const STORE_NAME = 'HARMONY KITCHEN';
+const noopSubscribe = () => () => {};
+const LABEL_SIZE = '108x18-3col';
+
+/** Old ".: Barcode Print List :." panel of Master_Data.Frm_InvList: list Barcode | Inventory No | Qty and the print buttons. */
 export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintManagerProps) {
+  const c = lx(isDark);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [searchResults, setSearchResults] = useState<ERPProduct[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Queue of labels to print
+  // Labels to print: the saved list, shared by every user like the old app
   const [queue, setQueue] = useState<BarcodeQueueItem[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(true);
+  // Qty last saved per item, so leaving an unchanged Qty cell does not write
+  const savedQtyRef = useRef<Map<number, number>>(new Map());
+  const [rowMenu, setRowMenu] = useState<ContextMenuState<BarcodeQueueItem> | null>(null);
 
-  // Print settings
+  // Set by the clicked print button right before window.print()
   const [includePrice, setIncludePrice] = useState<boolean>(true);
+  const [printLayout, setPrintLayout] = useState<'roll' | 'a4'>('roll');
   const [includeStoreName, setIncludeStoreName] = useState<boolean>(true);
-  const [storeName, setStoreName] = useState<string>('HARMONY KITCHEN');
-  const [labelSize] = useState<string>('108x18-3col');
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  // true only in the browser: the print area is portaled into <body>, which the server render does not have
+  const canPortal = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
@@ -84,15 +145,11 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     }, 3500);
   }, []);
 
-  // Fetch search products (request-id guard drops out-of-order responses)
+  // Search products (request-id guard drops out-of-order responses); an empty query just hides the results
   const searchReqIdRef = useRef(0);
   useEffect(() => {
     const reqId = ++searchReqIdRef.current;
-    if (!debouncedSearch.trim()) {
-      setSearchResults([]);
-      setIsSearching(false);
-      return;
-    }
+    if (!debouncedSearch.trim()) return;
     async function search() {
       setIsSearching(true);
       const { items, error } = await searchInventory(debouncedSearch, 20);
@@ -103,18 +160,53 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     }
     search();
   }, [debouncedSearch, addToast]);
+  const visibleResults = searchQuery.trim() && debouncedSearch.trim() ? searchResults : [];
 
-  const handleAddToQueue = (product: ERPProduct, qty = 1) => {
-    setQueue((prev) => {
-      const idx = prev.findIndex((item) => item.product.id === product.id);
-      if (idx > -1) {
-        const updated = [...prev];
-        updated[idx] = { ...updated[idx], printQty: updated[idx].printQty + qty };
-        return updated;
-      }
-      return [...prev, { product, printQty: qty }];
-    });
-    addToast(`"${product.inventoryName}" ditambahkan ke antrian cetak (${qty} pcs)`, 'info');
+  // Clearing the box drops the in-flight search, its results and the spinner (the effect skips empty queries)
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (!value.trim()) {
+      searchReqIdRef.current++;
+      setSearchResults([]);
+      setIsSearching(false);
+    }
+  };
+
+  // Reload the saved list; a request-id guard keeps an older response from overwriting a newer one
+  const listReqIdRef = useRef(0);
+  const loadList = useCallback(async () => {
+    const reqId = ++listReqIdRef.current;
+    try {
+      const json = await fetch('/api/barcode-list').then((r) => r.json());
+      if (reqId !== listReqIdRef.current) return;
+      if (!json.success) throw new Error(json.error?.message || 'Gagal memuat list barcode');
+      const rows: BarcodeQueueItem[] = json.data;
+      savedQtyRef.current = new Map(rows.map((r) => [r.inventoryId, r.qty]));
+      setQueue(rows);
+    } catch (e: unknown) {
+      if (reqId === listReqIdRef.current) addToast(e instanceof Error ? e.message : 'Gagal memuat list barcode', 'error');
+    } finally {
+      if (reqId === listReqIdRef.current) setIsLoadingList(false);
+    }
+  }, [addToast]);
+
+  useEffect(() => {
+    loadList();
+  }, [loadList]);
+
+  const handleAddToQueue = async (product: ERPProduct, qty = 1) => {
+    try {
+      const json = await fetch('/api/barcode-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inventoryId: Number(product.id), qty }),
+      }).then((r) => r.json());
+      if (!json.success) throw new Error(json.error?.message || json.error || 'Perintah Masukan Gagal');
+      addToast(`"${product.inventoryName}" ditambahkan ke list barcode (${qty} pcs)`, 'info');
+    } catch (e: unknown) {
+      addToast(`Perintah Masukan Gagal: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+    await loadList();
   };
 
   const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -133,7 +225,7 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
       if (error) {
         addToast(error, 'error');
       } else if (item) {
-        handleAddToQueue(item, 1);
+        await handleAddToQueue(item, 1);
       } else {
         addToast(`Barang tidak ditemukan: ${raw}`, 'warning');
       }
@@ -142,22 +234,52 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     }
   };
 
-  const handleUpdateQty = (productId: string, newQty: number) => {
+  // Typing changes the labels at once; the qty is saved when the cell is left (old GV_Barcode_ValidateRow)
+  const handleUpdateQty = (inventoryId: number, newQty: number) => {
     const clampedQty = Math.max(1, Math.min(999, isNaN(newQty) ? 1 : newQty));
-    setQueue((prev) =>
-      prev.map((item) => (item.product.id === productId ? { ...item, printQty: clampedQty } : item))
-    );
+    setQueue((prev) => prev.map((item) => (item.inventoryId === inventoryId ? { ...item, qty: clampedQty } : item)));
   };
 
-  const handleRemoveFromQueue = (productId: string) => {
-    setQueue((prev) => prev.filter((item) => item.product.id !== productId));
+  const handleSaveQty = async (item: BarcodeQueueItem) => {
+    if (savedQtyRef.current.get(item.inventoryId) === item.qty) return;
+    try {
+      const json = await fetch('/api/barcode-list', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inventoryId: item.inventoryId, qty: item.qty }),
+      }).then((r) => r.json());
+      if (!json.success) throw new Error(json.error?.message || 'Gagal menyimpan qty');
+      savedQtyRef.current.set(item.inventoryId, item.qty);
+    } catch (e: unknown) {
+      addToast(e instanceof Error ? e.message : 'Gagal menyimpan qty', 'error');
+      await loadList();
+    }
   };
 
-  const totalLabels = queue.reduce((sum, item) => sum + item.printQty, 0);
+  // Old "Delete Row" (sp_MDInventory_PrintBarcodeDelList) and "Hapus Data List Barcode" (sp_MDInventory_PrintBarcodeDelAll)
+  const deleteFromList = async (query: string, successText: string) => {
+    try {
+      const json = await fetch(`/api/barcode-list?${query}`, { method: 'DELETE' }).then((r) => r.json());
+      if (!json.success) throw new Error(json.error?.message || 'Perintah Hapus Gagal');
+      addToast(`Perintah Hapus Berhasil: ${successText}`, 'success');
+    } catch (e: unknown) {
+      addToast(`Perintah Hapus Gagal: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+    await loadList();
+  };
 
-  const handlePrint = async () => {
+  const handleRemoveFromQueue = (item: BarcodeQueueItem) =>
+    deleteFromList(`inventoryId=${item.inventoryId}`, `${item.inventoryName} DIHAPUS`);
+
+  const handleDeleteAll = () => deleteFromList('all=1', 'Menghapus Semua Daftar Antrian Cetak Barcode');
+
+  const totalLabels = queue.reduce((sum, item) => sum + item.qty, 0);
+
+  // The two roll buttons print the same labels ("w/o Price" hides the price line); "Print A4" is the old
+  // Rpt_PrintOpname sheet of the same list
+  const handlePrint = async (withPrice: boolean, layout: 'roll' | 'a4' = 'roll') => {
     if (queue.length === 0) {
-      addToast('Antrian cetak kosong. Tambahkan barang terlebih dahulu.', 'warning');
+      addToast('List barcode kosong. Tambahkan barang terlebih dahulu.', 'warning');
       return;
     }
 
@@ -166,10 +288,13 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: queue,
+          items: queue.map((item) => ({
+            product: { id: String(item.inventoryId), barcode: item.barcode, inventoryName: item.inventoryName },
+            printQty: item.qty,
+          })),
           totalLabels,
-          labelSize,
-          includePrice,
+          labelSize: layout === 'a4' ? 'A4-3col' : LABEL_SIZE,
+          includePrice: withPrice,
         }),
       });
       const json = await res.json();
@@ -177,24 +302,29 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         addToast(json.error?.message || json.error || 'Izin cetak barcode ditolak.', 'error');
         return;
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Error logging barcode print audit:', e);
     }
 
+    // Render the print area with the chosen layout / price setting before the print dialog snapshots it
+    flushSync(() => {
+      setIncludePrice(withPrice);
+      setPrintLayout(layout);
+    });
     window.print();
   };
 
-  // Generate flattened array of individual labels for print rendering
-  const flattenedLabels: ERPProduct[] = [];
+  // One label per qty, in list order (old sp_MDInventory_PrintBarcodeListLabel)
+  const flattenedLabels: LabelItem[] = [];
   queue.forEach((item) => {
-    for (let i = 0; i < item.printQty; i++) {
-      flattenedLabels.push(item.product);
+    for (let i = 0; i < item.qty; i++) {
+      flattenedLabels.push(item);
     }
   });
 
   // Group flattened labels into 3-column rows (AcrossThenDown: Col 1 -> Col 2 -> Col 3)
   // Matches legacy Rpt_LabelBarcodePrice (PageWidth=1080 [108mm], ColumnCount=3, ColumnWidth=360 [36mm], Height=182 [18.2mm])
-  const labelRows: (ERPProduct | null)[][] = [];
+  const labelRows: (LabelItem | null)[][] = [];
   for (let i = 0; i < flattenedLabels.length; i += 3) {
     labelRows.push([
       flattenedLabels[i] || null,
@@ -203,10 +333,95 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
     ]);
   }
 
+  const columns: LegacyColumn<BarcodeQueueItem>[] = [
+    { key: 'barcode', caption: 'Barcode' },
+    {
+      // The old SP aliased the item name as "InventoryNo", so this column showed names; the No. Barang is the tooltip
+      key: 'inventoryNo', caption: 'Inventory No',
+      render: (item) => <span title={item.inventoryNo}>{item.inventoryName}</span>,
+    },
+    {
+      key: 'qty', caption: 'Qty', align: 'right', width: 80,
+      render: (item) => (
+        <input
+          type="number"
+          min={1}
+          max={999}
+          aria-label="Qty"
+          value={item.qty}
+          onChange={(e) => {
+            const val = parseInt(e.target.value, 10);
+            if (!isNaN(val)) handleUpdateQty(item.inventoryId, val);
+          }}
+          onBlur={() => handleSaveQty(item)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          className={`w-16 px-1 py-0.5 rounded border text-right tabular-nums outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`}
+        />
+      ),
+    },
+  ];
+
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
+
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-950'}`}>
+    <LegacyWindow
+      title="Cetak Barcode"
+      isDark={isDark}
+      toolbar={
+        <>
+          {onBack && (
+            <LegacyButton isDark={isDark} icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={onBack} className="print:hidden">Back</LegacyButton>
+          )}
+          <div className="relative w-full max-w-md print:hidden">
+            <FieldRow label="Cari Barang :" isDark={isDark} labelWidth="w-auto">
+              <LegacyInput
+                ref={searchInputRef}
+                isDark={isDark}
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Scan barcode / ketik No. Barang / Nama..."
+              />
+              {isSearching && <RefreshCw className="w-3.5 h-3.5 shrink-0 text-blue-500 animate-spin" />}
+            </FieldRow>
+
+            {/* Search results: click to add to the list */}
+            {visibleResults.length > 0 ? (
+              <div className={`absolute left-0 right-0 top-full mt-1 z-40 max-h-64 overflow-y-auto rounded border shadow-xl divide-y ${c.panel} ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
+                {visibleResults.map((p) => (
+                  <button
+                    type="button"
+                    key={p.id}
+                    onClick={() => {
+                      handleAddToQueue(p, 1);
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }}
+                    className={`w-full px-2 py-1.5 flex items-center justify-between gap-2 text-left cursor-pointer ${c.rowHover}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block font-semibold truncate">{p.inventoryName}</span>
+                      <span className={`block font-mono text-[10px] ${c.muted}`}>{p.inventoryNo} | {p.barcode}</span>
+                    </span>
+                    <span className="shrink-0 tabular-nums">Rp {fmtN0(p.price || 0)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              debouncedSearch.trim() && searchQuery.trim() && !isSearching && (
+                <div className={`absolute left-0 right-0 top-full mt-1 z-40 px-2 py-2 rounded border shadow ${c.panel} ${c.muted}`}>
+                  Barang tidak ditemukan untuk kata kunci &ldquo;{debouncedSearch}&rdquo;.
+                </div>
+              )
+            )}
+          </div>
+        </>
+      }
+    >
       {/* 🔔 FLOATING TOASTS */}
-      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none print:hidden">
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -229,29 +444,26 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         ))}
       </div>
 
-      {/* 🖨️ PRINT CSS STYLES FOR 3-COLUMN THERMAL ROLL (108mm width = 3 x 36mm columns, 18.2mm row height) */}
-      <style>{`
+      {/* 🖨️ PRINT CSS: 3-column thermal roll (108mm = 3 x 36mm, 18.2mm rows) or the A4 sheet of "Print A4" */}
+      <style>{printLayout === 'a4' ? A4_PRINT_CSS : `
         @media print {
           @page {
             size: 108mm 18.2mm;
             margin: 0;
           }
           body {
+            display: block !important;
             background: white !important;
             color: black !important;
             margin: 0 !important;
             padding: 0 !important;
           }
-          body * {
-            visibility: hidden !important;
-          }
-          #print-label-area, #print-label-area * {
-            visibility: visible !important;
+          /* The label area is a direct child of <body>; the app layout around it would offset / clip it */
+          body > :not(#print-label-area) {
+            display: none !important;
           }
           #print-label-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+            display: block !important;
             width: 108mm !important;
             margin: 0 !important;
             padding: 0 !important;
@@ -284,349 +496,93 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         }
       `}</style>
 
-      {/* HEADER TOOLBAR */}
-      <div className={`px-5 py-3 border-b flex items-center justify-between gap-3 shadow-sm print:hidden ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button
-              onClick={onBack}
-              className="p-1.5 rounded-xl border border-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
+      <GroupBox caption=".: Barcode Print List :." isDark={isDark} className="flex-1 w-full max-w-4xl print:hidden">
+        <div className="flex-1 min-h-[240px] flex flex-col">
+          <LegacyGrid
+            isDark={isDark}
+            columns={columns}
+            rows={queue}
+            rowKey={(item) => item.inventoryId}
+            loading={isLoadingList}
+            emptyText="List barcode kosong. Scan atau cari barang untuk menambahkan."
+            onRowContextMenu={(item, e) => setRowMenu(menuAt(e, item, 1))}
+          />
         </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includePrice}
-              onChange={(e) => setIncludePrice(e.target.checked)}
-              className="accent-indigo-500 rounded cursor-pointer"
-            />
-            <span>Sertakan Harga</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 text-xs font-bold cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeStoreName}
-              onChange={(e) => setIncludeStoreName(e.target.checked)}
-              className="accent-indigo-500 rounded cursor-pointer"
-            />
-            <span>Header Toko</span>
-          </label>
-
-          <button
-            onClick={() => setQueue([])}
-            disabled={queue.length === 0}
-            className="px-3 py-1.5 rounded-xl border border-rose-400 text-rose-600 text-xs font-black hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-40 cursor-pointer transition-all"
-          >
-            Kosongkan Antrian
-          </button>
-
-          <button
-            onClick={handlePrint}
-            disabled={queue.length === 0}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs shadow-md flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Cetak {totalLabels} Label ({labelRows.length} Baris)</span>
-          </button>
+        <LegacyButton isDark={isDark} icon={<Trash2 className="w-3.5 h-3.5" />} onClick={handleDeleteAll} disabled={queue.length === 0} className="justify-center">
+          Hapus Data List Barcode
+        </LegacyButton>
+        <LegacyButton isDark={isDark} icon={<Printer className="w-3.5 h-3.5" />} onClick={() => handlePrint(false, 'a4')} disabled={queue.length === 0} className="justify-center">
+          Print A4
+        </LegacyButton>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <LegacyButton isDark={isDark} icon={<Printer className="w-3.5 h-3.5" />} onClick={() => handlePrint(false)} disabled={queue.length === 0} className="justify-center">
+            Barcode Print w/o Price
+          </LegacyButton>
+          <LegacyButton isDark={isDark} icon={<Printer className="w-3.5 h-3.5" />} onClick={() => handlePrint(true)} disabled={queue.length === 0} className="justify-center">
+            Barcode Print With Price
+          </LegacyButton>
         </div>
-      </div>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" checked={includeStoreName} onChange={(e) => setIncludeStoreName(e.target.checked)} />
+          <span>Header Toko</span>
+        </label>
+      </GroupBox>
 
-      {/* WORKSPACE LAYOUT: LEFT SEARCH & QUEUE, RIGHT PREVIEW */}
-      <div className="flex-1 flex min-h-0 overflow-hidden print:hidden">
-        {/* LEFT COLUMN: SEARCH PRODUCTS & PRINT QUEUE */}
-        <div className={`w-1/2 flex flex-col border-r min-w-0 ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
-          {/* SEARCH BAR */}
-          <div className="p-3.5 border-b border-slate-300 dark:border-slate-800 space-y-2">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Cari barang untuk dicetak barcode (SKU / Barcode / Nama)..."
-                className={`w-full border-2 rounded-xl pl-9 pr-9 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 ${
-                  isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              />
-              {isSearching && (
-                <RefreshCw className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin" />
-              )}
-            </div>
-
-            {/* Search Dropdown Results */}
-            {searchResults.length > 0 ? (
-              <div className={`max-h-48 overflow-y-auto rounded-xl border-2 shadow-lg divide-y ${
-                isDark ? 'bg-slate-900 border-slate-700 divide-slate-800' : 'bg-white border-slate-300 divide-slate-200'
-              }`}>
-                {searchResults.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => {
-                      handleAddToQueue(p, 1);
-                      setSearchQuery('');
-                      setSearchResults([]);
-                    }}
-                    className="p-2.5 flex items-center justify-between hover:bg-indigo-50 dark:hover:bg-slate-800 cursor-pointer text-xs"
-                  >
-                    <div>
-                      <div className="font-black text-slate-900 dark:text-white">{p.inventoryName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">
-                        SKU: {p.inventoryNo} | Barcode: {p.barcode}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-indigo-600 dark:text-indigo-400">
-                        Rp {(p.price || 0).toLocaleString('id-ID')}
-                      </span>
-                      <button type="button" className="p-1 rounded-lg bg-indigo-600 text-white">
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              debouncedSearch.trim() && !isSearching && (
-                <div className={`p-3 rounded-xl border text-center text-xs font-bold text-slate-400 ${
-                  isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                }`}>
-                  Barang tidak ditemukan untuk kata kunci &ldquo;{debouncedSearch}&rdquo;.
-                </div>
-              )
-            )}
-          </div>
-
-          {/* QUEUE TABLE */}
-          <div className="flex-1 overflow-auto p-3.5 flex flex-col">
-            <div className="text-xs font-black mb-2 flex items-center justify-between">
-              <span>Antrian Cetak ({queue.length} Jenis Barang - Total {totalLabels} Label / {labelRows.length} Baris)</span>
-            </div>
-
-            <div className={`flex-1 overflow-auto rounded-xl border-2 shadow-sm ${
-              isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-800 text-white font-black text-[11px] border-b border-slate-700">
-                    <th className="p-2.5">Barang</th>
-                    <th className="p-2.5 text-right">Harga Retail</th>
-                    <th className="p-2.5 text-center w-36">Jumlah Cetak</th>
-                    <th className="p-2.5 text-center w-12">Hapus</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-bold">
-                  {queue.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="p-8 text-center text-slate-400">
-                        Belum ada barang di antrian cetak. Cari barang di atas untuk menambahkan.
-                      </td>
-                    </tr>
-                  ) : (
-                    queue.map((item) => (
-                      <tr key={item.product.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                        <td className="p-2.5">
-                          <div className="font-black text-slate-900 dark:text-white">{item.product.inventoryName}</div>
-                          <div className="text-[10px] font-mono text-slate-500">
-                            {item.product.inventoryNo} | {item.product.barcode}
-                          </div>
-                        </td>
-                        <td className="p-2.5 text-right font-black text-indigo-600 dark:text-indigo-400">
-                          Rp {(item.product.price || 0).toLocaleString('id-ID')}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQty(item.product.id, item.printQty - 1)}
-                              disabled={item.printQty <= 1}
-                              className="w-6 h-6 rounded border border-slate-300 dark:border-slate-700 font-black text-xs disabled:opacity-40 hover:bg-slate-200 dark:hover:bg-slate-800"
-                            >
-                              -
-                            </button>
-                            <input
-                              type="number"
-                              min={1}
-                              max={999}
-                              value={item.printQty}
-                              onChange={(e) => {
-                                const val = parseInt(e.target.value, 10);
-                                if (!isNaN(val)) {
-                                  handleUpdateQty(item.product.id, val);
-                                }
-                              }}
-                              className={`w-14 border-2 rounded-lg px-1.5 py-1 text-center font-black outline-none ${
-                                isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                              }`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQty(item.product.id, item.printQty + 1)}
-                              className="w-6 h-6 rounded border border-slate-300 dark:border-slate-700 font-black text-xs hover:bg-slate-200 dark:hover:bg-slate-800"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFromQueue(item.product.id)}
-                            title="Hapus dari antrian"
-                            className="p-1.5 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-lg cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: LIVE BROWSER PREVIEW OF 3-COLUMN ROLL (108mm x 18.2mm per row) */}
-        <div className={`w-1/2 flex flex-col p-4 overflow-y-auto ${isDark ? 'bg-slate-900/50' : 'bg-slate-200/60'}`}>
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-300 dark:border-slate-800">
-            <div>
-              <span className="font-black text-xs uppercase tracking-wider block">
-                Live Print Preview — 3 Barcode / Baris (Roll 108mm × 18.2mm)
-              </span>
-              <span className="text-[10px] text-slate-500 font-semibold">
-                1 label = Kolom 1 • 2 label = Kolom 1 &amp; 2 • 3 label = Kolom 1, 2, &amp; 3
-              </span>
-            </div>
-            <span className="text-[11px] text-indigo-500 font-black">
-              {flattenedLabels.length} Label ({labelRows.length} Baris)
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-3 items-center">
-            {labelRows.length === 0 ? (
-              <div className="py-20 text-center text-slate-400 text-xs font-bold">
-                Preview label barcode (3 kolom per baris) akan muncul di sini setelah barang ditambahkan ke antrian.
-              </div>
-            ) : (
-              labelRows.map((rowSlots, rowIdx) => (
-                <div
-                  key={rowIdx}
-                  data-testid={`barcode-preview-row-${rowIdx}`}
-                  className={`w-full max-w-[540px] p-2.5 rounded-xl border ${
-                    isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white/80 border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                    <span>Baris {rowIdx + 1}</span>
-                    <span>Roll 108mm (3 × 36mm)</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {rowSlots.map((prod, colIdx) =>
-                      prod ? (
-                        <div
-                          key={colIdx}
-                          data-testid={`barcode-preview-cell-${rowIdx}-${colIdx}`}
-                          data-filled="true"
-                          className="bg-white text-black p-1.5 border-2 border-dashed border-slate-400 rounded shadow-sm flex flex-col justify-between items-center text-center font-mono select-none min-h-[88px]"
-                        >
-                          <div className="w-full flex items-center justify-between text-[7px] text-slate-400 font-sans font-bold">
-                            <span>KOLOM {colIdx + 1}</span>
-                            {includeStoreName && (
-                              <span className="text-black font-black uppercase truncate max-w-[90px]">
-                                {storeName}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="text-[8.5px] font-black leading-tight line-clamp-1 px-0.5 w-full">
-                            {prod.inventoryName}
-                          </div>
-
-                          {/* Barcode (same encoder as the printed label) */}
-                          <div className="flex flex-col items-center w-full px-1 my-0.5">
-                            <BarcodeBars value={prod.barcode || prod.inventoryNo} height="20px" />
-                            <div className="text-[8px] font-black tracking-wider mt-0.5 truncate max-w-full">
-                              {prod.barcode || prod.inventoryNo}
-                            </div>
-                          </div>
-
-                          {includePrice && (
-                            <div className="text-[9px] font-black tracking-tight">
-                              Rp {(prod.price || 0).toLocaleString('id-ID')}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          key={colIdx}
-                          data-testid={`barcode-preview-cell-${rowIdx}-${colIdx}`}
-                          data-filled="false"
-                          className={`p-1.5 border-2 border-dashed rounded flex flex-col items-center justify-center text-center min-h-[88px] ${
-                            isDark ? 'border-slate-800 text-slate-700 bg-slate-950/40' : 'border-slate-300 text-slate-400 bg-slate-100/60'
-                          }`}
-                        >
-                          <span className="text-[9px] font-bold uppercase">Kolom {colIdx + 1}</span>
-                          <span className="text-[8px]">Kosong</span>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+      {rowMenu && (
+        <ContextMenu
+          isDark={isDark}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            { label: 'Delete Row', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleRemoveFromQueue(rowMenu.row) },
+          ]}
+        />
+      )}
 
       {/* 🖨️ HIDDEN PRINT TARGET CONTAINER (Visible only in print media: 3 columns per row on 108mm roll) */}
-      <div id="print-label-area" className="hidden print:block">
-        {labelRows.map((rowSlots, rowIdx) => (
-          <div key={rowIdx} className="barcode-label-row bg-white text-black">
-            {rowSlots.map((prod, colIdx) => (
-              <div key={colIdx} className="barcode-label-cell bg-white text-black">
-                {prod ? (
-                  <>
-                    {includeStoreName && (
-                      <div style={{ fontSize: '5.5pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1 }}>
-                        {storeName}
+      {canPortal && createPortal(
+        <div id="print-label-area" className="hidden print:block">
+          {printLayout === 'a4' ? <A4LabelSheet labels={flattenedLabels} /> : labelRows.map((rowSlots, rowIdx) => (
+            <div key={rowIdx} className="barcode-label-row bg-white text-black">
+              {rowSlots.map((prod, colIdx) => (
+                <div key={colIdx} className="barcode-label-cell bg-white text-black">
+                  {prod ? (
+                    <>
+                      {includeStoreName && (
+                        <div style={{ fontSize: '5.5pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1 }}>
+                          {STORE_NAME}
+                        </div>
+                      )}
+  
+                      {/* One line: a second line does not fit the 18.2mm label and was cut through the middle */}
+                      <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: '1.05', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', width: '100%' }}>
+                        {prod.inventoryNo} - {prod.inventoryName}
                       </div>
-                    )}
-
-                    <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: '1.05', maxHeight: '14px', overflow: 'hidden', width: '100%' }}>
-                      {prod.inventoryNo} - {prod.inventoryName}
-                    </div>
-
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.5mm 0' }}>
-                      <div style={{ width: '96%' }}>
-                        <BarcodeBars value={prod.barcode || prod.inventoryNo} height="5.5mm" />
+  
+                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.5mm 0' }}>
+                        <div style={{ width: '96%' }}>
+                          <BarcodeBars value={prod.barcode || prod.inventoryNo} height="5.5mm" />
+                        </div>
+                        <div style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.5px', lineHeight: 1 }}>
+                          {prod.barcode || prod.inventoryNo}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.5px', lineHeight: 1 }}>
-                        {prod.barcode || prod.inventoryNo}
-                      </div>
-                    </div>
-
-                    {includePrice && (
-                      <div style={{ fontSize: '7pt', fontWeight: 'bold', lineHeight: 1 }}>
-                        Rp {(prod.price || 0).toLocaleString('id-ID')}
-                      </div>
-                    )}
-                  </>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
+  
+                      {includePrice && (
+                        <div style={{ fontSize: '7pt', fontWeight: 'bold', lineHeight: 1 }}>
+                          Rp {(prod.price || 0).toLocaleString('id-ID')}
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </LegacyWindow>
   );
 }

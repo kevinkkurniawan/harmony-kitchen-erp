@@ -1,29 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Search,
-  RefreshCw,
-  Plus,
-  Users,
-  Edit,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  X,
-  AlertTriangle,
-  Download,
-  Zap,
-  ChevronUp,
-  ChevronDown,
-  Building2,
-  MapPin,
-  Phone,
-  Mail,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { RefreshCw, Plus, Edit, Trash2, CheckCircle, XCircle, AlertTriangle, Zap, ArrowLeft, Save, Power } from 'lucide-react';
 import { Supplier } from '@/types/erp';
-import { useDebounce } from '@/hooks/useDebounce';
 import { useConfirmDialog } from '@/components/ConfirmDialog';
+import {
+  LegacyWindow, LegacyButton, GroupBox, FieldRow, LegacyInput, LegacyGrid, ContextMenu, menuAt,
+  type LegacyColumn, type ContextMenuState,
+} from '@/components/legacy';
 
 interface ToastMessage {
   id: string;
@@ -31,288 +15,238 @@ interface ToastMessage {
   text: string;
 }
 
+/** Fields of the old Frm_Supplier edit form (the grid's visible columns). */
+interface SupplierForm {
+  mode: 'create' | 'edit';
+  id?: string;
+  supplierNo: string;
+  supplierName: string;
+  address: string;
+  city: string;
+  phone1: string;
+  isActive: boolean;
+}
+
 interface MasterSupplierManagerProps {
   isDark: boolean;
 }
 
+type SortKey = 'supplierNo' | 'supplierName' | 'address' | 'city' | 'phone1' | 'isActive';
+
+/** Loads every supplier (active and inactive, like the old grid); returns an error text instead of throwing. */
+async function loadSuppliers(): Promise<{ rows?: Supplier[]; error?: string }> {
+  try {
+    const res = await fetch('/api/suppliers');
+    const json = await res.json();
+    if (json.success && Array.isArray(json.data)) return { rows: json.data };
+    return { error: `Gagal memuat supplier: ${json.error}` };
+  } catch (err) {
+    console.error('Error fetching suppliers:', err);
+    return { error: 'Gagal terhubung ke database supplier' };
+  }
+}
+
+/** Old Master_Data.Frm_Supplier: one supplier grid, edit form in a side ".:: Detail ::." group. */
 export default function MasterSupplierManager({ isDark }: MasterSupplierManagerProps) {
   const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
-  // Main Data States
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 500);
-  const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
-  const [filterOnlyTaxable, setFilterOnlyTaxable] = useState<boolean>(false);
-
-  // Selection & Context Menu
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; supplier: Supplier } | null>(null);
-
-  // Sorting
-  const [sortField, setSortField] = useState<string>('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  const handleSort = (field: string) => {
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField('');
-      setSortOrder('asc');
-    }
-  };
-
-  // Modals
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-
-  // Form Data
-  const [formData, setFormData] = useState<Partial<Supplier>>({
-    supplierNo: '',
-    supplierName: '',
-    address: '',
-    city: '',
-    phone1: '',
-    phone2: '',
-    fax: '',
-    contactPerson: '',
-    email: '',
-    taxNo: '',
-    isTaxable: false,
-    description: '',
-    isActive: true,
-  });
-
-  // Toasts
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<ContextMenuState<Supplier> | null>(null);
+  const [form, setForm] = useState<SupplierForm | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; order: 'asc' | 'desc' } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString();
+  const addToast = useCallback((text: string, type: ToastMessage['type'] = 'success') => {
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
     setToasts((prev) => [...prev, { id, type, text }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }, []);
 
-  // Fetch Suppliers from PostgreSQL
   const fetchSuppliers = useCallback(async () => {
     setIsLoading(true);
-    try {
-      let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
-      if (filterOnlyActive) url += `&onlyActive=true`;
-      if (filterOnlyTaxable) url += `&onlyTaxable=true`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setSuppliers(json.data);
-      }
-    } catch (err) {
-      console.error('Error fetching suppliers:', err);
-      addToast('Gagal terhubung ke database supplier', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [debouncedSearchQuery, filterOnlyActive, filterOnlyTaxable, addToast]);
+    const { rows, error } = await loadSuppliers();
+    if (rows) setSuppliers(rows);
+    if (error) addToast(error, 'error');
+    setIsLoading(false);
+  }, [addToast]);
 
   useEffect(() => {
-    let isMounted = true;
-    const runFetch = async () => {
-      setIsLoading(true);
-      try {
-        let url = `/api/suppliers?q=${encodeURIComponent(debouncedSearchQuery)}`;
-        if (filterOnlyActive) url += `&onlyActive=true`;
-        if (filterOnlyTaxable) url += `&onlyTaxable=true`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setSuppliers(json.data);
-        }
-      } catch (err) {
-        console.error('Error fetching suppliers:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-    runFetch();
-    return () => { isMounted = false; };
-  }, [debouncedSearchQuery, filterOnlyActive, filterOnlyTaxable]);
+    let alive = true;
+    loadSuppliers().then(({ rows, error }) => {
+      if (!alive) return;
+      if (rows) setSuppliers(rows);
+      if (error) addToast(error, 'error');
+      setIsLoading(false);
+    });
+    return () => { alive = false; };
+  }, [addToast]);
 
-  // Open Create Modal
-  const handleOpenCreateModal = useCallback(() => {
-    setModalMode('create');
+  // New supplier gets the next S00000 number (same rule as before)
+  const openCreate = useCallback(() => {
     const maxCodeNum = suppliers.reduce((max, s) => {
       const match = (s.supplierNo || '').match(/\d+/);
       const num = match ? parseInt(match[0], 10) : 0;
       return Math.max(max, isNaN(num) ? 0 : num, Number(s.id) || 0);
     }, 0);
-    setFormData({
+    setForm({
+      mode: 'create',
       supplierNo: `S${(maxCodeNum + 1).toString().padStart(5, '0')}`,
       supplierName: '',
       address: '',
       city: '',
       phone1: '',
-      phone2: '',
-      fax: '',
-      contactPerson: '',
-      email: '',
-      taxNo: '',
-      isTaxable: false,
-      description: '',
       isActive: true,
     });
-    setIsModalOpen(true);
   }, [suppliers]);
 
-  // Keyboard Shortcuts
+  const openEdit = (s: Supplier) => {
+    setFocusedId(String(s.id));
+    setForm({
+      mode: 'edit',
+      id: String(s.id),
+      supplierNo: s.supplierNo || '',
+      supplierName: s.supplierName || '',
+      address: s.address || '',
+      city: s.city || '',
+      phone1: s.phone1 || '',
+      isActive: s.isActive !== false,
+    });
+  };
+
+  // Alt+N = New, Escape = Back (kept from the previous screen)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
-      if (e.key === 'Escape') {
-        setIsModalOpen(false);
-        setContextMenu(null);
-      } else if (e.key === '/' && !isInputFocused) {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setForm(null);
+      else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        searchInputRef.current?.focus();
-      } else if (e.altKey && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        handleOpenCreateModal();
+        openCreate();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleOpenCreateModal]);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openCreate]);
 
-  // Handle Save Form (Create/Edit)
-  const handleSaveForm = async (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.supplierNo?.trim() || !formData.supplierName?.trim()) {
-      return addToast('Kode Supplier dan Nama Supplier wajib diisi!', 'warning');
+    if (!form) return;
+    if (!form.supplierNo.trim() || !form.supplierName.trim()) {
+      return addToast('No. Supplier dan Nama Supplier wajib diisi!', 'warning');
     }
+    const isEdit = form.mode === 'edit';
+    const body = {
+      supplierNo: form.supplierNo,
+      supplierName: form.supplierName,
+      address: form.address,
+      city: form.city,
+      phone1: form.phone1,
+      isActive: form.isActive,
+    };
     try {
-      const isEdit = modalMode === 'edit' && selectedSupplier;
-      const url = isEdit ? `/api/suppliers/${selectedSupplier.id}` : `/api/suppliers`;
-      const method = isEdit ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
+      const res = await fetch(isEdit ? `/api/suppliers/${form.id}` : '/api/suppliers', {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(body),
       });
-
       const json = await res.json();
       if (json.success) {
-        setIsModalOpen(false);
+        setForm(null);
         addToast(isEdit ? 'Data supplier berhasil diperbarui!' : 'Supplier baru berhasil dibuat!', 'success');
         fetchSuppliers();
       } else {
         addToast(`Gagal menyimpan: ${json.error}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Handle Delete Supplier
-  const handleDeleteSupplier = async (supplier: Supplier) => {
-    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus supplier "${supplier.supplierName}"?`))) return;
+  const handleDelete = async (s: Supplier) => {
+    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus supplier "${s.supplierName}"?`))) return;
     try {
-      const res = await fetch(`/api/suppliers/${supplier.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/suppliers/${s.id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
-        addToast(`Supplier "${supplier.supplierName}" berhasil dihapus`, 'info');
+        addToast(`Supplier "${s.supplierName}" berhasil dihapus`, 'info');
+        if (form?.id === String(s.id)) setForm(null);
         fetchSuppliers();
       } else {
         addToast(`Gagal menghapus: ${json.error}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Toggle Active Supplier
-  const handleToggleActiveSupplier = async (supplier: Supplier) => {
+  const handleToggleActive = async (s: Supplier) => {
+    const currentActive = s.isActive !== false;
     try {
-      const currentActive = supplier.isActive !== false;
-      const res = await fetch(`/api/suppliers/${supplier.id}`, {
+      const res = await fetch(`/api/suppliers/${s.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !currentActive }),
       });
       const json = await res.json();
       if (json.success) {
-        addToast(`Status "${supplier.supplierName}" diubah menjadi ${!currentActive ? 'AKTIF' : 'NON-AKTIF'}`, 'info');
+        addToast(`Status "${s.supplierName}" diubah menjadi ${!currentActive ? 'AKTIF' : 'NON-AKTIF'}`, 'info');
         fetchSuppliers();
+      } else {
+        addToast(`Gagal mengubah status: ${json.error}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Export CSV
-  const exportToCSV = () => {
-    if (suppliers.length === 0) return addToast('Tidak ada data supplier untuk diexport', 'warning');
-    const headers = ['ID', 'Kode Supplier', 'Nama Supplier', 'Alamat', 'Kota', 'Phone 1', 'Phone 2', 'Fax', 'Contact Person', 'Email', 'NPWP Tax No', 'Is Taxable', 'Status Active', 'Keterangan'];
-    const csvRows = [headers.join(',')];
-    suppliers.forEach((s) => {
-      csvRows.push([
-        s.id,
-        `"${s.supplierNo || ''}"`,
-        `"${s.supplierName.replace(/"/g, '""')}"`,
-        `"${(s.address || '').replace(/"/g, '""')}"`,
-        `"${s.city || ''}"`,
-        `"${s.phone1 || ''}"`,
-        `"${s.phone2 || ''}"`,
-        `"${s.fax || ''}"`,
-        `"${(s.contactPerson || '').replace(/"/g, '""')}"`,
-        `"${s.email || ''}"`,
-        `"${s.taxNo || ''}"`,
-        s.isTaxable ? 'PKP' : 'NON-PKP',
-        s.isActive !== false ? 'AKTIF' : 'NON-AKTIF',
-        `"${(s.description || '').replace(/"/g, '""')}"`,
-      ].join(','));
+  // Header click: asc -> desc -> off (same cycle as before)
+  const handleSort = (key: string) => {
+    const k = key as SortKey;
+    setSort((prev) => (!prev || prev.key !== k ? { key: k, order: 'asc' } : prev.order === 'asc' ? { key: k, order: 'desc' } : null));
+  };
+
+  const sortedSuppliers = useMemo(() => {
+    if (!sort) return suppliers;
+    const dir = sort.order === 'asc' ? 1 : -1;
+    return [...suppliers].sort((a, b) => {
+      const va = sort.key === 'isActive' ? Number(a.isActive !== false) : String(a[sort.key] ?? '');
+      const vb = sort.key === 'isActive' ? Number(b.isActive !== false) : String(b[sort.key] ?? '');
+      return (typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb))) * dir;
     });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Master_Supplier_${new Date().toISOString().slice(0, 10)}.csv`);
-    link.click();
-    addToast(`Berhasil mengexport ${suppliers.length} data supplier ke CSV`, 'success');
-  };
+  }, [suppliers, sort]);
 
-  // Close context menu on outside click
-  useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
-  }, []);
+  const columns: LegacyColumn<Supplier>[] = [
+    { key: 'supplierNo', caption: 'No. Supplier', sortKey: 'supplierNo', width: 120 },
+    { key: 'supplierName', caption: 'Nama', sortKey: 'supplierName' },
+    { key: 'address', caption: 'Alamat', sortKey: 'address', width: 200 },
+    { key: 'city', caption: 'Kota', sortKey: 'city', width: 150 },
+    { key: 'phone1', caption: 'No. Kontak', sortKey: 'phone1', width: 150 },
+    {
+      key: 'isActive', caption: 'Status', sortKey: 'isActive', align: 'center', width: 80,
+      render: (s) => <input type="checkbox" aria-label="Aktif" checked={s.isActive !== false} readOnly tabIndex={-1} className="pointer-events-none" />,
+    },
+  ];
 
-  // Sorted Suppliers
-  const sortedSuppliers = [...suppliers].sort((a, b) => {
-    if (!sortField) return 0;
-    const valA = a[sortField as keyof Supplier] ?? '';
-    const valB = b[sortField as keyof Supplier] ?? '';
-    if (typeof valA === 'number' && typeof valB === 'number') {
-      return sortOrder === 'asc' ? valA - valB : valB - valA;
-    }
-    return sortOrder === 'asc'
-      ? String(valA).localeCompare(String(valB))
-      : String(valB).localeCompare(String(valA));
-  });
-
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
+  const setField = <K extends keyof SupplierForm>(key: K, value: SupplierForm[K]) => setForm((f) => (f ? { ...f, [key]: value } : f));
 
   return (
-    <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
+    <LegacyWindow
+      title="Master Supplier"
+      isDark={isDark}
+      toolbar={
+        <>
+          <LegacyButton
+            isDark={isDark}
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />}
+            onClick={() => { fetchSuppliers(); addToast('Data supplier berhasil di-refresh', 'info'); }}
+          >
+            Refresh
+          </LegacyButton>
+          <LegacyButton isDark={isDark} icon={<Plus className="w-3.5 h-3.5" />} onClick={openCreate} title="New (Alt+N)">New</LegacyButton>
+        </>
+      }
+    >
       {confirmDialogEl}
-      {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
           <div
@@ -336,509 +270,74 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
         ))}
       </div>
 
-      {/* 👑 MASTER SUPPLIER TOOLBAR */}
-      <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        {/* Search Bar Input */}
-        <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
-          <div className="relative flex-1 group">
-            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-              isDark ? 'text-slate-400 group-focus-within:text-amber-400' : 'text-slate-700 group-focus-within:text-slate-950'
-            }`} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Cari Supplier (Nama / Kode / Kota / CP / Phone)... [/]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full border-2 rounded-xl pl-10 pr-10 py-1.5 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
-              }`}
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2 overflow-auto lg:overflow-hidden">
+        <div className="flex-1 min-w-0 min-h-[320px] flex flex-col">
+          <LegacyGrid
+            isDark={isDark}
+            columns={columns}
+            rows={sortedSuppliers}
+            rowKey={(s) => String(s.id)}
+            loading={isLoading}
+            emptyText="Tidak ada supplier."
+            focusedKey={focusedId}
+            sort={sort}
+            onSort={handleSort}
+            onRowClick={(s) => setFocusedId(String(s.id))}
+            onRowDoubleClick={openEdit}
+            onRowContextMenu={(s, e) => { setFocusedId(String(s.id)); setRowMenu(menuAt(e, s, 3)); }}
+          />
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Filter Checkbox Aktif */}
-          <label className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
-            filterOnlyActive
-              ? isDark ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
-              : isDark ? 'bg-slate-900 border-slate-700 text-slate-400' : 'bg-white border-slate-300 text-slate-700'
-          }`}>
-            <input
-              type="checkbox"
-              checked={filterOnlyActive}
-              onChange={(e) => setFilterOnlyActive(e.target.checked)}
-              className="w-3.5 h-3.5 accent-emerald-500 rounded cursor-pointer"
-            />
-            <span>Hanya Aktif</span>
-          </label>
-
-          {/* Filter Checkbox PKP */}
-          <label className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
-            filterOnlyTaxable
-              ? isDark ? 'bg-amber-950/60 border-amber-700 text-amber-300' : 'bg-amber-100 border-amber-400 text-amber-950'
-              : isDark ? 'bg-slate-900 border-slate-700 text-slate-400' : 'bg-white border-slate-300 text-slate-700'
-          }`}>
-            <input
-              type="checkbox"
-              checked={filterOnlyTaxable}
-              onChange={(e) => setFilterOnlyTaxable(e.target.checked)}
-              className="w-3.5 h-3.5 accent-amber-500 rounded cursor-pointer"
-            />
-            <span>Hanya PKP</span>
-          </label>
-
-          <button
-            onClick={handleOpenCreateModal}
-            className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-            title="Tambah Supplier (Alt+N)"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Tambah Supplier</span>
-          </button>
-
-          <button
-            onClick={exportToCSV}
-            className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
-            }`}
-          >
-            <Download className="w-4 h-4 text-emerald-300" />
-            <span>Export CSV</span>
-          </button>
-
-          <button
-            onClick={() => {
-              fetchSuppliers();
-              addToast('Data supplier berhasil di-refresh', 'info');
-            }}
-            className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 📄 SUPPLIER DATA TABLE WORKBENCH */}
-      <div className="flex-1 min-h-0 p-4 flex flex-col">
-        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <table className="w-full text-left border-separate border-spacing-0 text-xs">
-            <thead className="sticky top-0 z-20">
-              <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                <th onClick={() => handleSort('id')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center w-12"><div className="flex items-center justify-center gap-1"><span>ID</span>{sortField === 'id' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('supplierNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors w-28"><div className="flex items-center gap-1"><span>Kode Supplier</span>{sortField === 'supplierNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Nama Supplier / Perusahaan</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('address')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Alamat & Kota</span>{sortField === 'address' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('phone1')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Telepon & Fax</span>{sortField === 'phone1' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('contactPerson')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Contact Person (PIC)</span>{sortField === 'contactPerson' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('isTaxable')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status PKP</span>{sortField === 'isTaxable' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('isActive')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors text-center"><div className="flex items-center justify-center gap-1"><span>Status</span>{sortField === 'isActive' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th className="py-1.5 px-2 text-center"><div className="flex items-center justify-center gap-1"><span>Aksi</span></div></th>
-              </tr>
-            </thead>
-            <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-24">
-                    <div className="flex flex-col items-center justify-center animate-pulse">
-                      <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                      <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                    </div>
-                  </td>
-                </tr>
-              ) : sortedSuppliers.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
-                    Tidak ada supplier ditemukan.
-                  </td>
-                </tr>
-              ) : (
-                sortedSuppliers.map((sup) => (
-                  <tr
-                    key={sup.id}
-                    onClick={() => setSelectedSupplier(sup)}
-                    onDoubleClick={() => {
-                      setSelectedSupplier(sup);
-                      setModalMode('edit');
-                      setFormData({ ...sup });
-                      setIsModalOpen(true);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setSelectedSupplier(sup);
-                      setContextMenu({ x: e.clientX, y: e.clientY, supplier: sup });
-                    }}
-                    className={`transition-colors cursor-pointer ${
-                      selectedSupplier?.id === sup.id
-                        ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                        : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
-                    }`}
-                  >
-                    <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{sup.id}</td>
-                    <td className="py-3 px-4 font-mono font-black text-amber-400">{sup.supplierNo || '-'}</td>
-                    <td className="py-3 px-4 font-black">
-                      <div>{sup.supplierName}</div>
-                      {sup.email && <div className="text-[11px] font-normal text-indigo-400 flex items-center gap-1 mt-0.5"><Mail className="w-3 h-3" />{sup.email}</div>}
-                    </td>
-                    <td className={`py-3 px-4 max-w-xs truncate ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-                      <div>{sup.address && sup.address !== '-' ? sup.address : 'Alamat belum diisi'}</div>
-                      {sup.city && <div className="text-[11px] font-bold text-amber-400/90 flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{sup.city}</div>}
-                    </td>
-                    <td className="py-3 px-4 font-mono">
-                      <div className="flex items-center gap-1">{sup.phone1 && sup.phone1 !== '-' ? <Phone className="w-3 h-3 text-emerald-400 shrink-0" /> : null}<span>{sup.phone1 || '-'}</span></div>
-                      {sup.phone2 && sup.phone2 !== '-' && <div className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alt: {sup.phone2}</div>}
-                    </td>
-                    <td className="py-3 px-4 font-bold">
-                      {sup.contactPerson && sup.contactPerson !== '-' ? (
-                        <div className={`flex items-center gap-1 ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                          <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span>{sup.contactPerson}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-500 font-normal">-</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      {sup.isTaxable ? (
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${
-                          isDark ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-amber-100 text-amber-700 border-amber-300'
-                        }`}>
-                          PKP
-                        </span>
-                      ) : (
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                          isDark ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-200 border-slate-300 text-slate-600'
-                        }`}>
-                          Non-PKP
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                        sup.isActive !== false
-                          ? (isDark ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-emerald-100 text-emerald-700 border border-emerald-300')
-                          : (isDark ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-rose-100 text-rose-700 border border-rose-300')
-                      }`}>
-                        {sup.isActive !== false ? 'AKTIF' : 'NON-AKTIF'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedSupplier(sup);
-                            setModalMode('edit');
-                            setFormData({ ...sup });
-                            setIsModalOpen(true);
-                          }}
-                          className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                          title="Edit Supplier"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteSupplier(sup);
-                          }}
-                          className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                          title="Hapus Supplier"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 📌 RIGHT-CLICK CONTEXT MENU */}
-      {contextMenu && (
-        <div
-          className={`fixed z-50 w-52 rounded-2xl border shadow-2xl py-1.5 text-xs font-bold overflow-hidden animate-in fade-in duration-100 ${
-            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'
-          }`}
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <div className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b border-slate-700/50 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-            Aksi Supplier Menu
-          </div>
-          <button
-            onClick={() => {
-              setSelectedSupplier(contextMenu.supplier);
-              setModalMode('edit');
-              setFormData({ ...contextMenu.supplier });
-              setIsModalOpen(true);
-              setContextMenu(null);
-            }}
-            className="w-full px-3.5 py-2 text-left hover:bg-amber-500/20 hover:text-amber-300 flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Edit className="w-4 h-4 text-amber-400" />
-            <span>Edit Supplier</span>
-          </button>
-
-          <button
-            onClick={() => {
-              handleToggleActiveSupplier(contextMenu.supplier);
-              setContextMenu(null);
-            }}
-            className="w-full px-3.5 py-2 text-left hover:bg-emerald-500/20 hover:text-emerald-300 flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Zap className="w-4 h-4 text-emerald-400" />
-            <span>Toggle Status Aktif</span>
-          </button>
-
-          <button
-            onClick={() => {
-              handleDeleteSupplier(contextMenu.supplier);
-              setContextMenu(null);
-            }}
-            className="w-full px-3.5 py-2 text-left hover:bg-rose-500/20 text-rose-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-700/50"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Hapus Supplier</span>
-          </button>
-        </div>
-      )}
-
-      {/* ✏️ FORM MODAL FOR SUPPLIER (Create / Edit) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-2xl rounded-3xl border shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
-            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-          }`}>
-            {/* Modal Header */}
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
-              isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
-            }`}>
-              <div className="flex items-center gap-2 font-black text-sm text-amber-400">
-                <Building2 className="w-4 h-4" />
-                <span>{modalMode === 'create' ? 'Tambah Supplier Baru' : 'Edit Data Supplier'}</span>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
-              >
-                <X className="w-4 h-4" />
-              </button>
+        {/* Detail: opened by New / View Supplier Data, closed by Back */}
+        {form && (
+          <GroupBox caption=".:: Detail ::." isDark={isDark} className="lg:w-[380px] shrink-0">
+            <div>
+              <LegacyButton isDark={isDark} icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={() => setForm(null)}>Back</LegacyButton>
             </div>
-
-            {/* Modal Body Form */}
-            <form onSubmit={handleSaveForm} className="p-6 space-y-4 text-xs font-bold overflow-y-auto flex-1">
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kode Supplier *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="S00001"
-                    value={formData.supplierNo || ''}
-                    onChange={(e) => setFormData({ ...formData, supplierNo: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
-                    }`}
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Supplier / Perusahaan *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="PT. RKM Utama / Paramount / CKU"
-                    value={formData.supplierName || ''}
-                    onChange={(e) => setFormData({ ...formData, supplierName: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Alamat Perusahaan</label>
-                  <input
-                    type="text"
-                    placeholder="Jl. Raya Industri No. 88"
-                    value={formData.address || ''}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kota</label>
-                  <input
-                    type="text"
-                    placeholder="Surabaya / Jakarta"
-                    value={formData.city || ''}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Telepon 1</label>
-                  <input
-                    type="text"
-                    placeholder="031-888999"
-                    value={formData.phone1 || ''}
-                    onChange={(e) => setFormData({ ...formData, phone1: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Telepon 2</label>
-                  <input
-                    type="text"
-                    placeholder="0812345678"
-                    value={formData.phone2 || ''}
-                    onChange={(e) => setFormData({ ...formData, phone2: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Fax</label>
-                  <input
-                    type="text"
-                    placeholder="031-888990"
-                    value={formData.fax || ''}
-                    onChange={(e) => setFormData({ ...formData, fax: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Contact Person (PIC Sales)</label>
-                  <input
-                    type="text"
-                    placeholder="Bpk. Budi Santoso"
-                    value={formData.contactPerson || ''}
-                    onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Email Resmi</label>
-                  <input
-                    type="email"
-                    placeholder="sales@supplier.com"
-                    value={formData.email || ''}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nomor NPWP Pajak</label>
-                  <input
-                    type="text"
-                    placeholder="01.234.567.8-012.000"
-                    value={formData.taxNo || ''}
-                    onChange={(e) => setFormData({ ...formData, taxNo: e.target.value })}
-                    className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
-                    }`}
-                  />
-                </div>
-                <div className="flex items-end pb-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.isTaxable || false}
-                      onChange={(e) => setFormData({ ...formData, isTaxable: e.target.checked })}
-                      className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
-                    />
-                    <span className="text-amber-400">Pengusaha Kena Pajak (Status PKP)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Catatan Tambahan</label>
-                <textarea
-                  rows={2}
-                  placeholder="Catatan ketentuan pembayaran / term of payment..."
-                  value={formData.description || ''}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isActive !== false}
-                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-                  />
-                  <span className="text-emerald-400">Status Supplier Aktif</span>
-                </label>
-              </div>
-
-              {/* Modal Footer Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700/50 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 cursor-pointer font-bold transition-all"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black cursor-pointer shadow-lg transition-all"
-                >
-                  Simpan Supplier
-                </button>
-              </div>
+            <form onSubmit={handleSave} className="flex flex-col gap-2 min-h-0 overflow-auto">
+              <FieldRow label="No. Supplier :" isDark={isDark}>
+                <LegacyInput isDark={isDark} required value={form.supplierNo} onChange={(e) => setField('supplierNo', e.target.value)} />
+              </FieldRow>
+              <FieldRow label="Nama Supplier :" isDark={isDark}>
+                <LegacyInput isDark={isDark} required autoFocus value={form.supplierName} onChange={(e) => setField('supplierName', e.target.value)} />
+              </FieldRow>
+              <FieldRow label="Alamat :" isDark={isDark}>
+                <LegacyInput isDark={isDark} value={form.address} onChange={(e) => setField('address', e.target.value)} />
+              </FieldRow>
+              <FieldRow label="Kota :" isDark={isDark}>
+                <LegacyInput isDark={isDark} value={form.city} onChange={(e) => setField('city', e.target.value)} />
+              </FieldRow>
+              <FieldRow label="No. Kontak :" isDark={isDark}>
+                <LegacyInput isDark={isDark} value={form.phone1} onChange={(e) => setField('phone1', e.target.value)} />
+              </FieldRow>
+              <FieldRow label="Aktif :" isDark={isDark}>
+                <input type="checkbox" checked={form.isActive} onChange={(e) => setField('isActive', e.target.checked)} className="cursor-pointer" />
+              </FieldRow>
+              <LegacyButton isDark={isDark} type="submit" variant="primary" icon={<Save className="w-3.5 h-3.5" />} className="justify-center">
+                Save
+              </LegacyButton>
             </form>
-          </div>
-        </div>
+          </GroupBox>
+        )}
+      </div>
+
+      {rowMenu && (
+        <ContextMenu
+          isDark={isDark}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            { label: 'View Supplier Data', icon: <Edit className="w-3.5 h-3.5" />, onClick: () => openEdit(rowMenu.row) },
+            {
+              label: rowMenu.row.isActive !== false ? 'Non Aktifkan Supplier' : 'Aktifkan Supplier',
+              icon: <Power className="w-3.5 h-3.5" />,
+              onClick: () => handleToggleActive(rowMenu.row),
+            },
+            { label: 'Hapus Supplier', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDelete(rowMenu.row) },
+          ]}
+        />
       )}
-    </div>
+    </LegacyWindow>
   );
 }

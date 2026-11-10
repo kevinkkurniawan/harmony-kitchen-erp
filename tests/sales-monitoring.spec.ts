@@ -5,12 +5,15 @@ const prisma = new PrismaClient();
 
 let testInvoiceNo = '';
 let testHeaderId = 0;
+let testSaleDay = '';
+
+const N0 = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
 
 async function loginAsAdmin(page: any) {
   await page.goto('/');
-  await page.fill('input[placeholder="Masukkan username"]', 'admin');
+  await page.fill('input[placeholder="Enter Username"]', 'admin');
   await page.fill('input[placeholder="••••••••"]', '5555');
-  await page.click('button:has-text("Login ke ERP")');
+  await page.click('button:has-text("Log on")');
   await expect(page.locator('aside')).toBeVisible({ timeout: 15000 });
 }
 
@@ -46,6 +49,7 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
       },
     });
     testHeaderId = Number(header.id);
+    testSaleDay = header.salesposdate!.toISOString().slice(0, 10);
 
     await prisma.t_salesposdetail.create({
       data: {
@@ -141,7 +145,7 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
 
     // Verify Modal Contents
     await expect(page.locator('text=Struk Thermal POS Penjualan')).toBeVisible();
-    await expect(page.locator('text=HARMONY KITCHEN & RESTO')).toBeVisible();
+    await expect(page.locator('text=HARMONY KITCHENWARE')).toBeVisible();
     await expect(page.locator('.printable-pos-receipt').locator(`text=${testInvoiceNo}`)).toBeVisible();
 
     // Click "Cetak Struk" button (triggers reprint POST API & window.print)
@@ -244,5 +248,51 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
     // Assert row transitioned back to LUNAS
     await expect(page.locator('text=berhasil di-UNVOID')).toBeVisible({ timeout: 10000 });
     await expect(row.locator('input[type="checkbox"]')).not.toBeChecked();
+  });
+
+  test('6. Laporan Bulanan / Laporan Harian buttons after Refresh open the old Admin Bill Opname report (Jam | Nominal per day)', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
+
+    // Old Admin.Frm_BillOpname toolbar order: Hari Ini | Tanggal | Refresh | Laporan Bulanan | Laporan Harian
+    const toolbar = [
+      page.getByRole('button', { name: 'Hari Ini', exact: true }),
+      page.locator('input[type="date"]'),
+      page.getByRole('button', { name: 'Refresh', exact: true }),
+      page.getByRole('button', { name: 'Laporan Bulanan', exact: true }),
+      page.getByRole('button', { name: 'Laporan Harian', exact: true }),
+    ];
+    const xs = [];
+    for (const el of toolbar) xs.push((await el.boundingBox())!.x);
+    expect([...xs].sort((a, b) => a - b)).toEqual(xs);
+
+    // Laporan Harian: the selected date only; its total equals that day's Laporan Summary (API daily row)
+    await page.locator('input[type="date"]').fill(testSaleDay);
+    await page.getByRole('button', { name: 'Laporan Harian', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Laporan Harian' });
+    await expect(dialog.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
+    const days = dialog.locator('[data-testid="bill-day"]');
+    await expect(days).toHaveCount(1);
+    await expect(days.first()).toContainText(/Tanggal : \S+, \d{2} - \S+ - \d{4}/);
+    await expect(days.first().getByText('Jam', { exact: true })).toHaveCount(3);
+    await expect(days.first().getByText('Nominal', { exact: true })).toHaveCount(3);
+    await expect(days.first()).toContainText('Total :');
+    const daily = await (await page.request.get(`/api/reports/sales?type=daily&startDate=${testSaleDay}&endDate=${testSaleDay}`)).json();
+    await expect(dialog.locator('[data-testid="bill-day-total"]')).toHaveText(N0.format(Number(daily.data[0].netSales)));
+    await dialog.getByRole('button', { name: 'Print', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Tutup', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // Laporan Bulanan: every day of the selected date's month (closed historic month), one block per day
+    await page.locator('input[type="date"]').fill('2025-06-15');
+    await page.getByRole('button', { name: 'Laporan Bulanan', exact: true }).click();
+    const monthDialog = page.getByRole('dialog', { name: 'Laporan Bulanan' });
+    await expect(monthDialog.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
+    const june = await (await page.request.get('/api/reports/sales?type=daily&startDate=2025-06-01&endDate=2025-06-30')).json();
+    const expected = (june.data as { date: string; netSales: number }[])
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((d) => N0.format(Number(d.netSales)));
+    await expect(monthDialog.locator('[data-testid="bill-day-total"]')).toHaveText(expected);
+    await expect(monthDialog.locator('[data-testid="bill-day"]').first()).toContainText('Tanggal : Senin, 02 - Jun - 2025');
+    await monthDialog.getByRole('button', { name: 'Tutup', exact: true }).click();
   });
 });

@@ -3,9 +3,9 @@ import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { getCurrentUser } from '@/lib/session';
 import { canUserViewHpp } from '@/lib/capabilities';
-import { dateColumnDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
+import { dateColumnDay, formatBangkokDate, formatBangkokDateTime, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
 import { parseColumnFilters } from '@/lib/column-filter';
-import { isLegacySale, normalizeSaleTotals, type NormalizedSale, type SaleTotals } from '@/lib/sales-normalize';
+import { isCreditCardSale, isLegacySale, normalizeSaleTotals, saleCashierName, salePaymentName, type NormalizedSale, type SaleTotals } from '@/lib/sales-normalize';
 
 export async function GET(request: Request) {
   try {
@@ -73,15 +73,19 @@ export async function GET(request: Request) {
     const totalsById = await loadSaleTotals(headerIds);
 
     // Legacy sales without a payment were never paid; the old app leaves them out of its totals too
-    const emptyTotals: SaleTotals = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: 0, paidValue: 0, payDisc: 0, firstPayTypeId: null };
+    const emptyTotals: SaleTotals = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: 0, paidValue: 0, payDisc: 0, payDiscount: 0, firstPayTypeId: null };
     const paidSales = allSales.filter((s) => {
       const t = totalsById.get(Number(s.id)) ?? emptyTotals;
       return !(isLegacySale(s) && t.payCount === 0);
     });
 
     const normalized = new Map<number, NormalizedSale>();
+    // Card sales paid by credit card: the old report splits card totals into Debit and Kredit
+    const creditCardIds = new Set<number>();
     paidSales.forEach((s) => {
-      normalized.set(Number(s.id), normalizeSaleTotals(s, totalsById.get(Number(s.id)) ?? emptyTotals));
+      const totals = totalsById.get(Number(s.id)) ?? emptyTotals;
+      normalized.set(Number(s.id), normalizeSaleTotals(s, totals));
+      if (isCreditCardSale(s, totals)) creditCardIds.add(Number(s.id));
     });
 
     const pmFilter = paymentMethodParam && paymentMethodParam !== 'All' ? paymentMethodParam.toUpperCase() : null;
@@ -108,6 +112,8 @@ export async function GET(request: Request) {
             transferSales: 0,
             cardSales: 0,
             otherSales: 0,
+            debitSales: 0,
+            creditSales: 0,
             ...(canViewProfit ? { totalHpp: 0, netIncome: 0, profitMarginPct: 0 } : {}),
           };
         }
@@ -125,8 +131,11 @@ export async function GET(request: Request) {
         if (payGroup === 'CASH') entry.cashSales += net;
         else if (payGroup === 'QRIS') entry.qrisSales += net;
         else if (payGroup === 'TRANSFER') entry.transferSales += net;
-        else if (payGroup === 'CARD') entry.cardSales += net;
-        else entry.otherSales += net;
+        else if (payGroup === 'CARD') {
+          entry.cardSales += net;
+          if (creditCardIds.has(Number(s.id))) entry.creditSales += net;
+          else entry.debitSales += net;
+        } else entry.otherSales += net;
 
         if (canViewProfit) {
           entry.totalHpp += hppSum;
@@ -158,6 +167,8 @@ export async function GET(request: Request) {
             transferSales: 0,
             cardSales: 0,
             otherSales: 0,
+            debitSales: 0,
+            creditSales: 0,
             ...(canViewProfit ? { totalHpp: 0, netIncome: 0, profitMarginPct: 0 } : {}),
           };
         }
@@ -175,8 +186,11 @@ export async function GET(request: Request) {
         if (payGroup === 'CASH') entry.cashSales += net;
         else if (payGroup === 'QRIS') entry.qrisSales += net;
         else if (payGroup === 'TRANSFER') entry.transferSales += net;
-        else if (payGroup === 'CARD') entry.cardSales += net;
-        else entry.otherSales += net;
+        else if (payGroup === 'CARD') {
+          entry.cardSales += net;
+          if (creditCardIds.has(Number(s.id))) entry.creditSales += net;
+          else entry.debitSales += net;
+        } else entry.otherSales += net;
 
         if (canViewProfit) {
           entry.totalHpp += hppSum;
@@ -220,6 +234,7 @@ export async function GET(request: Request) {
         const profit = it.totalRevenue - it.totalCost;
 
         return {
+          inventoryId: it.inventoryId,
           barcode: inv?.barcode || '-',
           inventoryName: inv?.inventoryname || 'Barang Persediaan',
           totalQtySold: it.totalQtySold,
@@ -244,6 +259,8 @@ export async function GET(request: Request) {
       let qrisSales = 0;
       let transferSales = 0;
       let cardSales = 0;
+      let debitSales = 0;
+      let creditSales = 0;
       let totalCost = 0;
 
       sales.forEach((s: any) => {
@@ -258,7 +275,11 @@ export async function GET(request: Request) {
         if (payGroup === 'CASH') cashSales += net;
         else if (payGroup === 'QRIS') qrisSales += net;
         else if (payGroup === 'TRANSFER') transferSales += net;
-        else if (payGroup === 'CARD') cardSales += net;
+        else if (payGroup === 'CARD') {
+          cardSales += net;
+          if (creditCardIds.has(Number(s.id))) creditSales += net;
+          else debitSales += net;
+        }
       });
 
       const profit = netSales - totalCost;
@@ -274,10 +295,51 @@ export async function GET(request: Request) {
         qrisSales: String(qrisSales),
         transferSales: String(transferSales),
         cardSales: String(cardSales),
+        debitSales: String(debitSales),
+        creditSales: String(creditSales),
         totalCost: canViewProfit ? totalCost : 0,
         profit: canViewProfit ? profit : 0,
         profitMarginPct: canViewProfit ? profitMarginPct : 0,
       };
+
+      return apiSuccess(result);
+    }
+
+    // 5. NOTA LIST: one row per sale for the old daily reports (Rpt_SalesDaily / Rpt_SalesDailyPerCashier) and the
+    // Bill Opname "Laporan Bulanan / Harian" (Rpt_Monthly). Same sales and net as the daily rows above, so a day's
+    // notas add up to that day's Laporan Summary total. The old SPs group by payment date; the ERP reports use the
+    // sale date. No HPP here: the old reports show only the amount.
+    if (type === 'nota') {
+      const saleIds = sales.map((s) => Number(s.id));
+      // Nota no., cashier and time are read here, not in the shared query above, so the other reports' queries stay as they were
+      const [payTypes, noteRows] = await Promise.all([
+        prisma.m_paymenttype.findMany({ select: { id: true, name: true } }),
+        saleIds.length === 0 ? [] : prisma.$queryRaw<{ id: number; salesposno: string; createduser: string; paidat: Date | null }[]>`
+          SELECT h.id, h.salesposno, h.createduser, COALESCE(MIN(p.paymentdate), h.createddate) AS paidat
+          FROM t_salesposheader h
+          LEFT JOIN t_salespayment p ON p.salesposid = h.id
+          WHERE h.id = ANY(${saleIds}::int[])
+          GROUP BY h.id`,
+      ]);
+      // Old SP: M_PaymentType.ID - 1 = T_SalesPayment.PaymentTypeID
+      const typeNameByCode = new Map(payTypes.filter((t) => t.name).map((t) => [Number(t.id) - 1, t.name!]));
+      const noteById = new Map(noteRows.map((r) => [Number(r.id), r]));
+
+      const result = sales.map((s) => {
+        const id = Number(s.id);
+        const totals = totalsById.get(id) ?? emptyTotals;
+        // "Jam" of Rpt_Monthly is the payment time; a sale without a payment row falls back to its creation time
+        const note = noteById.get(id);
+        return {
+          id,
+          date: s.salesposdate ? formatBangkokDate(s.salesposdate) : getTodayBangkok(),
+          salesPosNo: note?.salesposno ?? '',
+          time: note?.paidat ? formatBangkokDateTime(note.paidat).slice(11, 19) : '',
+          paymentName: salePaymentName(s, totals, typeNameByCode),
+          cashier: saleCashierName(note?.createduser),
+          amount: normalized.get(id)!.net,
+        };
+      }).sort((a, b) => a.date.localeCompare(b.date) || a.salesPosNo.localeCompare(b.salesPosNo));
 
       return apiSuccess(result);
     }
@@ -306,11 +368,12 @@ async function loadSaleTotals(headerIds: number[]): Promise<Map<number, SaleTota
       FROM t_salesposdetail d
       WHERE d.salesposheaderid = ANY(${headerIds}::int[])
       GROUP BY d.salesposheaderid`,
-    prisma.$queryRaw<{ id: number; paycount: unknown; paidvalue: unknown; paydisc: unknown; firstpaytypeid: number | null }[]>`
+    prisma.$queryRaw<{ id: number; paycount: unknown; paidvalue: unknown; paydisc: unknown; paydiscount: unknown; firstpaytypeid: number | null }[]>`
       SELECT p.salesposid AS id,
              COUNT(*) AS paycount,
              SUM(COALESCE(p.transactionvalue, 0)) AS paidvalue,
              SUM(COALESCE(p.voucher, 0) + COALESCE(p.discount, 0)) AS paydisc,
+             SUM(COALESCE(p.discount, 0)) AS paydiscount,
              MIN(p.paymenttypeid) AS firstpaytypeid
       FROM t_salespayment p
       WHERE p.salesposid = ANY(${headerIds}::int[])
@@ -319,7 +382,7 @@ async function loadSaleTotals(headerIds: number[]): Promise<Map<number, SaleTota
   const get = (id: number) => {
     let t = totals.get(id);
     if (!t) {
-      t = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: 0, paidValue: 0, payDisc: 0, firstPayTypeId: null };
+      t = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: 0, paidValue: 0, payDisc: 0, payDiscount: 0, firstPayTypeId: null };
       totals.set(id, t);
     }
     return t;
@@ -336,6 +399,7 @@ async function loadSaleTotals(headerIds: number[]): Promise<Map<number, SaleTota
     t.payCount = Number(r.paycount);
     t.paidValue = Number(r.paidvalue);
     t.payDisc = Number(r.paydisc);
+    t.payDiscount = Number(r.paydiscount);
     t.firstPayTypeId = r.firstpaytypeid === null ? null : Number(r.firstpaytypeid);
   });
   return totals;

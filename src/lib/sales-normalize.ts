@@ -87,6 +87,8 @@ export interface SaleTotals {
   paidValue: number;
   /** voucher + discount on the payment rows (the legacy bill discount) */
   payDisc: number;
+  /** discount alone on the payment rows (the new POS bill discount: member + voucher + manual) */
+  payDiscount: number;
   firstPayTypeId: number | null;
 }
 
@@ -96,7 +98,7 @@ type PaymentLike = { transactionvalue?: Num; voucher?: Num; discount?: Num; paym
 type SaleHeaderLike = { status?: string | null; grandtotal?: Num; paymenttypecode?: string | null; manualdiscountamount?: Num };
 
 export function saleTotals(details: LineLike[], payments: PaymentLike[]): SaleTotals {
-  const t: SaleTotals = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: payments.length, paidValue: 0, payDisc: 0, firstPayTypeId: null };
+  const t: SaleTotals = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: payments.length, paidValue: 0, payDisc: 0, payDiscount: 0, firstPayTypeId: null };
   details.forEach((d) => {
     t.lineDisc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
     const qty = Number(d.qty || 0);
@@ -107,6 +109,7 @@ export function saleTotals(details: LineLike[], payments: PaymentLike[]): SaleTo
   payments.forEach((pm) => {
     t.paidValue += Number(pm.transactionvalue || 0);
     t.payDisc += Number(pm.voucher || 0) + Number(pm.discount || 0);
+    t.payDiscount += Number(pm.discount || 0);
   });
   if (payments.length > 0) t.firstPayTypeId = Number(payments[0].paymenttypeid);
   return t;
@@ -115,10 +118,14 @@ export function saleTotals(details: LineLike[], payments: PaymentLike[]): SaleTo
 export function normalizeSaleTotals(header: SaleHeaderLike, t: SaleTotals): NormalizedSale {
   // Legacy transactionvalue is before the bill discount (voucher + discount), so the paid net subtracts it.
   // Only legacy rows: the new POS stores marketplace payments in voucher.
-  const billDisc = isLegacySale(header) ? t.payDisc : 0;
-  const disc = Number(header.manualdiscountamount || 0) + t.lineDisc + billDisc;
+  const legacy = isLegacySale(header);
+  const billDisc = legacy ? t.payDisc : 0;
+  // New POS: the payment row holds the whole bill discount (member + voucher + manual); without one, the header's manual part
+  const newBillDisc = legacy ? 0 : t.payCount > 0 ? t.payDiscount : Number(header.manualdiscountamount || 0);
+  const disc = (legacy ? Number(header.manualdiscountamount || 0) : 0) + t.lineDisc + billDisc + newBillDisc;
   const paidTotal = t.paidValue - billDisc;
-  const net = Number(header.grandtotal) || paidTotal || t.lineTotal;
+  // A paid legacy sale's net is its payment, even when fully discounted to 0
+  const net = Number(header.grandtotal) || (legacy && t.payCount > 0 ? paidTotal : paidTotal || t.lineTotal);
 
   let payGroup: PayGroup;
   if (header.paymenttypecode) {
@@ -130,6 +137,41 @@ export function normalizeSaleTotals(header: SaleHeaderLike, t: SaleTotals): Norm
   }
 
   return { net, disc, items: t.items, hpp: t.hpp, payGroup };
+}
+
+/**
+ * Card sale paid by credit card (old report's "Kredit") rather than debit / EDC, by the same rule as
+ * salePaymentType + Sales Monitoring: header text 'CREDIT CARD', or legacy payment code 2.
+ */
+export function isCreditCardSale(header: SaleHeaderLike, t: SaleTotals): boolean {
+  if (header.paymenttypecode) return String(header.paymenttypecode).toUpperCase() === 'CREDIT CARD';
+  return t.payCount > 0 && Number(t.firstPayTypeId) === 2;
+}
+
+// Legacy codes the local m_paymenttype has no row for (see LEGACY_PAYMENT_GROUP)
+const LEGACY_PAYMENT_NAME: Record<number, string> = { 4: 'Shopee', 5: 'Tokopedia', 6: 'Transfer', 7: 'EDC Mandiri' };
+
+/**
+ * "Metode Pembayaran" of the old daily reports: m_paymenttype.name of the sale's legacy payment code
+ * (the old SP joins M_PaymentType.ID - 1 = PaymentTypeID). New POS sales map their header label to that
+ * code, so "CASH" and legacy Cash land in one group; a label with no code (e.g. SHOPEE) stays as it is.
+ */
+export function salePaymentName(header: SaleHeaderLike, t: SaleTotals, typeNameByCode: Map<number, string>): string {
+  const text = header.paymenttypecode ? String(header.paymenttypecode).trim().toUpperCase() : '';
+  // Same fallback as normalizeSaleTotals: no header label and no payment row counts as cash
+  const code = text ? legacyPaymentTypeCode(text) : t.payCount > 0 ? Number(t.firstPayTypeId) : 0;
+  if (code !== null && typeNameByCode.has(code)) return typeNameByCode.get(code)!;
+  if (text) return text;
+  return LEGACY_PAYMENT_NAME[code ?? -1] ?? String(code);
+}
+
+/**
+ * Cashier name for "Kasir :". Legacy rows store "PC-NAME/user"; the old SP took RIGHT(CreatedUser, 5),
+ * which only works for 5-letter names ("K/lia"), so this keeps the part after the last "/".
+ */
+export function saleCashierName(createdUser: string | null | undefined): string {
+  const user = String(createdUser ?? '').trim();
+  return user.slice(user.lastIndexOf('/') + 1) || user;
 }
 
 /** Legacy sales (synced from the old POS) have no status; every new-app sale has one. */

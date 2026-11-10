@@ -69,7 +69,19 @@ export async function GET(req: Request) {
     else if (sortCol) orderBy.push({ [sortCol]: { sort: sortDir, nulls: 'last' } });
     orderBy.push({ id: 'asc' });
 
-    const [total, items] = await Promise.all([
+    // Optional grid footer totals over ALL matching rows (Master Barang: Stok, Total H.Stok, Total H.Jual).
+    // Prisma cannot SUM a product (stok * price), and rebuilding these filters in raw SQL would duplicate the
+    // Prisma filter translation (incl. its LIKE escaping); so one query reads the three int columns with the same
+    // `where` and sums them here. Only sent when asked (totals=true), and the client asks only on a filter change.
+    const wantTotals = searchParams.get('totals') === 'true';
+    const totalsPromise = wantTotals
+      ? prisma.m_inventory.findMany({
+          where,
+          select: { stokupdate: true, price: true, ...(mayViewHpp ? { pricebuy: true } : {}) },
+        })
+      : null;
+
+    const [total, items, totalRows] = await Promise.all([
       prisma.m_inventory.count({ where }),
       prisma.m_inventory.findMany({ 
         where, 
@@ -81,6 +93,7 @@ export async function GET(req: Request) {
           m_uom: true,
         }
       }),
+      totalsPromise,
     ]);
 
     // Scanner support: an exact barcode / SKU hit always comes first
@@ -113,6 +126,8 @@ export async function GET(req: Request) {
       return {
         id: String(i.id),
         barcode: i.barcode || i.inventoryno,
+        // `barcode` falls back to the No. Barang for scan / print; editors need the stored value (empty stays empty)
+        rawBarcode: i.barcode ?? '',
         inventoryNo: i.inventoryno,
         inventory_no: i.inventoryno,
         inventoryName: i.inventoryname,
@@ -152,6 +167,8 @@ export async function GET(req: Request) {
         stock: liveStock,
         stokAwal: Number(i.stokawal || 0),
         stokAkhir: liveStock,
+        // Last opname / sync date (legacy "Last Sync" column)
+        syncDate: i.syncdate ?? null,
         isActive: Boolean(i.isactive ?? true),
         is_active: Boolean(i.isactive ?? true),
         createdAt: i.createddate,
@@ -159,7 +176,19 @@ export async function GET(req: Request) {
       };
     });
 
-    return createPaginatedResponse(mapped, total, paginationParams);
+    // Total H.Stok uses the purchase price, so it is 0 for users without HPP rights (like priceBuy above)
+    let totals: { stock: number; stockValue: number; retailValue: number } | undefined;
+    if (totalRows) {
+      totals = { stock: 0, stockValue: 0, retailValue: 0 };
+      for (const r of totalRows as { stokupdate: number | null; price: number | null; pricebuy?: number | null }[]) {
+        const stock = Number(r.stokupdate ?? 0);
+        totals.stock += stock;
+        totals.retailValue += stock * Number(r.price ?? 0);
+        if (mayViewHpp) totals.stockValue += stock * Number(r.pricebuy ?? 0);
+      }
+    }
+
+    return createPaginatedResponse(mapped, total, paginationParams, totals ? { totals } : {});
   } catch (error: any) {
     return apiError('INTERNAL_ERROR', error.message, 500);
   }

@@ -12,13 +12,16 @@ interface LedgerRow {
   qty_out: number;
   price: number;
   row_id: number;
+  /** Legacy SCO- monthly count: the counted stock, not a movement */
+  counted_qty: number | null;
 }
 
 /**
  * Stock card for one item, built from every place stock changes are recorded:
  * - s_flowinventory: ERP opname and new-POS sales (and legacy opname up to 2024, type 81)
  * - t_salesposheader/detail: legacy (Module Manager) sales, which never wrote stock flows
- * - t_opname: legacy OPM adjustments (qty is the +/- delta) not already present as a flow
+ * - t_opname: legacy OPM adjustments (qty is the +/- delta) not already present as a flow; legacy SCO- rows hold
+ *   a counted stock, so they are listed with the count and no Masuk/Keluar (adding a count as a delta was wrong)
  * - t_materialreceiveheader/detail: goods receipts (neither app writes flows for them)
  * The running balance is anchored on the current stock, so it ends at m_inventory.stokupdate.
  */
@@ -51,14 +54,14 @@ export async function GET(
                COALESCE(d.invoicetype, f.invoicetype) AS type_id,
                COALESCE(d.qtyin, 0)::float8 AS qty_in, COALESCE(d.qtyout, 0)::float8 AS qty_out,
                COALESCE(NULLIF(d.pricein, 0), NULLIF(d.priceout, 0), f.price, 0)::float8 AS price,
-               d.id::int AS row_id
+               d.id::int AS row_id, NULL::float8 AS counted_qty
         FROM s_flowinventory f
         JOIN s_flowdetailinventory d ON d.flowinventoryid = f.id
         WHERE f.inventoryid = ${inventoryId}
 
         UNION ALL
         SELECT 'sale', h.salesposdate, h.salesposno, 2,
-               0, COALESCE(sd.qty, 0)::float8, COALESCE(sd.price, 0)::float8, sd.id::int
+               0, COALESCE(sd.qty, 0)::float8, COALESCE(sd.price, 0)::float8, sd.id::int, NULL
         FROM t_salesposdetail sd
         JOIN t_salesposheader h ON h.id = sd.salesposheaderid
         WHERE sd.inventoryid = ${inventoryId}
@@ -67,7 +70,10 @@ export async function GET(
 
         UNION ALL
         SELECT 'opname', COALESCE(o.opnamedate, o.createddate), o.notransaction, 3,
-               GREATEST(o.qty, 0)::float8, GREATEST(-o.qty, 0)::float8, COALESCE(o.price, 0)::float8, o.id::int
+               CASE WHEN o.notransaction LIKE 'SCO-%' THEN 0 ELSE GREATEST(o.qty, 0) END::float8,
+               CASE WHEN o.notransaction LIKE 'SCO-%' THEN 0 ELSE GREATEST(-o.qty, 0) END::float8,
+               COALESCE(o.price, 0)::float8, o.id::int,
+               CASE WHEN o.notransaction LIKE 'SCO-%' THEN COALESCE(o.qty, 0)::float8 END
         FROM t_opname o
         WHERE o.inventoryid = ${inventoryId}
           AND NOT EXISTS (SELECT 1 FROM t_opnameheader oh WHERE oh.notransaction = o.notransaction)
@@ -78,7 +84,7 @@ export async function GET(
 
         UNION ALL
         SELECT 'receive', COALESCE(mh.mrdate, mh.createddate), mh.mrno, 1,
-               COALESCE(md.qty, 0)::float8, 0, COALESCE(md.price, 0)::float8, md.id::int
+               COALESCE(md.qty, 0)::float8, 0, COALESCE(md.price, 0)::float8, md.id::int, NULL
         FROM t_materialreceivedetail md
         JOIN t_materialreceiveheader mh ON mh.id = md.mrid
         WHERE md.inventoryid = ${String(inventoryId)} -- text column in this legacy table
@@ -103,7 +109,7 @@ export async function GET(
         id: `${r.source}-${r.row_id}`,
         date: r.date,
         transactionNo: r.transaction_no || 'SYS-ADJ',
-        type: mapInvoiceType(r.type_id),
+        type: r.counted_qty != null ? `Opname (hitung ${Number(r.counted_qty).toLocaleString('id-ID')})` : mapInvoiceType(r.type_id),
         qtyIn: Number(r.qty_in),
         qtyOut: Number(r.qty_out),
         price: mayViewHpp ? Number(r.price) : 0,

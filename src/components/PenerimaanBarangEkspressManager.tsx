@@ -1,25 +1,29 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  RefreshCw,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  X,
-  AlertTriangle,
-  Zap,
-  Printer,
-  ScanLine,
-  Search,
-  Plus,
-  ArrowLeft,
-  Eye,
-  ChevronUp,
-  ChevronDown,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { RefreshCw, Trash2, CheckCircle, XCircle, AlertTriangle, Zap } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { searchInventory, lookupInventoryByScan } from '@/lib/inventory-lookup';
+import { getTodayBangkok } from '@/lib/date-utils';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
+import IntegerCellInput from '@/components/IntegerCellInput';
+import { InputSupplierDialog, DailyReportDialog, PaidToggle } from '@/components/PenerimaanBarangDialogs';
+import {
+  LegacyWindow,
+  LegacyButton,
+  LegacyGrid,
+  LegacyPager,
+  LegacyInput,
+  LegacySelect,
+  GroupBox,
+  FieldRow,
+  ContextMenu,
+  menuAt,
+  fmtDate,
+  lx,
+  type LegacyColumn,
+  type ContextMenuState,
+} from '@/components/legacy';
 import { ERPProduct, Supplier } from '@/types/erp';
 
 export interface ExpressReceiptItem {
@@ -32,22 +36,26 @@ export interface ExpressReceiptItem {
   description: string;
 }
 
+/** One row of GET /api/purchasing/express (only the fields this page shows). */
 export interface ExpressReceiptHeader {
-  id: string;
+  id: number;
   mrNo: string;
   mrDate: string;
   supplierId: string;
   supplierName: string;
-  doNo: string;
-  driverName: string;
-  vehicleNo: string;
-  transporter: string;
-  wh_name?: string;
   description: string;
-  isExpress: boolean;
-  isVoid: boolean;
-  totalQty?: number;
-  itemCount?: number;
+}
+
+/** A saved receipt shown read-only in the detail group. */
+interface ViewedReceipt {
+  id: number;
+  mrNo: string;
+  mrDate: string;
+  supplierId: string;
+  supplierName: string;
+  whId: string;
+  description: string;
+  items: ExpressReceiptItem[];
 }
 
 interface ToastMessage {
@@ -61,79 +69,101 @@ interface PenerimaanBarangEkspressManagerProps {
   isDark: boolean;
 }
 
+const PAGE_SIZE_DEFAULT = 100;
+
+// Default list range: the last 30 days up to today (Bangkok time)
+function daysAgoBangkok(days: number): string {
+  const d = new Date(`${getTodayBangkok()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Legacy Mod_Purchasing.Frm_PurchaseReceivementNoPrice: receipt list and detail side by side in one window. */
 export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBarangEkspressManagerProps) {
+  const c = lx(isDark);
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
+
+  // List group ("No. Nota Penerimaan")
+  const [receiptsList, setReceiptsList] = useState<ExpressReceiptHeader[]>([]);
+  const [dateStart, setDateStartRaw] = useState<string>(() => daysAgoBangkok(30));
+  const [dateEnd, setDateEndRaw] = useState<string>(() => getTodayBangkok());
+  const [listSearch, setListSearchRaw] = useState<string>('');
+  const debouncedListSearch = useDebounce(listSearch, 500);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeRaw] = useState(PAGE_SIZE_DEFAULT);
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [showPaid, setShowPaidRaw] = useState(false);
+  // Filters change the result set, so paging restarts at page 1
+  const withPageReset = <T,>(set: (v: T) => void) => (v: T) => { setPage(1); set(v); };
+  const setDateStart = withPageReset(setDateStartRaw);
+  const setDateEnd = withPageReset(setDateEndRaw);
+  const setListSearch = withPageReset(setListSearchRaw);
+  const setPageSize = withPageReset(setPageSizeRaw);
+  const setShowPaid = withPageReset(setShowPaidRaw);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
   const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  // Old ToggleSwitch1: off = "Belum Terbayar", on = "Terbayar" (t_materialreceiveheader.ispaid)
+  const [isDailyReportOpen, setIsDailyReportOpen] = useState(false);
+  const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+  const [supplierReloadKey, setSupplierReloadKey] = useState(0);
 
-  const handleSort = (field: string) => {
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField('');
-      setSortOrder('asc');
-    }
-  };
+  // Detail group: a new receipt being entered, or a saved one shown read-only
+  const [viewed, setViewed] = useState<ViewedReceipt | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
-  // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
-  const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
-
-  // List View States
-  const [receiptsList, setReceiptsList] = useState<ExpressReceiptHeader[]>([]);
-  const [listSearch, setListSearch] = useState<string>('');
-  const debouncedListSearch = useDebounce(listSearch, 500);
-  const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
-
-  // Form Header States
-  const [mrNo, setMrNo] = useState<string>('');
+  // New receipt header
   const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
-  const [selectedSupplierName, setSelectedSupplierName] = useState<string>('');
-  const [doNo, setDoNo] = useState<string>('');
-  const [driverName, setDriverName] = useState<string>('');
-  const [vehicleNo, setVehicleNo] = useState<string>('');
-  const [transporter, setTransporter] = useState<string>('');
-  const [warehouses, setWarehouses] = useState<{id: number, whCode: string, location: string}[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: number; whCode: string; location: string }[]>([]);
   const [whId, setWhId] = useState<string>('');
+  const [mrDate, setMrDate] = useState<string>(() => getTodayBangkok());
   const [headerDesc, setHeaderDesc] = useState<string>('');
 
-  // Item Entry States
+  // Item entry: "#" qty + barcode / name search
   const [items, setItems] = useState<ExpressReceiptItem[]>([]);
+  const [entryQty, setEntryQty] = useState<number>(1);
   const [productSearch, setProductSearch] = useState<string>('');
   const debouncedProductSearch = useDebounce(productSearch, 500);
   const [searchResults, setSearchResults] = useState<ERPProduct[]>([]);
   const [isSearchingProduct, setIsSearchingProduct] = useState<boolean>(false);
+  const [itemMenu, setItemMenu] = useState<ContextMenuState<ExpressReceiptItem> | null>(null);
+  const closeItemMenu = useCallback(() => setItemMenu(null), []);
 
-  // General Loading & Toasts
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  // Print Modal
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
-  const [printData, setPrintData] = useState<{ header: ExpressReceiptHeader; items: ExpressReceiptItem[] } | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, type, text }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3500);
   }, []);
 
-  // Fetch Express Receipts List
+  const supplierById = useMemo(() => new Map(suppliersList.map((s) => [String(s.id), s])), [suppliersList]);
+
+  // Fetch the receipt list for the date range (server-side mrdate range filter) and search text
   useEffect(() => {
     let isMounted = true;
     async function load() {
       setIsLoadingList(true);
       try {
-        const res = await fetch(`/api/purchasing/express?q=${encodeURIComponent(debouncedListSearch)}`);
+        const params = new URLSearchParams({ q: debouncedListSearch, page: String(page), limit: String(pageSize), paid: String(showPaid) });
+        if (dateStart) params.set('start_mrdate', dateStart);
+        if (dateEnd) params.set('end_mrdate', dateEnd);
+        const res = await fetch(`/api/purchasing/express?${params}`);
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setReceiptsList(json.data);
+          setTotalRows(json.pagination?.total ?? json.data.length);
+          setTotalPages(json.pagination?.totalPages ?? 1);
+        } else if (isMounted && !json.success) {
+          addToast(typeof json.error === 'string' ? json.error : json.error?.message || 'Gagal memuat daftar penerimaan', 'error');
         }
       } catch (err) {
         console.error('Error fetching express receipts:', err);
@@ -143,87 +173,34 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     }
     load();
     return () => { isMounted = false; };
-  }, [debouncedListSearch]);
+  }, [debouncedListSearch, dateStart, dateEnd, page, pageSize, reloadKey, showPaid, addToast]);
 
-  const reloadReceipts = async () => {
-    setIsLoadingList(true);
-    try {
-      const res = await fetch(`/api/purchasing/express?q=${encodeURIComponent(debouncedListSearch)}`);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setReceiptsList(json.data);
-      }
-    } catch (err) {
-      console.error('Error fetching express receipts:', err);
-    } finally {
-      setIsLoadingList(false);
-    }
-  };
+  const reloadReceipts = () => setReloadKey((k) => k + 1);
 
-  const handleViewReceiptDetail = async (id: string | number) => {
-    try {
-      const res = await fetch(`/api/purchasing/express/${id}`);
-      const json = await res.json();
-      if (json.success) {
-        const rawDate = json.data.mr_date || json.data.mrDate;
-        const parsedDate = rawDate ? new Date(rawDate) : new Date();
-        const formattedDate = isNaN(parsedDate.getTime())
-          ? String(rawDate || '-')
-          : parsedDate.toISOString().slice(0, 10);
+  // Suppliers for the detail group; "Refresh Supplier" reloads them and keeps the chosen one when it still exists
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/suppliers?onlyActive=true&all=true')
+      .then((res) => res.json())
+      .then((supJson) => {
+        if (!isMounted || !supJson.success || !Array.isArray(supJson.data)) return;
+        const list: Supplier[] = supJson.data;
+        setSuppliersList(list);
+        setSelectedSupplierId((prev) => (list.some((s) => String(s.id) === prev) ? prev : list.length > 0 ? String(list[0].id) : ''));
+      })
+      .catch((err) => console.error('Error fetching suppliers:', err));
+    return () => { isMounted = false; };
+  }, [supplierReloadKey]);
 
-        setPrintData({
-          header: {
-            id: String(json.data.id),
-            mrNo: json.data.mr_no || json.data.mrNo,
-            mrDate: formattedDate,
-            supplierId: '0',
-            supplierName: json.data.supplier_name || json.data.supplierName,
-            doNo: json.data.do_no || json.data.doNo || '-',
-            driverName: json.data.driver_name || json.data.driverName || '-',
-            vehicleNo: json.data.vehicle_no || json.data.vehicleNo || '-',
-            wh_name: json.data.wh_name || 'Gudang Utama',
-            transporter: json.data.transporter || '-',
-            description: json.data.description || '-',
-            isExpress: true,
-            isVoid: false,
-          },
-          items: (json.data.items || []).map((it: any) => ({
-            inventoryId: String(it.id),
-            inventoryNo: it.inventory_no || it.inventoryNo || '-',
-            inventoryName: it.inventory_name || it.inventoryName || '-',
-            uomName: it.uom_name || it.uomName || 'PCS',
-            qty: Number(it.qty) || 0,
-            barcode: it.barcode || '',
-            description: it.description || '',
-          })),
-        });
-        setIsPrintModalOpen(true);
-      }
-    } catch (err) {
-      console.error('Error viewing receipt detail:', err);
-    }
-  };
-
-  // Fetch Suppliers and Lookups for dropdowns
+  // Warehouses for the detail group
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       try {
-        const [supRes, lookupRes] = await Promise.all([
-          fetch('/api/suppliers?onlyActive=true&all=true'),
-          fetch('/api/inventory/lookups')
-        ]);
-        const supJson = await supRes.json();
+        const lookupRes = await fetch('/api/inventory/lookups');
         const lookupJson = await lookupRes.json();
-        
+
         if (isMounted) {
-          if (supJson.success && Array.isArray(supJson.data)) {
-            setSuppliersList(supJson.data);
-            if (supJson.data.length > 0) {
-              setSelectedSupplierId(supJson.data[0].id.toString());
-              setSelectedSupplierName(supJson.data[0].supplierName);
-            }
-          }
           if (lookupJson.success && lookupJson.data?.warehouses) {
             setWarehouses(lookupJson.data.warehouses);
             if (lookupJson.data.warehouses.length > 0) {
@@ -239,7 +216,7 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     return () => { isMounted = false; };
   }, []);
 
-  // Live product search for Barcode / SKU input in create mode (request-id guard drops out-of-order responses)
+  // Live product search for the barcode / name input (request-id guard drops out-of-order responses)
   const productSearchReqIdRef = useRef(0);
   useEffect(() => {
     const reqId = ++productSearchReqIdRef.current;
@@ -258,6 +235,37 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     };
     runSearch();
   }, [debouncedProductSearch, addToast]);
+
+  // Add a product with the "#" qty; scanning the same item again adds to its qty
+  const handleAddProductToItems = (prod: ERPProduct, keepSearch = false) => {
+    const addQty = Math.max(1, Math.floor(entryQty) || 1);
+    setItems((prev) => {
+      const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex] = { ...updated[existingIndex], qty: updated[existingIndex].qty + addQty };
+        return updated;
+      }
+      return [
+        ...prev,
+        {
+          inventoryId: String(prod.id),
+          barcode: prod.barcode || '',
+          inventoryNo: prod.inventoryNo || '',
+          inventoryName: prod.inventoryName,
+          uomName: prod.uomName || 'PCS',
+          qty: addQty,
+          description: '',
+        },
+      ];
+    });
+    setEntryQty(1);
+    if (!keepSearch) {
+      setProductSearch('');
+      setSearchResults([]);
+    }
+    addToast(`"${prod.inventoryName}" ditambahkan`, 'info');
+  };
 
   // Enter / barcode scan: look up the current input directly instead of waiting for the debounced dropdown
   const handleProductSearchEnter = async () => {
@@ -279,55 +287,99 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     }
   };
 
-  // Add Product to Receipt Line Items
-  const handleAddProductToItems = (prod: ERPProduct, keepSearch = false) => {
-    setItems((prev) => {
-      const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = { ...updated[existingIndex], qty: updated[existingIndex].qty + 1 };
-        return updated;
-      }
-      return [
-        ...prev,
-        {
-          inventoryId: String(prod.id),
-          barcode: prod.barcode || '',
-          inventoryNo: prod.inventoryNo || '',
-          inventoryName: prod.inventoryName,
-          uomName: prod.uomName || 'PCS',
-          qty: 1,
-          description: '',
-        },
-      ];
-    });
-    if (!keepSearch) {
-      setProductSearch('');
-      setSearchResults([]);
-    }
-    addToast(`"${prod.inventoryName}" ditambahkan`, 'info');
+  // Leaving an unsaved new receipt asks first, so typed lines are not lost by a stray click
+  const confirmDiscardNew = async () => {
+    if (viewed || items.length === 0) return true;
+    return confirmDialog('Barang yang sudah diinput belum disimpan. Buang input ini?', { title: 'Penerimaan Barang', confirmText: 'Buang' });
   };
 
-  // Keyboard shortcuts
+  // "New": empty detail group ready for input
+  const handleNew = async () => {
+    if (!(await confirmDiscardNew())) return;
+    setViewed(null);
+    setItems([]);
+    setHeaderDesc('');
+    setMrDate(getTodayBangkok());
+    setEntryQty(1);
+    setProductSearch('');
+    setSearchResults([]);
+    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  };
+
+  // "Recreate Invoice": close the shown receipt and start the next one on the same date (old SB_CreateNew_Click)
+  const handleRecreateInvoice = () => {
+    const date = viewed?.mrDate && viewed.mrDate !== '-' ? viewed.mrDate : getTodayBangkok();
+    setViewed(null);
+    setItems([]);
+    setHeaderDesc('');
+    setMrDate(date);
+    setEntryQty(1);
+    setProductSearch('');
+    setSearchResults([]);
+    setTimeout(() => barcodeInputRef.current?.focus(), 0);
+  };
+
+  // Show a saved receipt read-only in the detail group
+  const loadReceipt = async (id: number) => {
+    setIsLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/purchasing/express/${id}`);
+      const json = await res.json();
+      if (json.success) {
+        const d = json.data;
+        setViewed({
+          id: Number(d.id),
+          mrNo: d.mr_no || '-',
+          mrDate: d.mr_date || '',
+          supplierId: d.supplier_id != null ? String(d.supplier_id) : '',
+          supplierName: d.supplier_name || '-',
+          whId: d.wh_id != null ? String(d.wh_id) : '',
+          description: d.description && d.description !== '-' ? d.description : '',
+          items: (d.items || []).map((it: any) => ({
+            inventoryId: String(it.id),
+            inventoryNo: it.inventory_no || '',
+            inventoryName: it.inventory_name || '-',
+            uomName: it.uom_name || 'PCS',
+            qty: Number(it.qty) || 0,
+            barcode: it.barcode || '',
+            description: it.description || '',
+          })),
+        });
+      } else {
+        addToast(json.error?.message || 'Gagal memuat detail penerimaan', 'error');
+      }
+    } catch (err) {
+      console.error('Error viewing receipt detail:', err);
+      addToast('Gagal memuat detail penerimaan', 'error');
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const handleOpenReceipt = async (row: ExpressReceiptHeader) => {
+    if (viewed?.id === row.id) return;
+    if (!(await confirmDiscardNew())) return;
+    loadReceipt(row.id);
+  };
+
+  // Keyboard shortcuts: Alt+N = New, "/" = focus the barcode input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName);
-      if (e.key === 'Escape') {
-        setIsPrintModalOpen(false);
-      } else if (e.key === '/' && viewMode === 'create' && !isInputFocused) {
+      if (e.key === '/' && !viewed && !isInputFocused) {
         e.preventDefault();
         barcodeInputRef.current?.focus();
-      } else if (e.altKey && e.key.toLowerCase() === 'n' && viewMode === 'list') {
+      } else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        setViewMode('create');
+        handleNew();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode]);
+  });
 
-  // Handle Submit Receipt Transaction
+  // "Input Nota": save the receipt (adds stock), then show it read-only
   const handleSubmitReceipt = async () => {
     if (items.length === 0) {
       return addToast('Wajib menginput minimal 1 item barang yang diterima', 'warning');
@@ -335,13 +387,10 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     setIsSubmitting(true);
     try {
       const payload = {
-        mr_no: mrNo,
+        mr_no: '',
+        mr_date: mrDate,
         supplier_id: selectedSupplierId,
-        supplier_name: selectedSupplierName,
-        do_no: doNo,
-        driver_name: driverName,
-        vehicle_no: vehicleNo,
-        transporter: transporter,
+        supplier_name: supplierById.get(selectedSupplierId)?.supplierName || '',
         wh_id: whId,
         description: headerDesc,
         items,
@@ -356,38 +405,10 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
       const json = await res.json();
       if (json.success) {
         addToast(json.message, 'success');
-        
-        // Prepare print preview modal data
-        setPrintData({
-          header: {
-            id: json.id,
-            mrNo: json.mrNo,
-            mrDate: new Date().toISOString().replace('T', ' ').slice(0, 19),
-            supplierId: selectedSupplierId,
-            supplierName: selectedSupplierName,
-            doNo,
-            driverName,
-            vehicleNo,
-            transporter,
-            wh_name: warehouses.find(w => w.id.toString() === whId)?.location || '-',
-            description: headerDesc,
-            isExpress: true,
-            isVoid: false,
-          },
-          items,
-        });
-
-        // Reset form & return to list mode
-        setMrNo('');
-        setDoNo('');
-        setDriverName('');
-        setVehicleNo('');
-        setTransporter('');
-        setHeaderDesc('');
         setItems([]);
-        setIsPrintModalOpen(true);
-        setViewMode('list');
+        setHeaderDesc('');
         reloadReceipts();
+        if (json.id) await loadReceipt(Number(json.id));
       } else {
         addToast(`Gagal menyimpan: ${json.error}`, 'error');
       }
@@ -399,631 +420,354 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
     }
   };
 
+  // Old rows may have no stored supplier name; fall back to the supplier master by id
+  const supplierLabel = useCallback(
+    (row: ExpressReceiptHeader) =>
+      row.supplierName && row.supplierName !== '-' ? row.supplierName : supplierById.get(String(row.supplierId))?.supplierName || '-',
+    [supplierById],
+  );
+
+  // Local sort of the current page (header click)
+  const sortedReceipts = useMemo(() => {
+    if (!sortField) return receiptsList;
+    const val = (r: ExpressReceiptHeader) => (sortField === 'supplier' ? supplierLabel(r) : String((r as any)[sortField] ?? '')).toLowerCase();
+    return [...receiptsList].sort((a, b) => {
+      const cmp = val(a).localeCompare(val(b));
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [receiptsList, sortField, sortOrder, supplierLabel]);
+
+  const handleSort = (field: string) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortOrder('asc');
+    } else if (sortOrder === 'asc') {
+      setSortOrder('desc');
+    } else {
+      setSortField('');
+      setSortOrder('asc');
+    }
+  };
+
+  // Legacy GV_Header columns
+  const listColumns: LegacyColumn<ExpressReceiptHeader>[] = [
+    { key: 'mrNo', caption: 'MR No', sortKey: 'mrNo' },
+    { key: 'mrDate', caption: 'MR Date', format: 'date', sortKey: 'mrDate' },
+    { key: 'supplier', caption: 'Supplier', sortKey: 'supplier', render: supplierLabel },
+    { key: 'description', caption: 'Keterangan', render: (r) => (r.description === '-' ? '' : r.description) },
+  ];
+
+  const isViewing = viewed !== null;
+  const detailItems = viewed ? viewed.items : items;
+
+  // Legacy GV_Detail columns (Harga is hidden on this no-price form)
+  const detailColumns: LegacyColumn<ExpressReceiptItem>[] = [
+    {
+      key: 'inventoryName', caption: 'Barang',
+      render: (it) => (
+        <span title={`${it.inventoryNo}${it.barcode ? ` | ${it.barcode}` : ''}`}>{it.inventoryName}</span>
+      ),
+    },
+    {
+      key: 'qty', caption: 'Qty', align: 'right', width: 100,
+      render: (it) =>
+        isViewing ? (
+          it.qty.toLocaleString('id-ID')
+        ) : (
+          <IntegerCellInput
+            value={it.qty}
+            min={1}
+            label={`Qty ${it.inventoryName}`}
+            onChange={(val) => {
+              setItems((prev) => prev.map((row) => (row.inventoryId === it.inventoryId ? { ...row, qty: val } : row)));
+            }}
+            className={`w-20 px-1.5 py-0.5 rounded border text-right tabular-nums outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`}
+          />
+        ),
+    },
+    {
+      key: 'description', caption: 'Description',
+      render: (it) =>
+        isViewing ? (
+          it.description
+        ) : (
+          <input
+            type="text"
+            value={it.description}
+            aria-label={`Description ${it.inventoryName}`}
+            onChange={(e) => {
+              const val = e.target.value;
+              setItems((prev) => prev.map((row) => (row.inventoryId === it.inventoryId ? { ...row, description: val } : row)));
+            }}
+            className={`w-full min-w-40 px-1.5 py-0.5 rounded border outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`}
+          />
+        ),
+    },
+  ];
+
+  const detailSupplier = viewed ? supplierById.get(viewed.supplierId) : supplierById.get(selectedSupplierId);
+  const viewedWarehouse = viewed ? warehouses.find((w) => String(w.id) === viewed.whId)?.location || '-' : '';
+
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
-      {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
-      <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <LegacyWindow title="Penerimaan Barang" isDark={isDark}>
+      {/* Toasts */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2.5 animate-in slide-in-from-top-4 fade-in duration-200 ${
+            className={`pointer-events-auto px-4 py-3 rounded shadow-xl border text-xs font-bold flex items-center gap-2.5 ${
               t.type === 'success'
-                ? isDark ? 'bg-emerald-950/90 border-emerald-800 text-emerald-300' : 'bg-emerald-800 text-white border-emerald-900'
+                ? 'bg-emerald-700 text-white border-emerald-800'
                 : t.type === 'error'
-                ? isDark ? 'bg-rose-950/90 border-rose-800 text-rose-300' : 'bg-rose-800 text-white border-rose-900'
+                ? 'bg-rose-700 text-white border-rose-800'
                 : t.type === 'warning'
-                ? isDark ? 'bg-amber-950/90 border-amber-800 text-amber-300' : 'bg-amber-800 text-white border-amber-900'
-                : isDark ? 'bg-indigo-950/90 border-indigo-800 text-indigo-300' : 'bg-indigo-800 text-white border-indigo-900'
+                ? 'bg-amber-700 text-white border-amber-800'
+                : 'bg-indigo-700 text-white border-indigo-800'
             }`}
           >
-            {t.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-300 shrink-0" />}
-            {t.type === 'error' && <XCircle className="w-4 h-4 text-rose-300 shrink-0" />}
-            {t.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />}
-            {t.type === 'info' && <Zap className="w-4 h-4 text-indigo-300 shrink-0" />}
+            {t.type === 'success' && <CheckCircle className="w-4 h-4 shrink-0" />}
+            {t.type === 'error' && <XCircle className="w-4 h-4 shrink-0" />}
+            {t.type === 'warning' && <AlertTriangle className="w-4 h-4 shrink-0" />}
+            {t.type === 'info' && <Zap className="w-4 h-4 shrink-0" />}
             <span>{t.text}</span>
           </div>
         ))}
       </div>
 
-      {/* MAIN TOOLBAR */}
-      <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-end gap-4 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        {/* View Switcher & Action Buttons */}
-        <div className="flex items-center gap-2">
-          {viewMode === 'create' ? (
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3.5 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer ${
-                isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
-              }`}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Kembali ke Daftar Transaksi</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => setViewMode('create')}
-              className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-lg cursor-pointer active:scale-95"
-            >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Input Penerimaan Baru (Alt+N)</span>
-            </button>
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2 overflow-auto lg:overflow-hidden">
+        {/* Left group: receipt list */}
+        <GroupBox caption="No. Nota Penerimaan" isDark={isDark} className="lg:w-[42%] min-h-[420px] lg:min-h-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <FieldRow label="Tgl. Awal :" isDark={isDark} labelWidth="w-20">
+              <LegacyInput isDark={isDark} type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} />
+            </FieldRow>
+            <FieldRow label="Tgl. Akhir :" isDark={isDark} labelWidth="w-20">
+              <LegacyInput isDark={isDark} type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} />
+            </FieldRow>
+          </div>
+          {/* Old row order: New ... Daily Report, then Search : + paid toggle + Refresh */}
+          <div className="flex items-center justify-between gap-2">
+            <LegacyButton isDark={isDark} variant="primary" onClick={handleNew}>New</LegacyButton>
+            <LegacyButton isDark={isDark} onClick={() => setIsDailyReportOpen(true)}>Daily Report</LegacyButton>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex-1 min-w-48">
+              <FieldRow label="Search :" isDark={isDark} labelWidth="w-20">
+                <LegacyInput isDark={isDark} placeholder="No. MR / Supplier..." value={listSearch} onChange={(e) => setListSearch(e.target.value)} />
+              </FieldRow>
+            </div>
+            <PaidToggle isDark={isDark} checked={showPaid} onChange={setShowPaid} />
+            <LegacyButton isDark={isDark} onClick={reloadReceipts} icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoadingList ? 'animate-spin' : ''}`} />}>
+              Refresh
+            </LegacyButton>
+          </div>
+          <LegacyGrid
+            isDark={isDark}
+            columns={listColumns}
+            rows={sortedReceipts}
+            rowKey={(r) => r.id}
+            loading={isLoadingList}
+            emptyText="Tidak ada penerimaan pada rentang tanggal ini."
+            focusedKey={viewed?.id ?? null}
+            onRowClick={handleOpenReceipt}
+            sort={sortField ? { key: sortField, order: sortOrder } : null}
+            onSort={handleSort}
+          />
+          <LegacyPager
+            isDark={isDark}
+            page={page}
+            totalPages={totalPages}
+            total={totalRows}
+            shown={receiptsList.length}
+            onPage={setPage}
+            pageSize={pageSize}
+            onPageSize={setPageSize}
+            unit="nota"
+          />
+        </GroupBox>
+
+        {/* Right group: detail of the new or selected receipt */}
+        <GroupBox
+          caption=">> Detail Nota Penerimaan"
+          isDark={isDark}
+          className="flex-1 min-h-[480px] lg:min-h-0"
+          actions={isLoadingDetail ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : undefined}
+        >
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-2">
+            <div className="flex flex-col gap-2">
+              <FieldRow label="No. Order :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput isDark={isDark} readOnly value={viewed ? viewed.mrNo : ''} placeholder="AUTO" className="font-mono" />
+              </FieldRow>
+              <FieldRow label="Tanggal :" isDark={isDark} labelWidth="w-24">
+                {viewed ? (
+                  <LegacyInput isDark={isDark} readOnly value={fmtDate(viewed.mrDate)} />
+                ) : (
+                  <LegacyInput isDark={isDark} type="date" value={mrDate} onChange={(e) => e.target.value && setMrDate(e.target.value)} />
+                )}
+              </FieldRow>
+              <FieldRow label="Gudang :" isDark={isDark} labelWidth="w-24">
+                {viewed ? (
+                  <LegacyInput isDark={isDark} readOnly value={viewedWarehouse} />
+                ) : (
+                  <LegacySelect isDark={isDark} value={whId} onChange={(e) => setWhId(e.target.value)}>
+                    <option value="" disabled>-- Pilih Tujuan Gudang --</option>
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>{w.location}</option>
+                    ))}
+                  </LegacySelect>
+                )}
+              </FieldRow>
+              <FieldRow label="Keterangan :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput
+                  isDark={isDark}
+                  readOnly={isViewing}
+                  value={viewed ? viewed.description : headerDesc}
+                  onChange={(e) => setHeaderDesc(e.target.value)}
+                />
+              </FieldRow>
+            </div>
+            <div className="flex flex-col gap-2">
+              <FieldRow label="Supplier :" isDark={isDark} labelWidth="w-24">
+                {viewed ? (
+                  <LegacyInput isDark={isDark} readOnly value={detailSupplier?.supplierName || viewed.supplierName} />
+                ) : (
+                  <LegacySelect isDark={isDark} value={selectedSupplierId} onChange={(e) => setSelectedSupplierId(e.target.value)}>
+                    {suppliersList.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        {sup.supplierName} ({sup.supplierNo})
+                      </option>
+                    ))}
+                  </LegacySelect>
+                )}
+              </FieldRow>
+              <FieldRow label="Alamat Supp. :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput isDark={isDark} readOnly value={detailSupplier?.address || ''} />
+              </FieldRow>
+              <FieldRow label="Kota Supp. :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput isDark={isDark} readOnly value={detailSupplier?.city || ''} />
+              </FieldRow>
+              {/* Old SB_SupRefresh ("Refresh Supplier") and SB_AddSupplier ("Tambah Supplier", only while entering a new receipt) */}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <LegacyButton isDark={isDark} className="whitespace-nowrap" onClick={() => setSupplierReloadKey((k) => k + 1)} icon={<RefreshCw className="w-3.5 h-3.5" />}>
+                  Refresh Supplier
+                </LegacyButton>
+                <LegacyButton isDark={isDark} className="whitespace-nowrap" onClick={() => setIsAddSupplierOpen(true)} disabled={isViewing}>Tambah Supplier</LegacyButton>
+              </div>
+            </div>
+          </div>
+
+          {/* Item entry: "#" qty, then scan a barcode (Enter) or pick from the search list */}
+          {!isViewing && (
+            <div className="flex items-center gap-2">
+              <span className={`w-24 shrink-0 text-right ${c.muted}`}>#</span>
+              <LegacyInput
+                isDark={isDark}
+                type="number"
+                min={1}
+                value={entryQty}
+                onChange={(e) => setEntryQty(parseInt(e.target.value) || 1)}
+                aria-label="Qty"
+                className="w-20 flex-none text-right"
+              />
+              <div className="relative flex-1 min-w-0">
+                <LegacyInput
+                  ref={barcodeInputRef}
+                  isDark={isDark}
+                  placeholder="Scan Barcode / Cari Barang (SKU/Nama)... [/]"
+                  value={productSearch}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setProductSearch(val);
+                    if (!val.trim()) setSearchResults([]);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleProductSearchEnter();
+                    } else if (e.key === 'Escape') {
+                      setSearchResults([]);
+                    }
+                  }}
+                  className="pr-7"
+                />
+                {isSearchingProduct && (
+                  <RefreshCw className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />
+                )}
+                {searchResults.length > 0 && (
+                  <div className={`absolute left-0 right-0 top-full mt-1 z-40 rounded border shadow-xl max-h-64 overflow-y-auto ${c.panel}`}>
+                    {searchResults.map((prod) => (
+                      <div
+                        key={prod.id}
+                        onClick={() => handleAddProductToItems(prod)}
+                        className={`px-3 py-1.5 border-b last:border-b-0 cursor-pointer ${c.border} ${c.rowHover}`}
+                      >
+                        <div className="font-semibold">{prod.inventoryName}</div>
+                        <div className={`text-[11px] font-mono ${c.muted}`}>SKU: {prod.inventoryNo} | Barcode: {prod.barcode || '-'}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <LegacyButton isDark={isDark} variant="primary" onClick={handleSubmitReceipt} disabled={isSubmitting}>
+                {isSubmitting ? 'Menyimpan...' : 'Input Nota'}
+              </LegacyButton>
+            </div>
           )}
-        </div>
+
+          <LegacyGrid
+            isDark={isDark}
+            columns={detailColumns}
+            rows={detailItems}
+            rowKey={(it) => it.inventoryId}
+            loading={isLoadingDetail}
+            emptyText={isViewing ? 'Tidak ada barang.' : 'Belum ada barang diinput. Scan barcode atau cari barang di atas.'}
+            onRowContextMenu={isViewing ? undefined : (it, e) => setItemMenu(menuAt(e, it, 1))}
+          />
+
+          <span className="font-semibold">{detailItems.length} Jenis</span>
+          {/* Old SB_CreateNew: full-width bar under the grid, shown once the receipt is saved */}
+          {isViewing && (
+            <LegacyButton isDark={isDark} onClick={handleRecreateInvoice} className="w-full justify-center">Recreate Invoice</LegacyButton>
+          )}
+        </GroupBox>
       </div>
 
-      {/* 🟢 MODE 1: DAFTAR TRANSAKSI PENERIMAAN EKSPRESS (LIST VIEW) */}
-      {viewMode === 'list' && (
-        <div className="flex-1 overflow-hidden flex flex-col p-4 gap-4">
-          {/* Search & Filter Toolbar */}
-          <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <div className="relative flex-1 max-w-md">
-              <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-              <input
-                type="text"
-                placeholder="Cari No MR / Supplier / Surat Jalan / Sopir..."
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-                className={`w-full border rounded-xl pl-10 pr-4 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                  isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              />
-            </div>
-
-            <button
-              onClick={reloadReceipts}
-              className={`p-2 rounded-xl border hover:bg-slate-800 text-slate-400 cursor-pointer ${
-                isDark ? 'border-slate-800' : 'border-slate-300'
-              }`}
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoadingList ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-
-          {/* Main Table Grid of Receipts WORKBENCH */}
-          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <table className="w-full text-left border-separate border-spacing-0 text-xs">
-              <thead className="sticky top-0 z-20">
-                <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                  <th onClick={() => handleSort('mrNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>No MR</span>{sortField === 'mrNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('mrDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal MR</span>{sortField === 'mrDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('supplierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Supplier Pemasok</span>{sortField === 'supplierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('poNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>No. Surat Jalan (DO)</span>{sortField === 'poNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('driverName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Sopir / Vehicle</span>{sortField === 'driverName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('totalQty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Qty Item</span>{sortField === 'totalQty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('status')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Status</span>{sortField === 'status' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th className="py-1.5 px-2 text-center w-28">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                {isLoadingList ? (
-                  <tr>
-                    <td colSpan={8} className="py-24">
-                      <div className="flex flex-col items-center justify-center animate-pulse">
-                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      </div>
-                    </td>
-                  </tr>
-                ) : receiptsList.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                      Belum ada transaksi penerimaan barang ekspress. Klik tombol <strong>&quot;+ Input Penerimaan Baru&quot;</strong> di atas.
-                    </td>
-                  </tr>
-                ) : (
-                  [...receiptsList].sort((a: any, b: any) => {
-                    if (!sortField) return 0;
-                    let valA, valB;
-                    if (sortField === 'mrNo') { valA = a.mrNo || a.mr_no || ''; valB = b.mrNo || b.mr_no || ''; }
-                    else if (sortField === 'mrDate') { valA = a.mrDate || a.mr_date || ''; valB = b.mrDate || b.mr_date || ''; }
-                    else if (sortField === 'supplierName') { valA = a.supplierName || a.supplier_name || ''; valB = b.supplierName || b.supplier_name || ''; }
-                    else if (sortField === 'poNo') { valA = a.doNo || a.do_no || a.poNo || a.po_no || ''; valB = b.doNo || b.do_no || b.poNo || b.po_no || ''; }
-                    else if (sortField === 'driverName') {
-                      const drvA = a.driverName || a.driver_name || '';
-                      const drvB = b.driverName || b.driver_name || '';
-                      valA = drvA && drvA !== '-' ? `${drvA} (${a.vehicleNo || a.vehicle_no || ''})` : '';
-                      valB = drvB && drvB !== '-' ? `${drvB} (${b.vehicleNo || b.vehicle_no || ''})` : '';
-                    }
-                    else if (sortField === 'totalQty') { valA = a.totalQty ?? a.total_qty ?? (a.items ? a.items.length : 0); valB = b.totalQty ?? b.total_qty ?? (b.items ? b.items.length : 0); }
-                    else if (sortField === 'status') { valA = a.isVoid ? 1 : 0; valB = b.isVoid ? 1 : 0; }
-                    else return 0;
-
-                    if (typeof valA === 'string' && typeof valB === 'string') {
-                      return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-                    }
-                    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-                    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-                    return 0;
-                  }).map((row: any) => {
-                    const mrNo = row.mrNo || row.mr_no || '-';
-                    const mrDate = row.mrDate || row.mr_date || '-';
-                    const supplier = row.supplierName || row.supplier_name || 'Supplier General';
-                    const doNoDisplay = (row.doNo && row.doNo !== '-' ? row.doNo : row.do_no && row.do_no !== '-' ? row.do_no : row.poNo || row.po_no) || '-';
-                    const drvName = row.driverName || row.driver_name;
-                    const vehNo = row.vehicleNo || row.vehicle_no || '-';
-                    const driver = drvName && drvName !== '-' ? `${drvName} (${vehNo})` : '-';
-                    const qty = row.totalQty ?? row.total_qty ?? (row.items ? row.items.length : 0);
-
-                    return (
-                      <tr
-                        key={row.id}
-                        tabIndex={0}
-                        onDoubleClick={() => handleViewReceiptDetail(row.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleViewReceiptDetail(row.id);
-                          }
-                        }}
-                        className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'}`}
-                        title="Double-click atau tekan Enter untuk melihat detail"
-                      >
-                        <td className="py-3.5 px-4 text-center font-mono font-black text-amber-400">{mrNo}</td>
-                        <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{mrDate}</td>
-                        <td className="py-3.5 px-4 font-black text-slate-900 dark:text-white">{supplier}</td>
-                        <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{doNoDisplay}</td>
-                        <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{driver}</td>
-                        <td className="py-3.5 px-4 text-center font-black text-emerald-400">{qty} Items</td>
-                        <td className="py-3.5 px-4 text-center">
-                          {row.isVoid ? (
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                              VOID
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              SELESAI
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleViewReceiptDetail(row.id);
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                              title="Lihat & Cetak Bukti"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                  );
-                })
-              )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {itemMenu && (
+        <ContextMenu
+          isDark={isDark}
+          x={itemMenu.x}
+          y={itemMenu.y}
+          onClose={closeItemMenu}
+          items={[
+            {
+              label: 'Hapus',
+              icon: <Trash2 className="w-3.5 h-3.5" />,
+              danger: true,
+              onClick: () => setItems((prev) => prev.filter((it) => it.inventoryId !== itemMenu.row.inventoryId)),
+            },
+          ]}
+        />
       )}
 
-      {/* 🟠 MODE 2: FORM INPUT TRANSAKSI PENERIMAAN EKSPRESS BARU (CREATE VIEW) */}
-      {viewMode === 'create' && (
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Form Header */}
-          <div className={`p-5 border-b shadow-sm ${
-            isDark ? 'bg-slate-800/90 border-slate-700' : 'bg-white border-slate-300'
-          }`}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-bold">
-              <div>
-                <label className="block mb-1 text-amber-400 font-black">No. Bukti MR (Ekspress) *</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={mrNo}
-                  placeholder="[AUTO GENERATE]"
-                  className={`w-full p-2.5 rounded-xl border font-mono font-black text-amber-400 focus:outline-none placeholder-amber-400/50 ${
-                    isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Pemasok *</label>
-                <select
-                  value={selectedSupplierId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedSupplierId(id);
-                    const found = suppliersList.find((s) => String(s.id) === String(id));
-                    if (found) setSelectedSupplierName(found.supplierName);
-                  }}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                >
-                  {suppliersList.map((sup) => (
-                    <option key={sup.id} value={sup.id}>
-                      {sup.supplierName} ({sup.supplierNo})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Surat Jalan / DO *</label>
-                <input
-                  type="text"
-                  placeholder="DO-8899221"
-                  value={doNo}
-                  onChange={(e) => setDoNo(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Tujuan</label>
-                <select
-                  value={whId}
-                  onChange={(e) => setWhId(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                >
-                  {warehouses.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.location}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Sopir / Driver</label>
-                <input
-                  type="text"
-                  placeholder="Bpk. Joko"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>No. Polisi Kendaraan</label>
-                <input
-                  type="text"
-                  placeholder="L 9872 AB"
-                  value={vehicleNo}
-                  onChange={(e) => setVehicleNo(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Transporter / Ekspedisi</label>
-                <input
-                  type="text"
-                  placeholder="Dakota Cargo / JTR"
-                  value={transporter}
-                  onChange={(e) => setTransporter(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="col-span-1 md:col-span-1">
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Catatan Penerimaan</label>
-                <input
-                  type="text"
-                  placeholder="Catatan fisik..."
-                  value={headerDesc}
-                  onChange={(e) => setHeaderDesc(e.target.value)}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Barcode Scanner Toolbar */}
-          <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-            isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
-          }`}>
-            <div className="relative flex-1 min-w-[320px] max-w-xl group">
-              <ScanLine className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                isDark ? 'text-amber-400' : 'text-slate-950'
-              }`} />
-              <input
-                ref={barcodeInputRef}
-                type="text"
-                placeholder="Scan Barcode / Cari Barang (SKU/Nama)... [/]"
-                value={productSearch}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setProductSearch(val);
-                  if (!val.trim()) setSearchResults([]);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleProductSearchEnter();
-                  }
-                }}
-                className={`w-full border-2 rounded-xl pl-10 pr-10 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
-                }`}
-              />
-              {isSearchingProduct && (
-                <RefreshCw className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-amber-400" />
-              )}
-
-              {/* Search Dropdown Results */}
-              {searchResults.length > 0 && (
-                <div className={`absolute left-0 right-0 top-full mt-1.5 z-40 rounded-2xl border shadow-2xl overflow-hidden max-h-64 overflow-y-auto ${
-                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}>
-                  {searchResults.map((prod) => (
-                    <div
-                      key={prod.id}
-                      onClick={() => handleAddProductToItems(prod)}
-                      className={`p-3 border-b text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                        isDark ? 'hover:bg-slate-800 border-slate-800' : 'hover:bg-slate-100 border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-black text-amber-400">{prod.inventoryName}</div>
-                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo} | Barcode: {prod.barcode || '-'}</div>
-                      </div>
-                      <div className="text-right">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[10px]">
-                          + Tambah Item
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`px-3.5 py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
-                  isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-slate-200 hover:bg-slate-300 text-slate-900 border-slate-300'
-                }`}
-              >
-                Batal
-              </button>
-
-              <button
-                onClick={handleSubmitReceipt}
-                disabled={isSubmitting}
-                className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-lg cursor-pointer disabled:opacity-50"
-              >
-                <CheckCircle className="w-4 h-4 stroke-[3]" />
-                <span>{isSubmitting ? 'Menyimpan...' : 'Simpan & Update Stok'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Line Items Table */}
-          <div className="flex-1 overflow-auto p-4">
-            <div className={`rounded-2xl border overflow-hidden shadow-lg ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className={`font-black uppercase tracking-wider ${
-                  isDark ? 'bg-slate-800/90 text-amber-400' : 'bg-slate-200 text-slate-950'
-                }`}>
-                  <tr>
-                    <th className="py-3 px-3.5 text-center w-12">No</th>
-                    <th className="py-3 px-4">Barcode</th>
-                    <th className="py-3 px-4">Kode Barang</th>
-                    <th className="py-3 px-4">Nama Barang</th>
-                    <th className="py-3 px-3 text-center">Satuan</th>
-                    <th className="py-3 px-4 text-center w-32">Qty Masuk *</th>
-                    <th className="py-3 px-4">Catatan Item</th>
-                    <th className="py-3 px-3 text-center w-16">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                  {items.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                        <ScanLine className="w-8 h-8 mx-auto mb-2 text-slate-500 animate-pulse" />
-                        Belum ada barang diinput. Gunakan pencarian barcode di atas untuk menambah barang yang diterima.
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((item, idx) => (
-                      <tr key={idx} className={isDark ? 'hover:bg-slate-800/50' : 'hover:bg-white'}>
-                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-amber-400">{item.barcode || '-'}</td>
-                        <td className="py-3 px-4 font-mono font-bold">{item.inventoryNo || '-'}</td>
-                        <td className="py-3 px-4 font-black">{item.inventoryName}</td>
-                        <td className="py-3 px-3 text-center font-bold">{item.uomName}</td>
-                        <td className="py-3 px-4 text-center">
-                          <input
-                            type="number"
-                            min={1}
-                            value={item.qty}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value) || 1;
-                              setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, qty: val } : it)));
-                            }}
-                            className={`w-20 p-1.5 rounded-lg border font-mono font-black text-center focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-800 border-slate-700 text-emerald-400' : 'bg-slate-100 border-slate-300 text-emerald-700'
-                            }`}
-                          />
-                        </td>
-                        <td className="py-3 px-4">
-                          <input
-                            type="text"
-                            placeholder="Keterangan fisik item..."
-                            value={item.description}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, description: val } : it)));
-                            }}
-                            className={`w-full p-1.5 rounded-lg border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                            }`}
-                          />
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
-                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                            title="Hapus item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+      {isDailyReportOpen && (
+        // The old report always printed today's receipts (its constructor ignored the date passed in)
+        <DailyReportDialog isDark={isDark} date={getTodayBangkok()} variant="cashier" onClose={() => setIsDailyReportOpen(false)} />
       )}
-
-      {/* 🖨️ PRINTABLE RECEIPT VOUCHER MODAL */}
-      {isPrintModalOpen && printData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-3xl ${isDark ? "bg-slate-900 text-slate-100 border-2 border-slate-700" : "bg-white text-slate-900"} rounded-3xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto`}>
-            {/* Action Header */}
-            <div className="flex items-center justify-between pb-6 border-b border-slate-300 print:hidden">
-              <div className="font-black text-slate-800 text-sm flex items-center gap-2">
-                <Printer className="w-4 h-4 text-amber-500" />
-                <span>Bukti Penerimaan Barang Ekspress (Gudang)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center gap-2 cursor-pointer"
-                >
-                  <Printer className="w-4 h-4 text-amber-400" />
-                  <span>Cetak Surat Jalan Masuk</span>
-                </button>
-                <button
-                  onClick={() => setIsPrintModalOpen(false)}
-                  className="p-2 rounded-xl hover:bg-slate-200 text-slate-500 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Printable Voucher Content */}
-            <div className="printable-express-voucher pt-6 space-y-6 text-xs">
-              <style>{`
-                @media print {
-                  body {
-                    background: white !important;
-                    color: black !important;
-                  }
-                  body * {
-                    visibility: hidden !important;
-                  }
-                  .printable-express-voucher, .printable-express-voucher * {
-                    visibility: visible !important;
-                    color: black !important;
-                  }
-                  .printable-express-voucher {
-                    position: absolute !important;
-                    left: 0 !important;
-                    top: 0 !important;
-                    width: 100% !important;
-                    padding: 20px !important;
-                    background: white !important;
-                    box-shadow: none !important;
-                    border: none !important;
-                  }
-                  .no-print, .print\\:hidden, button {
-                    display: none !important;
-                  }
-                }
-              `}</style>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-lg font-black tracking-tight text-slate-900">HARMONY KITCHEN ERP</h2>
-                  <p className="text-[11px] text-slate-600">Surat Jalan / Bukti Penerimaan Barang Ekspress Gudang</p>
-                </div>
-                <div className="text-right font-mono">
-                  <div className="text-base font-black text-amber-600">{printData.header.mrNo}</div>
-                  <div className="text-[11px] text-slate-500">{printData.header.mrDate}</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-100 rounded-2xl">
-                <div>
-                  <div className="text-[10px] uppercase font-bold text-slate-500">Supplier / Pemasok:</div>
-                  <div className="font-black text-slate-900 text-sm">{printData.header.supplierName}</div>
-                  <div className="text-slate-600">No. Surat Jalan: {printData.header.doNo || '-'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase font-bold text-slate-500">Pengiriman & Gudang:</div>
-                  <div className="font-bold text-slate-800">Sopir: {printData.header.driverName || '-'} ({printData.header.vehicleNo || '-'})</div>
-                  <div className="font-bold text-slate-800">Tujuan: {printData.header.wh_name}</div>
-                </div>
-              </div>
-
-              {/* Line Items Table */}
-              <table className="w-full text-left border-collapse text-xs border border-slate-300">
-                <thead className="bg-slate-200 font-bold uppercase text-[10px] text-slate-800 border-b border-slate-300">
-                  <tr>
-                    <th className="p-2 text-center border-r border-slate-300">No</th>
-                    <th className="p-2 border-r border-slate-300">Barcode</th>
-                    <th className="p-2 border-r border-slate-300">Kode Barang</th>
-                    <th className="p-2 border-r border-slate-300">Nama Barang Diterima</th>
-                    <th className="p-2 text-center border-r border-slate-300">Satuan</th>
-                    <th className="p-2 text-center">Qty Masuk</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300 font-medium">
-                  {printData.items.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="p-2 text-center border-r border-slate-300 font-mono">{idx + 1}</td>
-                      <td className="p-2 font-mono border-r border-slate-300">{it.barcode || '-'}</td>
-                      <td className="p-2 font-mono border-r border-slate-300">{it.inventoryNo || '-'}</td>
-                      <td className="p-2 font-bold border-r border-slate-300">{it.inventoryName}</td>
-                      <td className="p-2 text-center border-r border-slate-300">{it.uomName}</td>
-                      <td className="p-2 text-center font-black text-amber-600">{it.qty}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Signatures Footer */}
-              <div className="grid grid-cols-3 gap-4 pt-12 text-center font-bold text-[11px] text-slate-700">
-                <div>
-                  <div className="mb-12">Petugas Gudang</div>
-                  <div className="border-t border-slate-400 pt-1 font-normal">( ........................ )</div>
-                </div>
-                <div>
-                  <div className="mb-12">Sopir / Driver</div>
-                  <div className="border-t border-slate-400 pt-1 font-normal">( ........................ )</div>
-                </div>
-                <div>
-                  <div className="mb-12">Kepala Gudang</div>
-                  <div className="border-t border-slate-400 pt-1 font-normal">( ........................ )</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {isAddSupplierOpen && (
+        <InputSupplierDialog
+          isDark={isDark}
+          onClose={() => setIsAddSupplierOpen(false)}
+          onError={(msg) => addToast(msg, 'error')}
+          onSaved={(sup) => {
+            setIsAddSupplierOpen(false);
+            addToast('Success On Save Supplier', 'success');
+            setSelectedSupplierId(String(sup.id));
+            setSupplierReloadKey((k) => k + 1);
+          }}
+        />
       )}
-    </div>
+      {confirmDialogEl}
+    </LegacyWindow>
   );
 }
+

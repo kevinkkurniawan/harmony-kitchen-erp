@@ -1,26 +1,28 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import {
-  Plus,
-  RefreshCw,
-  Save,
-  CheckCircle,
-  XCircle,
-  Search,
-  History,
-  Store,
-  Barcode as BarcodeIcon,
-  Trash2,
-  Sparkles,
-  Minus,
-  AlertTriangle,
-  Printer,
-  Download,
-  ChevronUp,
-  ChevronDown,
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
+import { createPortal, flushSync } from 'react-dom';
+import { RefreshCw, CheckCircle, XCircle, Sparkles, Trash2 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
+import IntegerCellInput from '@/components/IntegerCellInput';
+import { BarcodeBars } from '@/components/BarcodePrintManager';
+import {
+  LegacyWindow,
+  LegacyButton,
+  LegacyGrid,
+  LegacyInput,
+  LegacySelect,
+  FieldRow,
+  GroupBox,
+  ContextMenu,
+  menuAt,
+  fmtN0,
+  fmtDate,
+  lx,
+  type LegacyColumn,
+  type ContextMenuState,
+} from '@/components/legacy';
 
 export interface OpnameEntry {
   id?: number;
@@ -76,7 +78,81 @@ interface StockOpnameManagerProps {
   canViewPrice?: boolean;
 }
 
+/** One label of "Print Barcode" (old Rpt_OpnameBarcode): retail price from the item, not the opname price. */
+interface OpnameBarcodeLabel {
+  barcode: string;
+  inventoryName: string;
+  price: number;
+}
+
+// Rpt_OpnameBarcode: A4, margins left 11.1 / right 9.5 / bottom 9.2 mm, a 25.4 mm top margin holding
+// "No Transaksi :" (Lato 20 bold), 3 columns across then down, 32.52 mm rows; 8 rows fit a page.
+const OPNAME_LABELS_PER_PAGE = 24;
+const noopSubscribe = () => () => {};
+
+function OpnameBarcodeSheet({ labels, noTransaction }: { labels: OpnameBarcodeLabel[]; noTransaction: string }) {
+  const pages: OpnameBarcodeLabel[][] = [];
+  for (let i = 0; i < labels.length; i += OPNAME_LABELS_PER_PAGE) pages.push(labels.slice(i, i + OPNAME_LABELS_PER_PAGE));
+  const lato = 'Lato, Arial, sans-serif';
+  return (
+    <>
+      {pages.map((page, pageIdx) => (
+        <div
+          key={pageIdx}
+          className="opname-barcode-page"
+          style={{
+            width: '210mm', height: '296mm', boxSizing: 'border-box', padding: '0 9.5mm 9.2mm 11.1mm', overflow: 'hidden',
+            background: '#fff', color: '#000', breakAfter: pageIdx < pages.length - 1 ? 'page' : 'auto',
+          }}
+        >
+          <div style={{ height: '25.4mm', position: 'relative', fontFamily: lato, fontSize: '20pt', fontWeight: 'bold' }}>
+            <div style={{ position: 'absolute', left: 0, top: '14.53mm', width: '60.63mm', height: '10.87mm', display: 'flex', alignItems: 'center', padding: '0 0.5mm' }}>
+              No Transaksi :
+            </div>
+            <div style={{ position: 'absolute', left: '60.63mm', top: '14.53mm', width: '56.09mm', height: '10.87mm', display: 'flex', alignItems: 'center', padding: '0 0.5mm' }}>
+              {noTransaction}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridAutoRows: '32.52mm' }}>
+            {page.map((label, idx) => (
+              <div key={idx} className="opname-barcode-label" style={{ position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: '2.42mm', top: '2.5mm', width: '58.2mm', height: '12.96mm', padding: '0 2.6mm', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <BarcodeBars value={label.barcode} height="8.8mm" />
+                  <div style={{ fontFamily: 'Arial, sans-serif', fontSize: '9pt', lineHeight: 1.2 }}>{label.barcode}</div>
+                </div>
+                <div style={{ position: 'absolute', left: '2.42mm', top: '15.46mm', width: '58.2mm', height: '6.35mm', padding: '0 0.5mm', boxSizing: 'border-box', display: 'flex', alignItems: 'center', overflow: 'hidden', whiteSpace: 'nowrap', fontFamily: lato, fontSize: '10pt' }}>
+                  {label.inventoryName}
+                </div>
+                <div style={{ position: 'absolute', left: '25.49mm', top: '21.81mm', width: '35.14mm', height: '6.35mm', padding: '0 0.5mm', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', fontFamily: lato, fontSize: '12pt' }}>
+                  {fmtN0(label.price)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+const OPNAME_BARCODE_PRINT_CSS = `
+  @media print {
+    @page { size: A4; margin: 0; }
+    body { display: block !important; background: white !important; margin: 0 !important; padding: 0 !important; }
+    body > :not(#opname-barcode-print) { display: none !important; }
+    #opname-barcode-print { display: block !important; }
+  }
+`;
+
+// Mode switch agreed with the client (doc items 2-4): legacy OPM adjustment vs SCO stock check
+const MODES = [
+  ['ADJUST', 'Penyesuaian (+/-)', 'Tambah/kurangi stok langsung, contoh 2 atau -1'],
+  ['COUNT', 'Cek Stok (hitung fisik)', 'Isi jumlah hasil hitung; selisih dihitung otomatis'],
+] as const;
+
 export default function StockOpnameManager({ isDark, canViewPrice = false }: StockOpnameManagerProps) {
+  const c = lx(isDark);
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
   // Opname prices can be HPP, so non-admins see them masked
   const formatMoney = (value: number) => (canViewPrice ? `Rp ${value.toLocaleString('id-ID')}` : 'Rp ••••••');
   // Master & Lookup States
@@ -91,6 +167,9 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
   const [opnameItems, setOpnameItems] = useState<OpnameEntry[]>([]);
   // ADJUST = legacy OPM (+/- change), COUNT = legacy SCO stock check (counted qty)
   const [opnameMode, setOpnameMode] = useState<'ADJUST' | 'COUNT'>('ADJUST');
+  // Lines added / edited since the last load or save, so New / history / mode switch can ask before dropping them
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Input Form Fields
   const [selectedInvId, setSelectedInvId] = useState<number | ''>('');
@@ -106,10 +185,11 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
   const [qtyInput, setQtyInput] = useState<number | ''>(1);
   const [descInput, setDescInput] = useState<string>('');
 
-  // Table Filter & Search States
-  const [tableSearch, setTableSearch] = useState<string>('');
+  // Grid sort (header click) and right-click menu
   const [sortField, setSortField] = useState<string>('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [rowMenu, setRowMenu] = useState<ContextMenuState<OpnameEntry> | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
 
   const handleSort = (field: string) => {
     if (sortField !== field) {
@@ -128,7 +208,6 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
   const [reversedReasonText, setReversedReasonText] = useState<string>('');
   const [isReverseModalOpen, setIsReverseModalOpen] = useState<boolean>(false);
   const [reverseReasonInput, setReverseReasonInput] = useState<string>('');
-  const [auditorName, setAuditorName] = useState<string>('Super Administrator');
   const [isReconciling, setIsReconciling] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -137,6 +216,18 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef<number>(0);
+
+  // Old ".:: Detail ::." group: shown when a scanned barcode belongs to no item, to create it and add it here
+  const EMPTY_DETAIL = { barcode: '', inventoryNo: '', inventoryName: '', qty: 1 as number | '', kodeHarga: '', description: '' };
+  const [detailForm, setDetailForm] = useState<typeof EMPTY_DETAIL | null>(null);
+  const [isCreatingItem, setIsCreatingItem] = useState(false);
+  const detailInvNoRef = useRef<HTMLInputElement>(null);
+
+  // "Print Barcode" labels and which print layout the <style> block carries
+  const [printMode, setPrintMode] = useState<'report' | 'barcode'>('report');
+  const [barcodeLabels, setBarcodeLabels] = useState<OpnameBarcodeLabel[]>([]);
+  const [isPreparingLabels, setIsPreparingLabels] = useState(false);
+  const canPortal = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
   const isReadOnly = opnameStatus === 'POSTED' || opnameStatus === 'REVERSED';
 
@@ -210,9 +301,10 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
       if (seq !== loadSeqRef.current) return;
 
       // Start empty: posting marks every listed item as checked today, so the full
-      // catalog is only loaded on purpose via "Populate All" (COUNT mode)
+      // catalog is only loaded on purpose via "Load Data" (COUNT mode)
       void itemsArray;
       setOpnameItems([]);
+      setHasUnsavedChanges(false);
 
       setNoTransaction(generateNewTxNo());
       setSelectedHistoryTx('');
@@ -233,8 +325,26 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     loadInitialData();
   }, [loadInitialData]);
 
-  // Handle New Opname Button
-  const handleNewOpname = () => {
+  const confirmDiscardUnsaved = async () => {
+    if (!hasUnsavedChanges || opnameItems.length === 0) return true;
+    return confirmDialog('Item opname yang sudah diinput belum disimpan. Buang input ini?', { title: 'Stok Opname', confirmText: 'Buang' });
+  };
+
+  // Refresh reloads the lookups and history only; the lines on screen stay, and an unedited saved document is re-read
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([fetchWarehouses(), refreshLookupsAndHistory()]);
+      if (selectedHistoryTx && !hasUnsavedChanges) await handleSelectHistory(selectedHistoryTx);
+    } catch (err) {
+      console.error('Failed to refresh opname data:', err);
+      showToast('Gagal memuat data master opname', 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const resetToNewOpname = () => {
     ++loadSeqRef.current;
     setIsLoading(false);
     setNoTransaction(generateNewTxNo());
@@ -242,12 +352,20 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     setOpnameStatus('NEW');
     setReversedReasonText('');
     setOpnameItems([]);
+    setHasUnsavedChanges(false);
     setSelectedInvId('');
     setBarcodeInput('');
     setProductQuery('');
     setQtyInput(1);
     setDescInput('');
+    setDetailForm(null);
     showToast('Form Stok Opname Baru Siap Diisi', 'info');
+  };
+
+  // Handle New Opname Button
+  const handleNewOpname = async () => {
+    if (!(await confirmDiscardUnsaved())) return;
+    resetToNewOpname();
   };
 
   // Handle Populate All Products for Bulk Opname
@@ -257,7 +375,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
       return;
     }
     if (isReadOnly) {
-      showToast('Transaksi yang sudah diposting/dibatalkan tidak dapat diubah. Klik "Baru" terlebih dahulu.', 'error');
+      showToast('Transaksi yang sudah diposting/dibatalkan tidak dapat diubah. Klik "New Opname" terlebih dahulu.', 'error');
       return;
     }
     if (opnameMode === 'ADJUST') {
@@ -277,6 +395,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
       };
     });
     setOpnameItems(allItems);
+    setHasUnsavedChanges(true);
     showToast(`Semua ${allItems.length} barang berhasil dimuat ke tabel opname!`, 'success');
   };
 
@@ -364,7 +483,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     if (e) e.preventDefault();
 
     if (isReadOnly) {
-      showToast('Transaksi ini bersifat baca-saja. Klik "Baru" untuk membuat opname baru.', 'error');
+      showToast('Transaksi ini bersifat baca-saja. Klik "New Opname" untuk membuat opname baru.', 'error');
       return;
     }
 
@@ -388,9 +507,10 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
         const json = await res.json();
         const remoteItems: InventoryLookupItem[] = json.data?.items || json.data || [];
         const q = rawScan.toLowerCase();
+        // Exact barcode / SKU only, like the old sp_T_Opname_CheckInvBarcode; anything else opens ".:: Detail ::."
         const exactMatch = remoteItems.find(
           (i) => (i.barcode && i.barcode.toLowerCase() === q) || (i.inventoryNo && i.inventoryNo.toLowerCase() === q)
-        ) || remoteItems[0];
+        );
         if (exactMatch) {
           found = { ...exactMatch, id: Number(exactMatch.id) };
           setInventoryList((prev) => (prev.some((p) => Number(p.id) === Number(found!.id)) ? prev : [found!, ...prev]));
@@ -400,23 +520,35 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
       }
     }
 
+    if (!found && rawScan && !selectedInvId) {
+      // Unknown barcode: old Ed_Barcode_KeyPress shows the Detail group with the scanned value
+      setDetailForm({ ...EMPTY_DETAIL, barcode: rawScan, qty: typeof qtyInput === 'number' ? qtyInput : 1, description: descInput });
+      setTimeout(() => detailInvNoRef.current?.focus(), 50);
+      return;
+    }
     if (!found) {
       showToast('Pilih barang atau scan barcode yang valid terlebih dahulu!', 'error');
       return;
     }
 
     const qty = typeof qtyInput === 'number' ? qtyInput : 0;
-    if (opnameMode === 'COUNT' && qty < 0) {
-      showToast('Qty hitung fisik tidak boleh negatif', 'error');
+    const qtyError = validateQty(qty);
+    if (qtyError) {
+      showToast(qtyError, 'error');
       return;
     }
-    if (opnameMode === 'ADJUST' && qty === 0) {
-      showToast('Isi penyesuaian, contoh 2 untuk tambah atau -1 untuk kurang', 'error');
-      return;
-    }
+    addFoundItem(found, qty, descInput);
+  };
 
+  const validateQty = (qty: number): string | null => {
+    if (opnameMode === 'COUNT' && qty < 0) return 'Qty hitung fisik tidak boleh negatif';
+    if (opnameMode === 'ADJUST' && qty === 0) return 'Isi penyesuaian, contoh 2 untuk tambah atau -1 untuk kurang';
+    return null;
+  };
+
+  // Puts an item on the opname lines (or updates its line) and resets the entry fields
+  const addFoundItem = (found: InventoryLookupItem, qty: number, noteText: string) => {
     const foundId = Number(found.id);
-    const noteText = descInput;
     let wasExisting = false;
 
     setOpnameItems((prev) => {
@@ -447,6 +579,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
         ...prev,
       ];
     });
+    setHasUnsavedChanges(true);
 
     if (wasExisting) {
       showToast(`Qty "${found.inventoryName}" diperbarui`, 'info');
@@ -467,36 +600,82 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     }
   };
 
-  // Export Opname List to CSV
-  const handleExportCSV = () => {
-    if (opnameItems.length === 0) {
-      showToast('Tidak ada item opname untuk diexport', 'error');
+  // ".:: Detail ::." Submit: create the item (old sp_T_Opname_InsUpdInventory), then add it with the typed Qty
+  const handleSubmitDetail = async () => {
+    if (!detailForm || isCreatingItem || isReadOnly) return;
+    const qty = typeof detailForm.qty === 'number' ? detailForm.qty : 0;
+    const qtyError = validateQty(qty);
+    if (qtyError) {
+      showToast(qtyError, 'error');
       return;
     }
+    setIsCreatingItem(true);
+    try {
+      const res = await fetch('/api/inventory/opname/item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          barcode: detailForm.barcode,
+          inventoryNo: detailForm.inventoryNo,
+          inventoryName: detailForm.inventoryName,
+          kodeHarga: detailForm.kodeHarga,
+          description: detailForm.description,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        showToast(extractErrorMessage(json.error, 'Gagal membuat barang baru'), 'error');
+        return;
+      }
+      const created: InventoryLookupItem = { ...json.data, id: Number(json.data.id) };
+      setInventoryList((prev) => [created, ...prev]);
+      setDetailForm(null);
+      addFoundItem(created, qty, detailForm.description);
+    } catch (err) {
+      console.error('Create item from opname scan failed:', err);
+      showToast('Gagal membuat barang baru', 'error');
+    } finally {
+      setIsCreatingItem(false);
+    }
+  };
 
-    const headers = ['No', 'No. Barang / SKU', 'Barcode', 'Nama Barang', 'Qty', ...(canViewPrice ? ['Harga Satuan', 'Total Nilai'] : []), 'Catatan'];
-    const rows = opnameItems.map((item, idx) => {
-      const totalItemValue = item.qty * (item.price || 0);
-      return [
-        idx + 1,
-        `"${item.inventoryNo}"`,
-        `"${item.barcode}"`,
-        `"${item.inventoryName.replace(/"/g, '""')}"`,
-        item.qty,
-        ...(canViewPrice ? [item.price || 0, totalItemValue] : []),
-        `"${(item.description || '').replace(/"/g, '""')}"`,
-      ].join(',');
-    });
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Stock_Opname_${(noTransaction || 'Draft').replace(/\//g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('Laporan Opname berhasil diexport ke CSV', 'success');
+  // "Print Barcode" (old SB_PrintBarcode -> Rpt_OpnameBarcode): one label per opname line, in grid order
+  const handlePrintBarcode = async () => {
+    if (opnameItems.length === 0) {
+      showToast('Tidak ada item opname untuk dicetak', 'error');
+      return;
+    }
+    setIsPreparingLabels(true);
+    try {
+      const ids = sortedItems.map((i) => Number(i.inventoryId));
+      const json = await fetch(`/api/barcode-list/labels?ids=${ids.join(',')}`).then((r) => r.json());
+      if (!json.success) {
+        showToast(extractErrorMessage(json.error, 'Gagal memuat data label'), 'error');
+        return;
+      }
+      const byId = new Map<number, OpnameBarcodeLabel & { inventoryNo: string }>(
+        (json.data as (OpnameBarcodeLabel & { inventoryId: number; inventoryNo: string })[]).map((l) => [l.inventoryId, l]),
+      );
+      const labels = sortedItems.map((line) => {
+        const info = byId.get(Number(line.inventoryId));
+        return {
+          barcode: info?.barcode || info?.inventoryNo || line.barcode || line.inventoryNo,
+          inventoryName: info?.inventoryName || line.inventoryName,
+          price: info?.price ?? 0,
+        };
+      });
+      flushSync(() => {
+        setBarcodeLabels(labels);
+        setPrintMode('barcode');
+      });
+      window.print();
+    } catch (err) {
+      console.error('Print barcode failed:', err);
+      showToast('Gagal memuat data label', 'error');
+    } finally {
+      setPrintMode('report');
+      setIsPreparingLabels(false);
+    }
   };
 
   // Print Opname Report
@@ -515,19 +694,21 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     setOpnameItems((prev) =>
       prev.map((item) => (item.inventoryId === invId ? { ...item, qty: validQty } : item))
     );
+    setHasUnsavedChanges(true);
   };
 
   // Remove item from list
   const handleRemoveItem = (invId: number) => {
     if (isReadOnly) return;
     setOpnameItems((prev) => prev.filter((i) => i.inventoryId !== invId));
+    setHasUnsavedChanges(true);
   };
 
   // Select History Transaction from Dropdown
   const handleSelectHistory = async (txNo: string) => {
     setSelectedHistoryTx(txNo);
     if (!txNo) {
-      handleNewOpname();
+      resetToNewOpname();
       return;
     }
 
@@ -557,6 +738,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
             description: d.description || d.notes || 'Stok Opname',
           }))
         );
+        setHasUnsavedChanges(false);
         showToast(`Memuat Transaksi Opname ${txNo} (${statusVal})`, 'info');
       } else {
         showToast(extractErrorMessage(json.error, 'Gagal memuat detail transaksi opname'), 'error');
@@ -606,9 +788,9 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
             description: it.description,
             notes: it.description,
           })),
-          createdBy: auditorName,
-          remarks: `Stok Opname (Auditor: ${auditorName})`,
-          notes: `Stok Opname (Auditor: ${auditorName})`,
+          // The server records the logged-in user as creator / poster
+          remarks: 'Stok Opname',
+          notes: 'Stok Opname',
           action,
         }),
       });
@@ -670,57 +852,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     }
   };
 
-  // Draft Management (Local Storage)
-  const handleSaveDraft = () => {
-    if (opnameItems.length === 0) {
-      showToast('Tidak ada data untuk disimpan sebagai draft', 'error');
-      return;
-    }
-    const draftData = {
-      noTransaction,
-      opnameMode,
-      warehouse,
-      auditorName,
-      opnameItems,
-      savedAt: new Date().toISOString(),
-    };
-    localStorage.setItem('opname_draft', JSON.stringify(draftData));
-    showToast('Draft stok opname berhasil disimpan ke browser', 'success');
-  };
-
-  const handleLoadDraft = () => {
-    const draftStr = localStorage.getItem('opname_draft');
-    if (!draftStr) {
-      showToast('Tidak ada draft yang tersimpan', 'info');
-      return;
-    }
-    try {
-      const draft = JSON.parse(draftStr);
-      setNoTransaction(draft.noTransaction);
-      setOpnameMode(draft.opnameMode === 'COUNT' ? 'COUNT' : 'ADJUST');
-      setWarehouse(draft.warehouse);
-      setAuditorName(draft.auditorName || 'Super Administrator');
-      setOpnameStatus('DRAFT');
-      setSelectedHistoryTx('');
-      setReversedReasonText('');
-      setOpnameItems(
-        (draft.opnameItems || []).map((it: any) => ({
-          inventoryId: it.inventoryId,
-          inventoryNo: it.inventoryNo,
-          barcode: it.barcode,
-          inventoryName: it.inventoryName,
-          qty: Number(it.qty ?? 0),
-          price: it.price === null || it.price === undefined ? undefined : Number(it.price),
-          description: it.description || 'Draft Opname',
-        }))
-      );
-      showToast(`Draft dimuat (Tersimpan pada: ${new Date(draft.savedAt).toLocaleString()})`, 'info');
-    } catch (e) {
-      showToast('Gagal memuat draft (Data corrupt)', 'error');
-    }
-  };
-
-  // Statistics Calculations (Single Unified Qty)
+  // Footer totals: "{n} Jenis" and "Total = {n} barang" like the legacy grid
   const stats = useMemo(() => {
     const totalItems = opnameItems.length;
     let totalQty = 0;
@@ -734,55 +866,68 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
     return { totalItems, totalQty, totalValue };
   }, [opnameItems]);
 
-  // Filtered and Sorted Table Items
-  const filteredTableItems = useMemo(() => {
-    let filtered = opnameItems.filter((item) => {
-      const matchQuery =
-        !tableSearch ||
-        item.inventoryName.toLowerCase().includes(tableSearch.toLowerCase()) ||
-        item.inventoryNo.toLowerCase().includes(tableSearch.toLowerCase()) ||
-        item.barcode.toLowerCase().includes(tableSearch.toLowerCase());
-
-      return matchQuery;
+  // Sorted grid rows (header click); unsorted keeps the newest scan on top
+  const sortedItems = useMemo(() => {
+    if (!sortField) return opnameItems;
+    const key = sortField as keyof OpnameEntry;
+    return [...opnameItems].sort((a, b) => {
+      let aVal: any = a[key];
+      let bVal: any = b[key];
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = String(bVal ?? '').toLowerCase();
+      }
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
     });
+  }, [opnameItems, sortField, sortOrder]);
 
-    if (sortField) {
-      filtered = [...filtered].sort((a, b) => {
-        let aVal: any = a[sortField as keyof OpnameEntry];
-        let bVal: any = b[sortField as keyof OpnameEntry];
+  // Legacy GV_Detail columns: Barcode | No. Inventory | Nama Barang | Qty | Description | Price (Price is Admin-only)
+  const gridColumns: LegacyColumn<OpnameEntry>[] = [
+    { key: 'barcode', caption: 'Barcode', sortKey: 'barcode', footer: `${fmtN0(stats.totalItems)} Jenis` },
+    { key: 'inventoryNo', caption: 'No. Inventory', sortKey: 'inventoryNo' },
+    { key: 'inventoryName', caption: 'Nama Barang', sortKey: 'inventoryName' },
+    {
+      key: 'qty', caption: 'Qty', sortKey: 'qty', align: 'right', width: 110,
+      footer: `Total = ${fmtN0(stats.totalQty)} barang`,
+      render: (item) => (
+        <>
+          <IntegerCellInput
+            value={item.qty}
+            min={opnameMode === 'COUNT' ? 0 : undefined}
+            disabled={isReadOnly}
+            label={`Qty ${item.inventoryName}`}
+            onChange={(qty) => handleInlineQtyChange(item.inventoryId, qty)}
+            className={`w-20 px-1.5 py-0.5 rounded border text-right tabular-nums outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-70 ${c.input}`}
+          />
+          {/* Inputs are hidden when printing, so the printed sheet shows the qty as text */}
+          <span className="print-only">{item.qty}</span>
+        </>
+      ),
+    },
+    { key: 'description', caption: 'Description', sortKey: 'description' },
+    ...(canViewPrice
+      ? [{ key: 'price', caption: 'Price', format: 'n0' as const, sortKey: 'price' }]
+      : []),
+  ];
 
-        if (sortField === 'inventoryNo') {
-          aVal = a.inventoryNo;
-          bVal = b.inventoryNo;
-        } else if (sortField === 'inventoryName') {
-          aVal = a.inventoryName;
-          bVal = b.inventoryName;
-        } else if (sortField === 'qty') {
-          aVal = a.qty;
-          bVal = b.qty;
-        } else if (sortField === 'description') {
-          aVal = a.description;
-          bVal = b.description;
-        }
+  const statusTone =
+    opnameStatus === 'POSTED'
+      ? 'bg-emerald-600 text-white'
+      : opnameStatus === 'REVERSED'
+      ? 'bg-rose-600 text-white'
+      : opnameStatus === 'DRAFT'
+      ? 'bg-indigo-600 text-white'
+      : 'bg-amber-500 text-slate-950';
 
-        if (typeof aVal === 'string') {
-          aVal = aVal.toLowerCase();
-          bVal = (bVal as string).toLowerCase();
-        }
-
-        if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return filtered;
-  }, [opnameItems, tableSearch, sortField, sortOrder]);
+  const modalShell = `w-full flex flex-col rounded border shadow-2xl overflow-hidden text-xs ${c.panel}`;
 
   return (
-    <div id="printable-opname-report" className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
-      {/* 🖨️ OPNAME PRINT MEDIA STYLESHEET */}
-      <style>{`
+    <div id="printable-opname-report" className="flex-1 flex flex-col h-full min-h-0 overflow-hidden relative">
+      {/* Opname print sheet: hides controls and prints the header, grid and signature boxes.
+          "Print Barcode" swaps in the A4 label sheet CSS for the duration of its print. */}
+      <style>{printMode === 'barcode' ? OPNAME_BARCODE_PRINT_CSS : `
         @media print {
           body {
             background: white !important;
@@ -806,6 +951,9 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
             color: black !important;
             border-color: #cbd5e1 !important;
           }
+          #printable-opname-report .overflow-hidden, #printable-opname-report .overflow-auto {
+            overflow: visible !important;
+          }
           .print-header {
             display: block !important;
             margin-bottom: 20px !important;
@@ -817,6 +965,9 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
             justify-content: space-between !important;
             margin-top: 40px !important;
             padding-top: 20px !important;
+          }
+          .print-only {
+            display: inline !important;
           }
           table {
             border-collapse: collapse !important;
@@ -832,12 +983,12 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
             font-weight: bold !important;
           }
         }
-        .print-header, .print-signatures {
+        .print-header, .print-signatures, .print-only {
           display: none;
         }
       `}</style>
 
-      {/* 🖨️ OFFICIAL PRINT HEADER (VISIBLE ONLY ON PRINT) */}
+      {/* Print-only header */}
       <div className="print-header">
         <div className="flex justify-between items-center pb-2">
           <div>
@@ -855,810 +1006,448 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
       {/* Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-3 transition-all animate-in fade-in slide-in-from-top-4 ${
+          className={`no-print fixed top-5 right-5 z-[110] px-4 py-3 rounded shadow-xl border text-xs font-bold flex items-center gap-2.5 ${
             toastMessage.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-600/30'
+              ? 'bg-emerald-700 text-white border-emerald-800'
               : toastMessage.type === 'error'
-              ? 'bg-rose-600 text-white border-rose-500 shadow-rose-600/30'
-              : 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
+              ? 'bg-rose-700 text-white border-rose-800'
+              : 'bg-indigo-700 text-white border-indigo-800'
           }`}
         >
-          {toastMessage.type === 'success' && <CheckCircle className={`w-5 h-5 shrink-0 ${isDark ? "text-white" : "text-slate-900"}`} />}
-          {toastMessage.type === 'error' && <XCircle className={`w-5 h-5 shrink-0 ${isDark ? "text-white" : "text-slate-900"}`} />}
-          {toastMessage.type === 'info' && <Sparkles className="w-5 h-5 text-amber-300 shrink-0" />}
+          {toastMessage.type === 'success' && <CheckCircle className="w-4 h-4 shrink-0" />}
+          {toastMessage.type === 'error' && <XCircle className="w-4 h-4 shrink-0" />}
+          {toastMessage.type === 'info' && <Sparkles className="w-4 h-4 shrink-0" />}
           <span>{toastMessage.text}</span>
         </div>
       )}
 
-      {/* 👑 TOP COMPACT WORKBENCH TOOLBAR */}
-      <div
-        className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm shrink-0 ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}
-      >
-        {/* Title & Transaction Selector */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2.5">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>No. Transaksi :</span>
-                <span
-                  data-testid="opname-status-badge"
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                    opnameStatus === 'POSTED'
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : opnameStatus === 'REVERSED'
-                      ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                      : opnameStatus === 'DRAFT'
-                      ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  }`}
+      <LegacyWindow
+        title="Input Stock"
+        isDark={isDark}
+        toolbar={
+          <>
+            <LegacyButton isDark={isDark} onClick={handleNewOpname}>New Opname</LegacyButton>
+            <LegacyButton
+              isDark={isDark}
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoading || isRefreshing ? 'animate-spin' : ''}`} />}
+            >
+              Refresh
+            </LegacyButton>
+            <LegacyButton isDark={isDark} onClick={handlePrintReport} disabled={opnameItems.length === 0}>Print</LegacyButton>
+            <LegacyButton isDark={isDark} onClick={handlePrintBarcode} disabled={opnameItems.length === 0 || isPreparingLabels}>Print Barcode</LegacyButton>
+            <div className="w-80">
+              <FieldRow label="Opname History :" isDark={isDark} labelWidth="w-auto">
+                <LegacySelect
+                  isDark={isDark}
+                  value={selectedHistoryTx}
+                  onChange={async (e) => {
+                    const txNo = e.target.value;
+                    if (await confirmDiscardUnsaved()) handleSelectHistory(txNo);
+                  }}
                 >
-                  {opnameStatus}
-                </span>
-              </div>
-              <span className="text-[10px] font-bold text-amber-500 font-mono">
-                {noTransaction || '(Nomor otomatis)'}
-              </span>
+                  <option value="">-- Opname Baru --</option>
+                  {historyList.map((h) => {
+                    const txKey = h.noTransaction || h.opnameNo || h.opname_no || '';
+                    const statusLabel = h.status ? ` [${h.status}]` : '';
+                    return (
+                      <option key={h.id || txKey} value={txKey}>
+                        {txKey} ({fmtDate(h.opnameDate)}){statusLabel}
+                      </option>
+                    );
+                  })}
+                </LegacySelect>
+              </FieldRow>
             </div>
-          </div>
-
-          <div className="h-6 w-px bg-slate-300 dark:bg-slate-800 hidden sm:block" />
-
-          {/* Riwayat Dropdown */}
-          <div className="flex items-center gap-2">
-            <History className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <select
-              value={selectedHistoryTx}
-              onChange={(e) => handleSelectHistory(e.target.value)}
-              className={`p-1.5 rounded-lg border text-xs font-bold focus:outline-none cursor-pointer max-w-[240px] ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
-              }`}
-            >
-              <option value="">-- Lihat Transaksi Opname --</option>
-              {historyList.map((h) => {
-                const txKey = h.noTransaction || h.opnameNo || h.opname_no || '';
-                const whLabel = h.warehouse || h.whName || h.wh_name || 'Gudang Utama';
-                const statusLabel = h.status ? ` [${h.status}]` : '';
-                return (
-                  <option key={h.id || txKey} value={txKey}>
-                    {txKey} ({new Date(h.opnameDate).toLocaleDateString('id-ID')}) - {whLabel}{statusLabel}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-
-          {/* Gudang Dropdown */}
-          <div className="flex items-center gap-2">
-            <Store className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <select
-              value={warehouse}
-              onChange={(e) => setWarehouse(e.target.value)}
-              className={`p-1.5 rounded-lg border text-xs font-bold focus:outline-none cursor-pointer ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
-              }`}
-            >
-              <option value="" disabled>Pilih Gudang / Lokasi</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.location}>
-                  {w.location}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="h-6 w-px bg-slate-300 dark:bg-slate-800 hidden sm:block" />
-
-          {/* Session Setup Filters */}
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              value={auditorName}
-              onChange={(e) => setAuditorName(e.target.value)}
-              placeholder="Nama Auditor..."
-              className={`w-36 p-1.5 rounded-lg border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-300'
-              }`}
-              title="Auditor Assignee"
-            />
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={handleNewOpname}
-            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Baru</span>
-          </button>
-
-          <button
+            <div className="ml-auto flex items-center gap-2">
+              {opnameStatus === 'POSTED' && (
+                <LegacyButton
+                  isDark={isDark}
+                  variant="danger"
+                  onClick={() => setIsReverseModalOpen(true)}
+                  disabled={isSubmitting}
+                  title="Batalkan (Reverse) transaksi opname yang sudah diposting"
+                >
+                  Reverse Opname
+                </LegacyButton>
+              )}
+              <LegacyButton
+                isDark={isDark}
+                variant="primary"
+                onClick={handleOpenReconciliation}
+                disabled={isSubmitting || opnameItems.length === 0 || isReadOnly}
+              >
+                {isSubmitting ? 'Menyimpan...' : 'Simpan'}
+              </LegacyButton>
+            </div>
+          </>
+        }
+      >
+        {/* Mode switch kept from the client doc; locked once the document has a number */}
+        <div className={`no-print px-2 py-1.5 border rounded flex flex-wrap items-center gap-2 ${c.panel}`}>
+          {MODES.map(([value, label, hint]) => {
+            const locked = isReadOnly || !!noTransaction;
+            const active = opnameMode === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                title={hint}
+                disabled={locked && !active}
+                onClick={async () => {
+                  if (locked || active) return;
+                  if (!(await confirmDiscardUnsaved())) return;
+                  setOpnameMode(value);
+                  setOpnameItems([]);
+                  setHasUnsavedChanges(false);
+                  setQtyInput(1);
+                }}
+                className={`px-3 py-1 rounded border font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                  active
+                    ? 'bg-blue-600 text-white border-blue-700'
+                    : isDark
+                    ? 'border-slate-600 hover:bg-slate-800'
+                    : 'border-slate-400 hover:bg-slate-100'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+          <LegacyButton
+            isDark={isDark}
             onClick={handlePopulateAll}
             disabled={isReadOnly}
-            className={`px-3 py-1.5 rounded-xl border active:scale-95 font-black text-xs flex items-center gap-1.5 shadow-sm transition-all ${
-              isReadOnly
-                ? 'opacity-50 cursor-not-allowed bg-slate-800 text-slate-500 border-slate-700'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border-slate-700 cursor-pointer'
-            }`}
-            title="Muat seluruh barang master inventori ke tabel opname"
+            title="Muat seluruh barang master inventori ke tabel opname (maks. 500)"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Load Data ({inventoryList.length})</span>
-          </button>
+            Load Data ({inventoryList.length})
+          </LegacyButton>
+          <span className={`text-[11px] ${c.muted}`}>
+            {opnameMode === 'ADJUST'
+              ? 'Qty = perubahan stok (+ tambah, - kurang). Stok akhir tidak boleh minus.'
+              : 'Qty = jumlah hasil hitung fisik. Tanggal cek stok tercatat walau qty sudah benar.'}
+          </span>
+        </div>
 
-          <button
-            onClick={handleExportCSV}
-            disabled={opnameItems.length === 0}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
-              opnameItems.length === 0
-                ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
-            }`}
-            title="Export data opname ke CSV"
-          >
-            <Download className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Export CSV</span>
-          </button>
+        {/* Field rows of the legacy form: Barcode / No. Transaksi / Gudang / Nama Barang, then Qty / Desc + Input;
+            the ".:: Detail ::." group sits on their right while it is shown */}
+        <div className="no-print flex flex-col lg:flex-row gap-2">
+        <div className={`flex-1 min-w-0 px-2 py-2 border rounded grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-2 content-start ${c.panel}`}>
+          <FieldRow label="Barcode :" isDark={isDark} labelWidth="w-28">
+            <LegacyInput
+              ref={barcodeInputRef}
+              isDark={isDark}
+              value={barcodeInput}
+              disabled={isReadOnly}
+              onChange={(e) => handleBarcodeChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddItem();
+                }
+              }}
+              placeholder="Scan Barcode / SKU..."
+            />
+          </FieldRow>
+          <FieldRow label="No. Transaksi :" isDark={isDark} labelWidth="w-28">
+            <LegacyInput isDark={isDark} readOnly value={noTransaction} placeholder="(Nomor otomatis)" className="font-mono" />
+            <span data-testid="opname-status-badge" className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${statusTone}`}>
+              {opnameStatus}
+            </span>
+          </FieldRow>
+          <FieldRow label="Gudang :" isDark={isDark} labelWidth="w-28">
+            <LegacySelect isDark={isDark} value={warehouse} onChange={(e) => setWarehouse(e.target.value)}>
+              <option value="" disabled>Pilih Gudang / Lokasi</option>
+              {warehouses.map((w) => (
+                <option key={w.id} value={w.location}>{w.location}</option>
+              ))}
+            </LegacySelect>
+          </FieldRow>
+          <FieldRow label="Nama Barang :" isDark={isDark} labelWidth="w-28">
+            {/* Searchable product picker (client doc item 9) */}
+            <div ref={productPickerRef} className="relative flex-1 min-w-0">
+              <LegacyInput
+                isDark={isDark}
+                value={productQuery}
+                disabled={isReadOnly}
+                onChange={(e) => handleProductQueryChange(e.target.value)}
+                onFocus={(e) => {
+                  e.target.select();
+                  if (productQuery.trim() && !selectedInvId) setIsProductDropdownOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setIsProductDropdownOpen(true);
+                    setProductHighlight((h) => Math.min(h + 1, Math.max(productResults.length - 1, 0)));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setProductHighlight((h) => Math.max(h - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const pick = isProductDropdownOpen ? productResults[productHighlight] : undefined;
+                    if (pick) handleInventorySelect(pick);
+                    else if (selectedInvId) handleAddItem();
+                  } else if (e.key === 'Escape') {
+                    setIsProductDropdownOpen(false);
+                  }
+                }}
+                placeholder="Cari Barang (Nama / SKU / Barcode)..."
+                className="pr-7"
+              />
+              {isSearchingProduct && isProductDropdownOpen && (
+                <RefreshCw className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-blue-500" />
+              )}
 
-          <button
-            onClick={handlePrintReport}
-            disabled={opnameItems.length === 0}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
-              opnameItems.length === 0
-                ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
-            }`}
-            title="Cetak Laporan Stok Opname"
-          >
-            <Printer className="w-3.5 h-3.5 text-amber-400" />
-            <span>Cetak</span>
-          </button>
-
-          <button
-            onClick={loadInitialData}
-            className={`p-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 active:scale-95 cursor-pointer transition-all ${
-              isDark ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-700 border-slate-300'
-            }`}
-            title="Refresh Data"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button
-            onClick={handleSaveDraft}
-            disabled={opnameItems.length === 0 || isReadOnly}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
-              opnameItems.length === 0 || isReadOnly
-                ? 'opacity-50 cursor-not-allowed border-slate-700 text-slate-500'
-                : isDark ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border-indigo-500/30' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border-indigo-200'
-            }`}
-            title="Simpan sementara ke browser"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>Draft</span>
-          </button>
-
-          <button
-            onClick={handleLoadDraft}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer ${
-              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
-            }`}
-            title="Muat draft dari browser"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Load</span>
-          </button>
-
-          {opnameStatus === 'POSTED' && (
-            <button
-              type="button"
-              onClick={() => setIsReverseModalOpen(true)}
-              disabled={isSubmitting}
-              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
-              title="Batalkan (Reverse) transaksi opname yang sudah diposting"
+              {isProductDropdownOpen && productQuery.trim() && (
+                <div className={`absolute left-0 right-0 top-full mt-1 z-40 rounded border shadow-xl max-h-72 overflow-y-auto ${c.panel}`}>
+                  {productResults.length === 0 ? (
+                    <div className={`px-3 py-2 italic ${c.muted}`}>
+                      {isSearchingProduct ? 'Mencari barang...' : 'Barang tidak ditemukan'}
+                    </div>
+                  ) : (
+                    productResults.map((inv, idx) => (
+                      <div
+                        key={inv.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleInventorySelect(inv);
+                        }}
+                        onMouseEnter={() => setProductHighlight(idx)}
+                        className={`px-3 py-1.5 border-b last:border-b-0 cursor-pointer ${c.border} ${idx === productHighlight ? c.rowFocus : ''}`}
+                      >
+                        <div className="font-semibold">{inv.inventoryName}</div>
+                        <div className={`text-[11px] font-mono ${c.muted}`}>
+                          SKU: {inv.inventoryNo} | Barcode: {inv.barcode || '-'}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </FieldRow>
+          <FieldRow label="Qty :" isDark={isDark} labelWidth="w-28">
+            <LegacyInput
+              isDark={isDark}
+              type="number"
+              min={opnameMode === 'COUNT' ? 0 : undefined}
+              disabled={isReadOnly}
+              value={qtyInput}
+              onChange={(e) => setQtyInput(e.target.value === '' || e.target.value === '-' ? '' : parseInt(e.target.value) || 0)}
+              className="w-24 flex-none text-right"
+            />
+          </FieldRow>
+          <FieldRow label="Desc :" isDark={isDark} labelWidth="w-28">
+            <LegacyInput
+              isDark={isDark}
+              disabled={isReadOnly}
+              value={descInput}
+              onChange={(e) => setDescInput(e.target.value)}
+              placeholder="Catatan Opname..."
+            />
+            <LegacyButton isDark={isDark} variant="primary" onClick={() => handleAddItem()} disabled={isReadOnly}>Input</LegacyButton>
+          </FieldRow>
+        </div>
+        {detailForm && !isReadOnly && (
+          <GroupBox caption=".:: Detail ::." isDark={isDark} className="lg:w-[340px] shrink-0">
+            <form
+              data-testid="opname-detail"
+              className="flex flex-col gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSubmitDetail();
+              }}
             >
-              <XCircle className="w-3.5 h-3.5" />
-              <span>Reverse Opname</span>
-            </button>
-          )}
+              <FieldRow label="Barcode :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput isDark={isDark} aria-label="Detail Barcode" value={detailForm.barcode} onChange={(e) => setDetailForm({ ...detailForm, barcode: e.target.value })} />
+              </FieldRow>
+              <FieldRow label="Inv No. :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput ref={detailInvNoRef} isDark={isDark} aria-label="Inv No." value={detailForm.inventoryNo} onChange={(e) => setDetailForm({ ...detailForm, inventoryNo: e.target.value })} />
+              </FieldRow>
+              <FieldRow label="Inv Name :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput isDark={isDark} aria-label="Inv Name" value={detailForm.inventoryName} onChange={(e) => setDetailForm({ ...detailForm, inventoryName: e.target.value })} />
+              </FieldRow>
+              <FieldRow label="Qty :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput
+                  isDark={isDark}
+                  type="number"
+                  aria-label="Detail Qty"
+                  min={opnameMode === 'COUNT' ? 0 : undefined}
+                  value={detailForm.qty}
+                  onChange={(e) => setDetailForm({ ...detailForm, qty: e.target.value === '' || e.target.value === '-' ? '' : parseInt(e.target.value) || 0 })}
+                  className="w-24 flex-none text-right"
+                />
+              </FieldRow>
+              <FieldRow label="Kode Harga :" isDark={isDark} labelWidth="w-24">
+                <LegacyInput isDark={isDark} aria-label="Kode Harga" value={detailForm.kodeHarga} onChange={(e) => setDetailForm({ ...detailForm, kodeHarga: e.target.value })} />
+              </FieldRow>
+              <FieldRow label="Desc :" isDark={isDark} labelWidth="w-24">
+                <textarea
+                  aria-label="Detail Desc"
+                  rows={3}
+                  value={detailForm.description}
+                  onChange={(e) => setDetailForm({ ...detailForm, description: e.target.value })}
+                  className={`flex-1 min-w-0 px-1.5 py-1 rounded border outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`}
+                />
+              </FieldRow>
+              <div className="flex justify-end">
+                <LegacyButton isDark={isDark} variant="primary" type="submit" disabled={isCreatingItem}>
+                  {isCreatingItem ? 'Menyimpan...' : 'Submit'}
+                </LegacyButton>
+              </div>
+            </form>
+          </GroupBox>
+        )}
+        </div>
 
-          <button
-            onClick={handleOpenReconciliation}
-            disabled={isSubmitting || opnameItems.length === 0 || isReadOnly}
-            className={`px-4 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 ${
-              opnameItems.length === 0 || isReadOnly
-                ? 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-50'
-                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer'
-            }`}
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>{isSubmitting ? 'Menyimpan...' : 'Simpan'}</span>
-          </button>
+        {/* Reversed documents stay read-only and show the reason */}
+        {opnameStatus === 'REVERSED' && (
+          <div className="px-2 py-1 rounded border border-rose-500/40 bg-rose-500/10 text-rose-600 font-semibold">
+            Transaksi Opname ini telah dibatalkan (REVERSED).{reversedReasonText ? ` Alasan: ${reversedReasonText}` : ''}
+          </div>
+        )}
+
+        <LegacyGrid
+          isDark={isDark}
+          columns={gridColumns}
+          rows={sortedItems}
+          rowKey={(item) => item.inventoryId}
+          loading={isLoading}
+          emptyText='Belum ada item opname. Scan barcode atau pilih Nama Barang lalu klik "Input".'
+          sort={sortField ? { key: sortField, order: sortOrder } : null}
+          onSort={handleSort}
+          onRowContextMenu={isReadOnly ? undefined : (item, e) => setRowMenu(menuAt(e, item, 1))}
+          showFooter
+        />
+
+        {rowMenu && (
+          <ContextMenu
+            isDark={isDark}
+            x={rowMenu.x}
+            y={rowMenu.y}
+            onClose={closeRowMenu}
+            items={[
+              { label: 'Hapus', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleRemoveItem(rowMenu.row.inventoryId) },
+            ]}
+          />
+        )}
+      </LegacyWindow>
+
+      {/* "Print Barcode" sheet: kept in the DOM, shown only by OPNAME_BARCODE_PRINT_CSS while printing */}
+      {canPortal && createPortal(
+        <div id="opname-barcode-print" style={{ display: 'none' }}>
+          <OpnameBarcodeSheet labels={barcodeLabels} noTransaction={noTransaction} />
+        </div>,
+        document.body,
+      )}
+
+      {/* Print-only signature boxes */}
+      <div className="print-signatures grid grid-cols-3 gap-6 text-center text-xs pt-8">
+        <div>
+          <div className="font-bold mb-12">Petugas Gudang:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Staf Opname Gudang</div>
+        </div>
+        <div>
+          <div className="font-bold mb-12">Diperiksa Oleh:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Supervisor Gudang</div>
+        </div>
+        <div>
+          <div className="font-bold mb-12">Disetujui Oleh:</div>
+          <div className="border-b border-black w-36 mx-auto mb-1"></div>
+          <div className="text-[10px] text-slate-500">Kepala Logistik & Gudang</div>
         </div>
       </div>
 
-      {/* Reversed Banner if transaction is REVERSED */}
-      {opnameStatus === 'REVERSED' && (
-        <div className="px-5 py-2 bg-rose-500/15 border-b border-rose-500/30 flex items-center justify-between text-xs font-bold text-rose-400 shrink-0">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Transaksi Opname ini telah dibatalkan (REVERSED).{reversedReasonText ? ` Alasan: ${reversedReasonText}` : ''}</span>
+      {/* Confirm dialog before saving: draft (no stock change) or post */}
+      {isReconciling && (
+        <div className="no-print fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+          <div className={`${modalShell} max-w-4xl max-h-[90vh]`}>
+            <div className={`px-4 py-2 border-b flex items-center justify-between ${c.bar}`}>
+              <div>
+                <h2 className="text-sm font-bold">Konfirmasi Simpan Stok Opname</h2>
+                <p className={`text-[11px] ${c.muted}`}>Pratinjau Penyesuaian Qty Gudang ({noTransaction || '(Nomor otomatis)'})</p>
+              </div>
+              <span className="font-bold">{fmtN0(stats.totalQty)} Unit / {fmtN0(stats.totalItems)} Jenis</span>
+            </div>
+
+            <div className="flex-1 overflow-auto p-3 flex flex-col gap-2">
+              <p className={c.muted}>
+                Posting opname akan memperbarui stok akhir gudang dengan <strong>Qty</strong> yang tertera di bawah ini.
+              </p>
+              <table className={`w-full border-separate border-spacing-0 border rounded ${c.border}`}>
+                <thead>
+                  <tr className={`font-semibold ${c.head}`}>
+                    <th className={`px-2 py-1 text-left border-b ${c.border}`}>No. Inventory</th>
+                    <th className={`px-2 py-1 text-left border-b ${c.border}`}>Nama Barang</th>
+                    <th className={`px-2 py-1 text-right border-b ${c.border}`}>Qty</th>
+                    <th className={`px-2 py-1 text-right border-b ${c.border}`}>Price</th>
+                    <th className={`px-2 py-1 text-right border-b ${c.border}`}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {opnameItems.map((item) => (
+                    <tr key={item.inventoryId}>
+                      <td className={`px-2 py-1 border-b font-mono ${c.border}`}>{item.inventoryNo}</td>
+                      <td className={`px-2 py-1 border-b ${c.border}`}>{item.inventoryName}</td>
+                      <td className={`px-2 py-1 border-b text-right tabular-nums ${c.border}`}>{opnameMode === 'ADJUST' && item.qty > 0 ? `+${item.qty}` : item.qty}</td>
+                      <td className={`px-2 py-1 border-b text-right tabular-nums ${c.border}`}>{formatMoney(item.price || 0)}</td>
+                      <td className={`px-2 py-1 border-b text-right tabular-nums ${c.border}`}>{formatMoney(item.qty * (item.price || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className={`px-4 py-2 border-t flex justify-between items-center gap-2 ${c.bar}`}>
+              <LegacyButton isDark={isDark} onClick={() => setIsReconciling(false)}>Batal & Cek Ulang</LegacyButton>
+              <div className="flex items-center gap-2">
+                <LegacyButton isDark={isDark} onClick={() => handleSubmitOpname('draft')} disabled={isSubmitting}>Simpan Draft DB</LegacyButton>
+                <LegacyButton isDark={isDark} variant="primary" onClick={() => handleSubmitOpname('post')} disabled={isSubmitting}>
+                  {isSubmitting ? 'Memproses...' : 'Confirm Post Adjustment'}
+                </LegacyButton>
+              </div>
+            </div>
           </div>
-          <span className="text-[10px] uppercase tracking-wider font-black">Read-Only</span>
         </div>
       )}
 
-      {/* MODE: Penyesuaian (+/-) like legacy OPM, or Cek Stok (hitung fisik) like legacy SCO */}
-      <div
-        className={`px-5 py-2 border-b flex flex-wrap items-center gap-2 shrink-0 text-xs ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-        }`}
-      >
-        <span className={`font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Jenis:</span>
-        {([
-          ['ADJUST', 'Penyesuaian (+/-)', 'Tambah/kurangi stok langsung, contoh 2 atau -1'],
-          ['COUNT', 'Cek Stok (hitung fisik)', 'Isi jumlah hasil hitung; selisih dihitung otomatis'],
-        ] as const).map(([value, label, hint]) => {
-          const locked = isReadOnly || !!noTransaction;
-          const active = opnameMode === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              title={hint}
-              disabled={locked && !active}
-              onClick={() => {
-                if (locked || active) return;
-                setOpnameMode(value);
-                setOpnameItems([]);
-                setQtyInput(1);
-              }}
-              className={`px-3 py-1 rounded-lg font-bold border transition-all ${
-                active
-                  ? 'bg-amber-500 text-slate-950 border-amber-500'
-                  : isDark
-                  ? 'border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40'
-                  : 'border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-        <span className="text-[11px] text-slate-500">
-          {opnameMode === 'ADJUST'
-            ? 'Qty = perubahan stok (+ tambah, - kurang). Stok akhir tidak boleh minus.'
-            : 'Qty = jumlah hasil hitung fisik. Tanggal cek stok tercatat walau qty sudah benar.'}
-        </span>
-      </div>
-
-      {/* 📥 INLINE FAST SCAN ENTRY ROW */}
-      <div
-        className={`px-5 py-2.5 border-b flex flex-wrap items-center gap-3 shrink-0 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-amber-50/50 border-amber-200/60'
-        }`}
-      >
-        <div className="flex items-center gap-1.5 text-xs font-black uppercase text-amber-500 shrink-0">
-          <BarcodeIcon className="w-4 h-4" />
-          <span>Scan Barcode:</span>
-        </div>
-
-        {/* Scan Barcode / SKU */}
-        <div className="w-44">
-          <input
-            ref={barcodeInputRef}
-            type="text"
-            value={barcodeInput}
-            disabled={isReadOnly}
-            onChange={(e) => handleBarcodeChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAddItem();
-              }
-            }}
-            placeholder="Scan Barcode / SKU..."
-            className={`w-full px-3 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-            }`}
-          />
-        </div>
-
-        {/* Select Barang (searchable) */}
-        <div ref={productPickerRef} className="relative flex-1 min-w-[220px]">
-          <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
-          <input
-            type="text"
-            value={productQuery}
-            disabled={isReadOnly}
-            onChange={(e) => handleProductQueryChange(e.target.value)}
-            onFocus={(e) => {
-              e.target.select();
-              if (productQuery.trim() && !selectedInvId) setIsProductDropdownOpen(true);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setIsProductDropdownOpen(true);
-                setProductHighlight((h) => Math.min(h + 1, Math.max(productResults.length - 1, 0)));
-              } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setProductHighlight((h) => Math.max(h - 1, 0));
-              } else if (e.key === 'Enter') {
-                e.preventDefault();
-                const pick = isProductDropdownOpen ? productResults[productHighlight] : undefined;
-                if (pick) handleInventorySelect(pick);
-                else if (selectedInvId) handleAddItem();
-              } else if (e.key === 'Escape') {
-                setIsProductDropdownOpen(false);
-              }
-            }}
-            placeholder="Cari Barang (Nama / SKU / Barcode)..."
-            className={`w-full pl-8 pr-8 py-1.5 rounded-xl border text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-              isDark ? 'bg-slate-800 text-white border-slate-700 placeholder-slate-500' : 'bg-white text-slate-900 border-slate-300 placeholder:text-slate-400'
-            }`}
-          />
-          {isSearchingProduct && isProductDropdownOpen && (
-            <RefreshCw className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-amber-500" />
-          )}
-
-          {isProductDropdownOpen && productQuery.trim() && (
-            <div className={`absolute left-0 right-0 top-full mt-1 z-40 rounded-xl border shadow-2xl max-h-72 overflow-y-auto ${
-              isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-            }`}>
-              {productResults.length === 0 ? (
-                <div className={`px-3 py-2.5 text-xs italic ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {isSearchingProduct ? 'Mencari barang...' : 'Barang tidak ditemukan'}
-                </div>
-              ) : (
-                productResults.map((inv, idx) => (
-                  <div
-                    key={inv.id}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleInventorySelect(inv);
-                    }}
-                    onMouseEnter={() => setProductHighlight(idx)}
-                    className={`px-3 py-2 border-b last:border-b-0 text-xs cursor-pointer ${
-                      isDark ? 'border-slate-800' : 'border-slate-200'
-                    } ${idx === productHighlight ? (isDark ? 'bg-slate-800' : 'bg-amber-50') : ''}`}
-                  >
-                    <div className="font-bold">{inv.inventoryName}</div>
-                    <div className={`text-[11px] font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      SKU: {inv.inventoryNo} | Barcode: {inv.barcode || '-'}
-                    </div>
-                  </div>
-                ))
-              )}
+      {/* Reverse (cancel) a posted opname; a reason is required */}
+      {isReverseModalOpen && (
+        <div className="no-print fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+          <div className={`${modalShell} max-w-md`}>
+            <div className={`px-4 py-2 border-b ${c.bar}`}>
+              <h2 className="text-sm font-bold">Batalkan (Reverse) Opname</h2>
+              <p className="text-[11px] font-mono text-rose-600">{noTransaction}</p>
             </div>
-          )}
-        </div>
-
-        {/* Qty */}
-        <div className="w-24 flex items-center gap-1">
-          <span className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{opnameMode === 'ADJUST' ? 'Qty ±:' : 'Qty:'}</span>
-          <input
-            type="number"
-            min={opnameMode === 'COUNT' ? 0 : undefined}
-            disabled={isReadOnly}
-            value={qtyInput}
-            onChange={(e) => setQtyInput(e.target.value === '' || e.target.value === '-' ? '' : parseInt(e.target.value) || 0)}
-            className={`w-full py-1 text-center font-black text-xs rounded-xl border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-              isDark ? 'bg-slate-950 text-amber-400 border-slate-700' : 'bg-white text-amber-900 border-slate-300'
-            }`}
-          />
-        </div>
-
-        {/* Catatan */}
-        <div className="w-44">
-          <input
-            type="text"
-            disabled={isReadOnly}
-            value={descInput}
-            onChange={(e) => setDescInput(e.target.value)}
-            placeholder="Catatan Opname..."
-            className={`w-full px-3 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-              isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-            }`}
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleAddItem}
-          disabled={isReadOnly}
-          className={`px-4 py-1.5 rounded-xl font-black text-xs shadow transition-all shrink-0 flex items-center gap-1 ${
-            isReadOnly
-              ? 'bg-slate-700 text-slate-400 opacity-50 cursor-not-allowed'
-              : 'bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 cursor-pointer'
-          }`}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Tambah</span>
-        </button>
-      </div>
-
-      {/* 📊 FULL-HEIGHT TABLE WORKBENCH VIEWPORT */}
-      <div className="flex-1 min-h-0 p-4 flex flex-col">
-        <div className={`flex-1 min-h-0 flex flex-col rounded-2xl border-2 shadow-lg overflow-hidden ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          {/* Table Toolbar (Item Count & Live Search) */}
-          <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0 ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-lg text-xs font-black bg-amber-500 text-slate-950 shadow-sm">
-                Semua ({opnameItems.length})
-              </span>
-              {tableSearch && (
-                <span className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Menampilkan {filteredTableItems.length} dari {opnameItems.length} barang
-                </span>
-              )}
+            <div className="p-4 flex flex-col gap-3">
+              <p className={c.muted}>
+                Pembatalan opname akan membuat jurnal pergerakan kompensasi dan mengembalikan saldo stok sebelum transaksi ini diposting.
+              </p>
+              <label className="flex flex-col gap-1">
+                <span className="font-semibold">Alasan Pembatalan (Wajib)</span>
+                <textarea
+                  rows={3}
+                  value={reverseReasonInput}
+                  onChange={(e) => setReverseReasonInput(e.target.value)}
+                  placeholder="Masukkan alasan pembatalan stok opname..."
+                  className={`w-full px-2 py-1 rounded border outline-none focus:ring-1 focus:ring-rose-500 ${c.input}`}
+                />
+              </label>
             </div>
-
-            {/* Table Live Search */}
-            <div className="relative min-w-[220px]">
-              <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-              <input
-                type="text"
-                placeholder="Filter tabel opname..."
-                value={tableSearch}
-                onChange={(e) => setTableSearch(e.target.value)}
-                className={`w-full pl-8 pr-3 py-1 rounded-lg border text-xs font-semibold focus:outline-none ${
-                  isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                }`}
-              />
-            </div>
-          </div>
-
-          {/* SCROLLABLE TABLE AREA */}
-          <div className="flex-1 min-h-0 overflow-auto relative">
-            <table className="w-full text-left border-separate border-spacing-0">
-              <thead className="sticky top-0 z-20">
-                <tr
-                  className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}
-                >
-                  <th className="py-2.5 px-4 w-12 text-center">No.</th>
-                  <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Kode Barang</span>
-                      {sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Nama Barang</span>
-                      {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('qty')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors min-w-[150px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Qty</span>
-                      {sortField === 'qty' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('description')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Keterangan</span>
-                      {sortField === 'description' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th className="py-2.5 px-4 text-center w-16">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/30 text-xs">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={6} className="py-24">
-                      <div className="flex flex-col items-center justify-center animate-pulse">
-                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      </div>
-                    </td>
-                  </tr>
-                ) : filteredTableItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className={`py-20 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                      {opnameItems.length === 0
-                        ? 'Belum ada item opname. Gunakan form Quick Scan di atas atau klik "Load Data".'
-                        : 'Tidak ada item yang sesuai dengan filter.'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTableItems.map((item, idx) => (
-                    <tr
-                      key={item.inventoryId}
-                      className={"transition-colors " + (isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800')}
-                    >
-                      <td className={`py-2.5 px-4 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{idx + 1}</td>
-                      <td className="py-2.5 px-4 font-mono">
-                        <span className="font-bold text-amber-500 block">{item.inventoryNo}</span>
-                        <span className={`text-[10px] font-normal ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.barcode}</span>
-                      </td>
-                      <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">
-                        {item.inventoryName}
-                      </td>
-
-                      {/* Unified Qty - INLINE STEPPER EDIT */}
-                      <td className="py-2.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            disabled={isReadOnly}
-                            onClick={() => handleInlineQtyChange(item.inventoryId, item.qty - 1)}
-                            className={`p-1 rounded-lg border transition-all active:scale-90 ${
-                              isReadOnly
-                                ? 'opacity-40 cursor-not-allowed border-slate-700 text-slate-500'
-                                : isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 cursor-pointer' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700 cursor-pointer'
-                            }`}
-                            title="Kurangi 1"
-                          >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <input
-                            type="number"
-                            min={opnameMode === 'COUNT' ? 0 : undefined}
-                            disabled={isReadOnly}
-                            value={item.qty}
-                            onChange={(e) => handleInlineQtyChange(item.inventoryId, parseInt(e.target.value) || 0)}
-                            className={`w-16 py-1 text-center font-black text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isDark ? 'bg-slate-950 text-amber-400 border-slate-700' : 'bg-amber-50 text-amber-900 border-amber-300'
-                            }`}
-                          />
-                          <button
-                            type="button"
-                            disabled={isReadOnly}
-                            onClick={() => handleInlineQtyChange(item.inventoryId, item.qty + 1)}
-                            className={`p-1 rounded-lg border transition-all active:scale-90 ${
-                              isReadOnly
-                                ? 'opacity-40 cursor-not-allowed border-slate-700 text-slate-500'
-                                : isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 cursor-pointer' : 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700 cursor-pointer'
-                            }`}
-                            title="Tambah 1"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-
-                      <td className={`py-2.5 px-4 italic ${isDark ? "text-slate-400" : "text-slate-600"}`}>{item.description}</td>
-
-                      <td className="py-2.5 px-4 text-center">
-                        <button
-                          onClick={() => handleRemoveItem(item.inventoryId)}
-                          disabled={isReadOnly}
-                          className={`p-1.5 rounded-lg text-rose-400 transition-colors ${
-                            isReadOnly ? 'opacity-40 cursor-not-allowed' : 'hover:bg-rose-500/20 cursor-pointer'
-                          }`}
-                          title="Hapus Item"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* COMPACT WORKBENCH FOOTER STATS BAR */}
-          <div className={`px-5 py-2.5 border-t flex flex-wrap items-center justify-between gap-3 shrink-0 ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-300'
-          }`}>
-            <div className="flex items-center gap-4 text-xs font-bold">
-              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
-                Total Barang: <strong className="text-slate-900 dark:text-white">{stats.totalItems} SKU</strong>
-              </span>
-              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
-                Total Qty: <strong className="text-amber-500">{stats.totalQty} Unit</strong>
-              </span>
-              <span className={isDark ? "text-slate-400" : "text-slate-600"}>
-                Status: <strong className="text-indigo-400">{opnameStatus}</strong>
-              </span>
-            </div>
-
-            <div className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Nilai Opname: <strong className="text-emerald-400 font-mono text-sm">{formatMoney(stats.totalValue)}</strong>
+            <div className={`px-4 py-2 border-t flex justify-end gap-2 ${c.bar}`}>
+              <LegacyButton isDark={isDark} onClick={() => setIsReverseModalOpen(false)}>Batal</LegacyButton>
+              <LegacyButton isDark={isDark} variant="danger" onClick={handleReverseOpname} disabled={isSubmitting}>
+                {isSubmitting ? 'Memproses...' : 'Konfirmasi Reverse'}
+              </LegacyButton>
             </div>
           </div>
         </div>
-
-        {/* 🖨️ OFFICIAL SIGNATURE BOX (VISIBLE ONLY ON PRINT) */}
-        <div className="print-signatures grid grid-cols-3 gap-6 text-center text-xs pt-8">
-          <div>
-            <div className="font-bold mb-12">Petugas Gudang:</div>
-            <div className="border-b border-black w-36 mx-auto mb-1"></div>
-            <div className="text-[10px] text-slate-500">Staf Opname Gudang</div>
-          </div>
-          <div>
-            <div className="font-bold mb-12">Diperiksa Oleh:</div>
-            <div className="border-b border-black w-36 mx-auto mb-1"></div>
-            <div className="text-[10px] text-slate-500">Supervisor Gudang</div>
-          </div>
-          <div>
-            <div className="font-bold mb-12">Disetujui Oleh:</div>
-            <div className="border-b border-black w-36 mx-auto mb-1"></div>
-            <div className="text-[10px] text-slate-500">Kepala Logistik & Gudang</div>
-          </div>
-        </div>
-
-        {/* 🔮 OPNAME CONFIRMATION PREVIEW MODAL */}
-        {isReconciling && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className={`w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
-            }`}>
-              {/* Modal Header */}
-              <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500">
-                    <AlertTriangle className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className={`text-lg font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                      Konfirmasi Simpan Stok Opname
-                    </h2>
-                    <p className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Pratinjau Penyesuaian Qty Gudang ({noTransaction})
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsReconciling(false)}
-                  className={`p-2 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
-                >
-                  <XCircle className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* Modal Body: Summary + Item List */}
-              <div className={`flex-1 overflow-auto p-6 ${isDark ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
-                <div className={`p-4 rounded-2xl mb-6 flex items-center justify-between border ${isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
-                  <div>
-                    <h3 className={`font-bold ${isDark ? 'text-white' : 'text-amber-900'}`}>Konfirmasi Stok Opname</h3>
-                    <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-amber-700'}`}>
-                      Posting opname akan memperbarui stok akhir gudang dengan <strong>Qty</strong> yang tertera di bawah ini.
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0 ml-4">
-                    <div className="text-xl font-black text-amber-500">
-                      {stats.totalQty} Unit
-                    </div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Dari Total {stats.totalItems} Barang
-                    </div>
-                  </div>
-                </div>
-
-                <table className="w-full text-left border-separate border-spacing-0 border rounded-xl overflow-hidden">
-                  <thead className={isDark ? 'bg-slate-800' : 'bg-slate-200'}>
-                    <tr className="text-[11px] font-black uppercase text-slate-500">
-                      <th className="px-4 py-2">Kode Barang</th>
-                      <th className="px-4 py-2">Nama Barang</th>
-                      <th className="px-4 py-2 text-center">Qty</th>
-                      <th className="px-4 py-2 text-right">Harga Satuan</th>
-                      <th className="px-4 py-2 text-right">Total Nilai</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                    {opnameItems.map((item) => (
-                      <tr key={item.inventoryId} className={isDark ? 'bg-slate-900' : 'bg-white'}>
-                        <td className="px-4 py-2 font-mono font-bold text-slate-400">{item.inventoryNo}</td>
-                        <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>
-                        <td className="px-4 py-2 text-center font-mono font-black">{opnameMode === 'ADJUST' && item.qty > 0 ? `+${item.qty}` : item.qty}</td>
-                        <td className="px-4 py-2 text-right font-mono">{formatMoney(item.price || 0)}</td>
-                        <td className="px-4 py-2 text-right font-mono font-bold text-emerald-400">
-                          {formatMoney(item.qty * (item.price || 0))}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Modal Footer */}
-              <div className={`px-6 py-4 border-t flex justify-between items-center gap-3 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-                <button
-                  onClick={() => setIsReconciling(false)}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer ${isDark ? 'bg-slate-800 hover:bg-slate-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-900'}`}
-                >
-                  Batal & Cek Ulang
-                </button>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleSubmitOpname('draft')}
-                    disabled={isSubmitting}
-                    className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer border ${
-                      isDark ? 'bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border-indigo-500/40' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                    }`}
-                  >
-                    Simpan Draft DB
-                  </button>
-                  <button
-                    onClick={() => handleSubmitOpname('post')}
-                    disabled={isSubmitting}
-                    className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-sm flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-amber-500/20"
-                  >
-                    <Save className="w-4 h-4" />
-                    {isSubmitting ? 'Memproses...' : 'Confirm Post Adjustment'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 🔄 REVERSE OPNAME MODAL */}
-        {isReverseModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className={`w-full max-w-md flex flex-col rounded-3xl shadow-2xl overflow-hidden border ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
-            }`}>
-              <div className={`px-6 py-4 flex items-center justify-between border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-500">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className={`text-base font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                      Batalkan (Reverse) Opname
-                    </h2>
-                    <p className="text-[11px] font-mono text-rose-400">{noTransaction}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsReverseModalOpen(false)}
-                  className={`p-1.5 rounded-xl transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
-                >
-                  <XCircle className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4">
-                <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                  Pembatalan opname akan membuat jurnal pergerakan kompensasi dan mengembalikan saldo stok sebelum transaksi ini diposting.
-                </p>
-                <div>
-                  <label className={`block text-xs font-bold mb-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    Alasan Pembatalan (Wajib)
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={reverseReasonInput}
-                    onChange={(e) => setReverseReasonInput(e.target.value)}
-                    placeholder="Masukkan alasan pembatalan stok opname..."
-                    className={`w-full p-3 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500 ${
-                      isDark ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-900 border-slate-300'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-                <button
-                  onClick={() => setIsReverseModalOpen(false)}
-                  className={`px-4 py-2 rounded-xl font-bold text-xs cursor-pointer ${isDark ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-800'}`}
-                >
-                  Batal
-                </button>
-                <button
-                  onClick={handleReverseOpname}
-                  disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer transition-all shadow-lg shadow-rose-600/20"
-                >
-                  {isSubmitting ? 'Memproses...' : 'Konfirmasi Reverse'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
+      {confirmDialogEl}
     </div>
   );
 }

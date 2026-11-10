@@ -1,67 +1,31 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Link from 'next/link';
-import {
-  Search,
-  RefreshCw,
-  Plus,
-  BarChart3,
-  Edit,
-  Trash2,
-  Package,
-  CheckCircle,
-  XCircle,
-  Printer,
-  X,
-  AlertTriangle,
-  Eye,
-  EyeOff,
-  Download,
-  Info,
-  ChevronUp,
-  ChevronDown,
-  Zap,
-  Copy,
-  Check,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { RefreshCw, Trash2, Info, Package, Printer, CheckCircle, XCircle, AlertTriangle, Zap, X } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
-import ColumnFilterRow, { columnFilterQuery, type ColumnFilterCell } from '@/components/ColumnFilterRow';
+import { columnFilterQuery } from '@/components/ColumnFilterRow';
 import { useDebounce } from '@/hooks/useDebounce';
 import { normalizeInventoryName } from '@/lib/inventory-name';
 import { useConfirmDialog } from '@/components/ConfirmDialog';
+import {
+  LegacyWindow, LegacyButton, LegacyGrid, LegacyPager, LegacyInput, LegacySelect, GroupBox, FieldRow, ContextMenu, menuAt,
+  fmtN0, lx, type LegacyColumn, type ContextMenuState,
+} from '@/components/legacy';
+import { fetchMovement, groupMovementByMonth, movementMonthKey, type MovementRow, type MonthRow } from '@/components/InventoryStockManager';
 
 interface LookupItem {
   id: number;
-  brandNo?: string;
   brandName?: string;
-  categoryNo?: string;
   categoryName?: string;
-  productNo?: string;
-  productName?: string;
-  uomCode?: string;
   uomName?: string;
-  code?: string;
-  name?: string;
-  tier1_minqty?: number;
-  tier2_minqty?: number;
-  tier3_minqty?: number;
   [key: string]: unknown;
 }
 
 interface LookupsData {
   brands: LookupItem[];
-  productTypes: LookupItem[];
+  categories: LookupItem[];
   uoms: LookupItem[];
   wholesaleCategories: LookupItem[];
-}
-
-interface HppHistoryItem {
-  id: string;
-  mrNo: string;
-  mrDate: string;
-  supplierName: string;
-  hpp: number;
 }
 
 interface ToastMessage {
@@ -70,124 +34,151 @@ interface ToastMessage {
   text: string;
 }
 
+/** GET /api/inventory row: `barcode` falls back to the No. Barang, `rawBarcode` is the stored value. */
+type ProductRow = ERPProduct & { rawBarcode?: string };
+
+/** GET /api/inventory/[id]/hpp-history row (old GV_HPP); hpp is null for a receipt without prices. */
+interface HppHistoryRow {
+  id: number;
+  mrNo: string;
+  mrDate: string | null;
+  supplierName: string;
+  hpp: number | null;
+}
+
+/** Footer sums over every matching item (server side); stockValue is 0 without HPP rights. */
+interface GridTotals {
+  stock: number;
+  stockValue: number;
+  retailValue: number;
+}
+
 interface MasterBarangManagerProps {
   isDark: boolean;
+  /** 'stock' = read-only stock view (minus filter on, no add / edit / delete / opname) */
   mode?: 'master' | 'stock';
   canViewPrice?: boolean;
 }
 
+const EMPTY_FORM: Partial<ERPProduct> = {
+  inventoryNo: '', barcode: '', inventoryName: '', inventoryBrandId: 1, inventoryCategoryId: 1, inventoryProductId: 1,
+  uoMId: 1, wholesaleCategoryId: 1, kodeHarga: '', description: '', price: 0, disc: 0, isActive: true, hpp: 0,
+  priceBuy: 0, grosir1: 0, grosir2: 0, grosir3: 0, stokAwal: 0, stokAkhir: 0,
+};
+
+/** Separate window of the legacy app (Detail Barang, report preview): overlay with a title bar. */
+function LegacyDialog({ title, isDark, onClose, children, className = 'max-w-3xl' }: {
+  title: string;
+  isDark: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const c = lx(isDark);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full ${className} max-h-[90vh] flex flex-col border rounded shadow-2xl text-xs ${c.panel} ${isDark ? 'text-slate-100' : 'text-slate-900'}`}
+      >
+        <div className={`px-3 py-1.5 border-b flex items-center justify-between font-bold text-[13px] ${c.bar}`}>
+          <span>{title}</span>
+          <button type="button" onClick={onClose} title="Close" className="p-0.5 rounded hover:bg-rose-600 hover:text-white cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-hidden">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Legacy Master_Data.Frm_Inventory ("Master Barang"): item grid, in-place edit form, "Show Detail" stock group. */
 export default function MasterBarangManager({ isDark, mode = 'master', canViewPrice = false }: MasterBarangManagerProps) {
+  const c = lx(isDark);
+  const readOnly = mode === 'stock';
   const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
-  // Main Data States
-  const [products, setProducts] = useState<ERPProduct[]>([]);
+
+  // List, filters and server paging
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
-  
-  // 3-state Filter: 'active' | 'inactive' | 'all'
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
-  const [filterMinusStock, setFilterMinusStock] = useState<boolean>(mode === 'stock');
+  const [onlyActive, setOnlyActive] = useState(true);
+  const [minusStock, setMinusStock] = useState<boolean>(mode === 'stock');
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const debouncedColumnFilters = useDebounce(columnFilters, 500);
-  const [showDetailPane, setShowDetailPane] = useState<boolean>(true);
-
-  // Sorting State
-  const [sortField, setSortField] = useState<keyof ERPProduct | null>(null);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
+  const [sort, setSort] = useState<{ key: string; order: 'asc' | 'desc' } | null>(null);
   const [pageSize, setPageSize] = useState(100);
-  // Matching rows on the server; the list holds only the current page
   const [totalCount, setTotalCount] = useState(0);
-
-  // Toast Notification State
+  const [totals, setTotals] = useState<GridTotals | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  // Search input ref for keyboard shortcut
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [lookups, setLookups] = useState<LookupsData>({ brands: [], categories: [], uoms: [], wholesaleCategories: [] });
 
-  const [lookups, setLookups] = useState<LookupsData>({
-    brands: [],
-    productTypes: [],
-    uoms: [],
-    wholesaleCategories: [],
-  });
-
-  // Selected Row & Context Menu States
   const [selectedProduct, setSelectedProduct] = useState<ERPProduct | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: ERPProduct } | null>(null);
+  const [rowMenu, setRowMenu] = useState<ContextMenuState<ERPProduct> | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
 
-  // Inline Expand States (Single Responsive Form)
-  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
-  const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [hppHistory, setHppHistory] = useState<HppHistoryItem[]>([]);
-  const [showHppHistory, setShowHppHistory] = useState<boolean>(false);
+  // In-place edit form (DevExpress edit form): 'new' or the id of the item being edited
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editOriginal, setEditOriginal] = useState<{ inventoryNo: string; rawBarcode: string } | null>(null);
+  const [formData, setFormData] = useState<Partial<ERPProduct>>(EMPTY_FORM);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Opname Quick State
+  // "Show Detail" group: opname qty and the selected item's monthly stock summary
+  const [showDetail, setShowDetail] = useState(false);
+  const [opnameQty, setOpnameQty] = useState(0);
   const [isSubmittingOpname, setIsSubmittingOpname] = useState(false);
-  const [opnameQty, setOpnameQty] = useState<number>(0);
-  useEffect(() => {
-    if (selectedProduct) setOpnameQty(selectedProduct.stokAkhir || 0);
-  }, [selectedProduct?.id, selectedProduct?.stokAkhir]);
+  const [movement, setMovement] = useState<MovementRow[]>([]);
+  const [movementTotal, setMovementTotal] = useState(0);
+  const [isLoadingMovement, setIsLoadingMovement] = useState(false);
+  const [movementVersion, setMovementVersion] = useState(0);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const opnameInputRef = useRef<HTMLInputElement>(null);
 
-  // Stock Report Modal State
-  const [isStockReportModalOpen, setIsStockReportModalOpen] = useState(false);
-  // Laporan Stok covers every matching item, not just the page on screen
+  // "Detail Barang" window and "Laporan Stok" report
+  const [detailBarang, setDetailBarang] = useState<{ item: ERPProduct; rows: MovementRow[]; total: number; loading: boolean } | null>(null);
+  // Purchase-price grid of "Detail Barang" (Admin only, like HPP)
+  const [hppHistory, setHppHistory] = useState<{ itemId: string; rows: HppHistoryRow[]; loading: boolean } | null>(null);
+  const [isStockReportOpen, setIsStockReportOpen] = useState(false);
   const [reportProducts, setReportProducts] = useState<ERPProduct[] | null>(null);
 
-  // Form Fields State (Single Unified Form)
-  const [formData, setFormData] = useState<Partial<ERPProduct>>({
-    inventoryNo: '',
-    barcode: '',
-    inventoryName: '',
-    inventoryBrandId: 1,
-    inventoryProductId: 1,
-    uoMId: 1,
-    wholesaleCategoryId: 1,
-    kodeHarga: '',
-    description: '',
-    price: 0,
-    disc: 0,
-    isActive: true,
-    hpp: 0,
-    priceBuy: 0,
-    grosir1: 0,
-    grosir2: 0,
-    grosir3: 0,
-    stokAwal: 0,
-    stokAkhir: 0,
-  });
-
-  // Toast Trigger Helper
-  const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString();
+  const addToast = useCallback((text: string, type: ToastMessage['type'] = 'success') => {
+    const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, type, text }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }, []);
 
   const extractErrorMessage = (json: any, fallback = 'Terjadi kesalahan'): string => {
     if (!json?.error) return fallback;
     if (typeof json.error === 'string') return json.error;
-    if (typeof json.error === 'object' && typeof json.error.message === 'string') {
-      return json.error.message;
-    }
+    if (typeof json.error === 'object' && typeof json.error.message === 'string') return json.error.message;
     return fallback;
   };
 
-  // Inventory API URL for the current filters and sort; the server pages and sorts the whole catalog
-  const inventoryUrl = useCallback((page: number, limit: number) => {
-    let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&page=${page}&limit=${limit}${columnFilterQuery(debouncedColumnFilters)}`;
-    if (filterMinusStock) url += `&minusStock=true`;
-    if (statusFilter) url += `&status=${statusFilter}`;
-    if (sortField) url += `&sort=${sortField}&order=${sortOrder}`;
-    return url;
-  }, [debouncedSearchQuery, debouncedColumnFilters, filterMinusStock, statusFilter, sortField, sortOrder]);
+  // Query string of the current filters (no paging / sort): it also identifies which footer totals are on screen
+  const filterQuery = useMemo(() => {
+    let q = `q=${encodeURIComponent(debouncedSearchQuery)}${columnFilterQuery(debouncedColumnFilters)}&status=${onlyActive ? 'active' : 'all'}`;
+    if (minusStock) q += '&minusStock=true';
+    return q;
+  }, [debouncedSearchQuery, debouncedColumnFilters, onlyActive, minusStock]);
 
-  // Every matching item (for export and Laporan Stok), fetched in API-max batches
+  // The page belongs to one filter / sort / page size; any change starts again at page 1 (no extra fetch)
+  const pageKey = JSON.stringify([filterQuery, sort, pageSize]);
+  const [pageState, setPageState] = useState<{ key: string; page: number }>({ key: '', page: 1 });
+  const currentPage = pageState.key === pageKey ? pageState.page : 1;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  const inventoryUrl = useCallback((page: number, limit: number) => {
+    let url = `/api/inventory?${filterQuery}&page=${page}&limit=${limit}`;
+    if (sort) url += `&sort=${sort.key}&order=${sort.order}`;
+    return url;
+  }, [filterQuery, sort]);
+
+  // Every matching item (Export Data and Laporan Stok), fetched in API-max batches
   const fetchAllProducts = useCallback(async (): Promise<ERPProduct[]> => {
     const BATCH = 5000;
     const all: ERPProduct[] = [];
@@ -199,1490 +190,755 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     }
   }, [inventoryUrl]);
 
-  // Fetch Inventory List from PostgreSQL
-  const fetchProducts = useCallback(async () => {
+  // Page load. Footer totals are requested only when the filters differ from those of the totals on screen,
+  // so paging and sorting do not re-sum the catalog; a newer request makes older responses obsolete.
+  const totalsKeyRef = useRef<string | null>(null);
+  const listReqIdRef = useRef(0);
+  const loadProducts = useCallback(async () => {
+    const reqId = ++listReqIdRef.current;
+    const wantTotals = totalsKeyRef.current !== filterQuery;
     setIsLoading(true);
     try {
-      const res = await fetch(inventoryUrl(currentPage, pageSize));
-      const json = await res.json();
+      const json = await fetch(`${inventoryUrl(currentPage, pageSize)}${wantTotals ? '&totals=true' : ''}`).then((r) => r.json());
+      if (reqId !== listReqIdRef.current) return;
       if (json.success && Array.isArray(json.data)) {
-        setProducts(json.data);
-        setTotalCount(json.pagination?.total ?? json.data.length);
-        if (json.data.length > 0) {
-          setSelectedProduct((prev) => prev ? (json.data.find((p: ERPProduct) => p.id === prev.id) || json.data[0]) : json.data[0]);
+        const total = json.pagination?.total ?? json.data.length;
+        setTotalCount(total);
+        if (json.totals) {
+          setTotals(json.totals);
+          totalsKeyRef.current = filterQuery;
         }
+        // A reload (delete, Aktif toggle, opname) can shrink the list below the current page: go to the last page
+        const lastPage = Math.max(1, Math.ceil(total / pageSize));
+        if (currentPage > lastPage) {
+          setPageState({ key: pageKey, page: lastPage });
+          return;
+        }
+        setProducts(json.data);
+        setSelectedProduct((prev) => (prev ? json.data.find((p: ERPProduct) => p.id === prev.id) || json.data[0] || null : json.data[0] || null));
+      } else {
+        addToast(`Gagal memuat data barang: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err) {
       console.error('Error fetching inventory:', err);
-      addToast('Gagal terhubung ke database', 'error');
+      if (reqId === listReqIdRef.current) addToast('Gagal terhubung ke database', 'error');
     } finally {
-      setIsLoading(false);
+      if (reqId === listReqIdRef.current) setIsLoading(false);
     }
-  }, [inventoryUrl, currentPage, pageSize, addToast]);
+  }, [filterQuery, inventoryUrl, currentPage, pageSize, pageKey, addToast]);
 
-  // Initial load and filter change trigger
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
+
+  // After a save / delete / opname / Refresh the totals may have changed as well
+  const reloadProducts = useCallback(() => {
+    totalsKeyRef.current = null;
+    return loadProducts();
+  }, [loadProducts]);
+
   useEffect(() => {
     let isMounted = true;
-    const runFetch = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(inventoryUrl(currentPage, pageSize));
-        const json = await res.json();
-        if (isMounted && json.success && Array.isArray(json.data)) {
-          setProducts(json.data);
-          setTotalCount(json.pagination?.total ?? json.data.length);
-          if (json.data.length > 0) {
-            setSelectedProduct((prev) => prev ? (json.data.find((p: ERPProduct) => p.id === prev.id) || json.data[0]) : json.data[0]);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching inventory:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-    runFetch();
-    return () => { isMounted = false; };
-  }, [inventoryUrl, currentPage, pageSize]);
-
-  // Fetch Dropdown Lookups on Mount
-  useEffect(() => {
-    let isMounted = true;
-    const runLookups = async () => {
-      try {
-        const res = await fetch('/api/inventory/lookups');
-        const json = await res.json();
+    fetch('/api/inventory/lookups')
+      .then((r) => r.json())
+      .then((json) => {
         if (isMounted && json.success && json.data) {
           setLookups({
             brands: json.data.brands || [],
-            productTypes: json.data.productTypes || [],
+            categories: json.data.categories || [],
             uoms: json.data.uoms || [],
             wholesaleCategories: json.data.wholesaleCategories || [],
           });
         }
-      } catch (err) {
-        console.error('Error fetching lookups:', err);
-      }
-    };
-    runLookups();
+      })
+      .catch((err) => console.error('Error fetching lookups:', err));
     return () => { isMounted = false; };
   }, []);
 
-  // Fetch HPP History when selecting a product
-  const fetchHppHistory = useCallback(async (productId: string) => {
-    try {
-      const res = await fetch(`/api/inventory/${productId}/hpp-history`);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setHppHistory(json.data);
-      } else {
-        setHppHistory([]);
-      }
-    } catch {
-      setHppHistory([]);
-    }
-  }, []);
-
+  // Monthly stock summary of the selected item, loaded only while "Show Detail" is open
+  const selectedId = selectedProduct?.id ?? null;
   useEffect(() => {
-    let isMounted = true;
-    if (!selectedProduct) return;
-    const runHppHistory = async () => {
-      try {
-        const res = await fetch(`/api/inventory/${selectedProduct.id}/hpp-history`);
-        const json = await res.json();
-        if (isMounted) {
-          if (json.success && Array.isArray(json.data)) {
-            setHppHistory(json.data);
-          } else {
-            setHppHistory([]);
-          }
-        }
-      } catch {
-        if (isMounted) setHppHistory([]);
-      }
-    };
-    runHppHistory();
-    return () => { isMounted = false; };
-  }, [selectedProduct]);
+    if (!showDetail || !selectedId) return;
+    let isCurrent = true;
+    setIsLoadingMovement(true);
+    setMovement([]);
+    setMovementTotal(0);
+    setSelectedMonth(null);
+    fetchMovement(selectedId)
+      .then((result) => { if (isCurrent) { setMovement(result.rows); setMovementTotal(result.total); } })
+      .catch(() => { if (isCurrent) setMovement([]); })
+      .finally(() => { if (isCurrent) setIsLoadingMovement(false); });
+    return () => { isCurrent = false; };
+  }, [showDetail, selectedId, movementVersion]);
 
-  // Open Add Inline
-  const handleOpenCreateInline = useCallback(() => {
-    setIsCreatingNew(true);
-    setExpandedRowId('new');
-    setShowHppHistory(false);
+  const months = useMemo(() => groupMovementByMonth(movement), [movement]);
+  const monthTransactions = useMemo(
+    () => (selectedMonth ? movement.filter((r) => movementMonthKey(r.date) === selectedMonth) : []),
+    [movement, selectedMonth],
+  );
+
+  const handleOpenCreate = useCallback(() => {
+    if (readOnly) return;
+    setEditingId('new');
     setFormData({
+      ...EMPTY_FORM,
       inventoryNo: `BRG-${Date.now().toString().slice(-4)}`,
       barcode: `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
-      inventoryName: '',
       inventoryBrandId: lookups.brands[0]?.id || 1,
-      inventoryProductId: lookups.productTypes[0]?.id || 1,
+      inventoryCategoryId: lookups.categories[0]?.id || 1,
       uoMId: lookups.uoms[0]?.id || 1,
       wholesaleCategoryId: lookups.wholesaleCategories[0]?.id || 1,
       kodeHarga: 'STD',
-      description: '',
-      price: 0,
-      disc: 0,
-      isActive: true,
-      hpp: 0,
-      priceBuy: 0,
-      grosir1: 0,
-      grosir2: 0,
-      grosir3: 0,
-      stokAwal: 0,
-      stokAkhir: 0,
     });
-    setHppHistory([]);
-  }, [lookups]);
+  }, [lookups, readOnly]);
 
-  // Keyboard Shortcuts
+  const handleOpenEdit = (product: ProductRow) => {
+    if (readOnly) return;
+    const rawBarcode = product.rawBarcode ?? product.barcode;
+    setSelectedProduct(product);
+    setEditingId(product.id);
+    setEditOriginal({ inventoryNo: product.inventoryNo, rawBarcode });
+    setFormData({ ...product, barcode: rawBarcode });
+  };
+
+  const closeForm = () => setEditingId(null);
+
+  // Keyboard: Escape closes forms / windows, "/" focuses the search, Alt+N opens a new item
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const targetTag = (e.target as HTMLElement)?.tagName;
-      const isTypingInInput = targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT';
+      const tag = (e.target as HTMLElement)?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
       if (e.key === 'Escape') {
-        setExpandedRowId(null);
-        setIsCreatingNew(false);
-        setIsStockReportModalOpen(false);
-        setContextMenu(null);
-      } else if (e.key === '/' && !expandedRowId && !isTypingInInput) {
+        setEditingId(null);
+        setIsStockReportOpen(false);
+        setDetailBarang(null);
+        setRowMenu(null);
+      } else if (e.key === '/' && !editingId && !typing) {
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        handleOpenCreateInline();
+        handleOpenCreate();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [expandedRowId, handleOpenCreateInline]);
+  }, [editingId, handleOpenCreate]);
 
-  // Reset to page 1 when filters or search change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedSearchQuery, debouncedColumnFilters, statusFilter, filterMinusStock]);
-
-  // Per-column filter row: one cell per table column (expand, SKU, Barcode, Nama, UoM, Price, [HPP], Keterangan, G1-3, Stok, Status, Aksi)
-  const hasColumnFilters = Object.values(columnFilters).some((v) => v.trim());
-  const columnFilterCells: ColumnFilterCell[] = [
-    {},
-    { key: 'inventoryno' },
-    { key: 'barcode' },
-    { key: 'inventoryname' },
-    { key: 'uom' },
-    {},
-    ...(canViewPrice ? [{}] : []),
-    { key: 'description' },
-    {}, {}, {}, {}, {}, {},
-  ];
-
-  // Sort Handler
-  const handleSort = (field: keyof ERPProduct) => {
-    setCurrentPage(1);
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField(null);
-      setSortOrder('asc');
-    }
+  const handleSort = (key: string) => {
+    setSort((prev) => (prev?.key !== key ? { key, order: 'asc' } : prev.order === 'asc' ? { key, order: 'desc' } : null));
   };
 
-  // The server already sorted and paged the list
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const paginatedProducts = products;
-
+  // Export Data: the grid columns of every matching item, HPP-based columns only for users who may see them
   const exportToExcel = async () => {
-    let orderedProducts: ERPProduct[];
+    let rowsToExport: ERPProduct[];
     try {
-      orderedProducts = await fetchAllProducts();
+      rowsToExport = await fetchAllProducts();
     } catch {
       addToast('Gagal memuat data barang untuk export', 'error');
       return;
     }
-    if (orderedProducts.length === 0) {
+    if (rowsToExport.length === 0) {
       addToast('Tidak ada data barang untuk diexport', 'warning');
       return;
     }
-
-    const headers = [
-      'ID',
-      'Inventory No',
-      'Barcode',
-      'Nama Barang',
-      'Satuan (UoM)',
-      'Harga Retail',
-      ...(canViewPrice ? ['HPP (Modal)', 'Harga Beli'] : []),
-      'Grosir 1',
-      'Grosir 2',
-      'Grosir 3',
-      'Kategori Grosir',
-      'Stok Awal',
-      'Stok Akhir',
-      'Status Aktif',
-    ];
-
-    const rows = orderedProducts.map((p) => [
-      p.id,
-      p.inventoryNo || '',
-      p.barcode || '',
-      p.inventoryName || '',
-      p.uomName || 'PCS',
-      p.price || 0,
-      ...(canViewPrice ? [p.hpp || 0, p.priceBuy || 0] : []),
-      p.grosir1 || 0,
-      p.grosir2 || 0,
-      p.grosir3 || 0,
-      p.wholesaleCategory?.name || p.wholesaleCategoryName || 'Standard',
-      p.stokAwal || 0,
-      p.stokAkhir || 0,
-      p.isActive ? 'AKTIF' : 'NON-AKTIF',
-    ]);
-
+    const headers = ['No. Barang', 'Barcode', 'Nama', 'Stok', 'Aktif', 'Harga Retail', ...(canViewPrice ? ['Harga Beli', 'Total H.Stok'] : []), 'Total H.Jual'];
+    const rows = rowsToExport.map((p) => {
+      const stock = Number(p.stokAkhir || 0);
+      return [
+        p.inventoryNo || '', p.barcode || '', p.inventoryName || '', stock, p.isActive ? 'Ya' : 'Tidak', Number(p.price || 0),
+        ...(canViewPrice ? [Number(p.priceBuy || 0), stock * Number(p.priceBuy || 0)] : []),
+        stock * Number(p.price || 0),
+      ];
+    });
     try {
       const XLSX = await import('xlsx');
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       worksheet['!cols'] = headers.map((header, index) => ({
         wch: Math.min(40, Math.max(header.length + 2, ...rows.map((row) => String(row[index] ?? '').length + 2))),
       }));
-      worksheet['!freeze'] = { ySplit: 1 };
-
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Master Barang');
       XLSX.writeFile(workbook, `Master_Barang_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      addToast(`Berhasil mengexport ${orderedProducts.length} data barang ke Excel`, 'success');
+      addToast(`Berhasil mengexport ${rowsToExport.length} data barang ke Excel`, 'success');
     } catch {
       addToast('Gagal membuat file Excel.', 'error');
     }
   };
 
-  // Open Edit Inline
-  const handleToggleExpand = (product: ERPProduct) => {
-    const strId = product.id.toString();
-    if (expandedRowId === strId) {
-      setExpandedRowId(null);
-      setIsCreatingNew(false);
-      return;
+  const openStockReport = async () => {
+    setReportProducts(null);
+    setIsStockReportOpen(true);
+    try {
+      setReportProducts(await fetchAllProducts());
+    } catch {
+      addToast('Gagal memuat Laporan Stok', 'error');
+      setIsStockReportOpen(false);
     }
-    setSelectedProduct(product);
-    setIsCreatingNew(false);
-    setExpandedRowId(strId);
-    setShowHppHistory(false);
-    setFormData({ ...product });
-    fetchHppHistory(product.id);
   };
 
-  // Save Form (Create / Edit)
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSaving) return;
+    if (isSaving || !editingId) return;
     setIsSaving(true);
     try {
-      const isEdit = !isCreatingNew && selectedProduct;
-      const url = isEdit ? `/api/inventory/${selectedProduct.id}` : `/api/inventory`;
-      const method = isEdit ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
+      const isEdit = editingId !== 'new';
+      const body: Record<string, unknown> = { ...formData };
+      // PUT stores an empty barcode as the No. Barang; leave both out so an item without barcode keeps none
+      if (isEdit && editOriginal && !editOriginal.rawBarcode && !formData.barcode && formData.inventoryNo === editOriginal.inventoryNo) {
+        delete body.barcode;
+        delete body.inventoryNo;
+        delete body.inventory_no;
+      }
+      const res = await fetch(isEdit ? `/api/inventory/${editingId}` : '/api/inventory', {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(body),
       });
-
       const json = await res.json();
       if (json.success) {
-        setExpandedRowId(null);
-        setIsCreatingNew(false);
+        setEditingId(null);
         addToast(isEdit ? 'Data barang berhasil diperbarui!' : 'Barang baru berhasil ditambahkan!', 'success');
-        fetchProducts();
+        reloadProducts();
       } else {
         addToast(`Gagal menyimpan: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Terjadi kesalahan: ${message}`, 'error');
+      addToast(`Terjadi kesalahan: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Delete Item
   const handleDeleteProduct = async (product: ERPProduct) => {
     if (!(await confirmDialog(`Hapus barang "${product.inventoryName}"?
 
 Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar riwayat tetap utuh.`))) return;
     try {
-      const res = await fetch(`/api/inventory/${product.id}`, { method: 'DELETE' });
-      const json = await res.json();
+      const json = await fetch(`/api/inventory/${product.id}`, { method: 'DELETE' }).then((r) => r.json());
       if (json.success) {
         addToast(json.message || `Barang "${product.inventoryName}" berhasil dihapus`, json.data?.deactivated ? 'warning' : 'info');
-        fetchProducts();
+        reloadProducts();
       } else {
         addToast(`Gagal menghapus: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Quick Toggle Status
+  // Aktif check column: sends only the flag, so the rest of the item (e.g. an empty barcode) is left as stored
   const handleToggleStatus = async (product: ERPProduct) => {
     try {
-      const res = await fetch(`/api/inventory/${product.id}`, {
+      const json = await fetch(`/api/inventory/${product.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...product, isActive: !product.isActive }),
-      });
-      const json = await res.json();
+        body: JSON.stringify({ isActive: !product.isActive }),
+      }).then((r) => r.json());
       if (json.success) {
         addToast(`Status "${product.inventoryName}" berhasil diubah`, 'success');
-        fetchProducts();
+        reloadProducts();
       } else {
         addToast(`Gagal merubah status: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Submit Opname Quick Adjust
-  const handleSaveOpname = async (opnameMode: 'add' | 'set') => {
+  // Direct opname of the selected item: 'add' adds qty to the stock, 'set' sets the stock to qty
+  const handleSaveOpname = async (opnameMode: 'add' | 'set', qty: number) => {
     if (!selectedProduct || isSubmittingOpname) return;
     setIsSubmittingOpname(true);
     try {
-      const res = await fetch(`/api/inventory/opname`, {
+      const json = await fetch('/api/inventory/opname', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'POST_DIRECT',
-          inventoryId: selectedProduct.id,
-          qtyOpname: opnameQty,
-          mode: opnameMode,
-        }),
-      });
-      const json = await res.json();
+        body: JSON.stringify({ action: 'POST_DIRECT', inventoryId: selectedProduct.id, qtyOpname: qty, mode: opnameMode }),
+      }).then((r) => r.json());
       if (json.success) {
-        addToast(`Stok "${selectedProduct.inventoryName}" berhasil di${opnameMode === 'add' ? 'tambah' : 'set'} sejumlah ${opnameQty}`, 'success');
-        await fetchProducts();
+        addToast(`Stok "${selectedProduct.inventoryName}" berhasil di${opnameMode === 'add' ? 'tambah' : 'set'} sejumlah ${qty}`, 'success');
+        setOpnameQty(0);
+        await reloadProducts();
+        setMovementVersion((v) => v + 1);
       } else {
         addToast(`Gagal opname: ${extractErrorMessage(json)}`, 'error');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setIsSubmittingOpname(false);
     }
   };
 
-  // Selected wholesale category object helper
-  const currentWholesaleCategory = lookups.wholesaleCategories.find(
-    (wc) => wc.id === formData.wholesaleCategoryId
-  );
+  const handleResetStock = async () => {
+    if (!selectedProduct) return;
+    if (!(await confirmDialog(`Reset stok "${selectedProduct.inventoryName}" ke 0?`, { title: 'Reset Stok ke Nol', confirmText: 'Reset' }))) return;
+    await handleSaveOpname('set', 0);
+  };
 
-  // Close context menu on outside click
-  useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
-  }, []);
+  // Right-click "Stok Opname": like the old app, opens the Show Detail group on that item
+  const openStockOpname = (product: ERPProduct) => {
+    setSelectedProduct(product);
+    setShowDetail(true);
+    setTimeout(() => opnameInputRef.current?.focus(), 100);
+  };
 
-  // Single Responsive Form Component
-  const renderSingleResponsiveForm = () => (
-    <div className={`w-full overflow-hidden flex flex-col p-4 border-b-4 border-amber-500 shadow-inner ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-950'}`}>
-      {/* Form Header */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-300 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          <Package className="w-5 h-5 text-amber-500" />
-          <h3 className={`font-black text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            {isCreatingNew ? 'Tambah Barang Baru' : `Edit Barang: ${formData.inventoryName || formData.inventoryNo}`}
-          </h3>
-        </div>
-        <button
-          type="button"
-          onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }}
-          className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+  const loadHppHistory = async (product: ERPProduct) => {
+    setHppHistory({ itemId: product.id, rows: [], loading: true });
+    try {
+      const json = await fetch(`/api/inventory/${product.id}/hpp-history`).then((r) => r.json());
+      if (!json.success) throw new Error(extractErrorMessage(json));
+      setHppHistory((prev) => (prev?.itemId === product.id ? { ...prev, rows: json.data, loading: false } : prev));
+    } catch (err: unknown) {
+      addToast(`Gagal memuat histori harga beli: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      setHppHistory((prev) => (prev?.itemId === product.id ? { ...prev, loading: false } : prev));
+    }
+  };
 
-      <form onSubmit={handleSaveForm} className="space-y-4 text-xs font-black">
-        {/* Section 1: Informasi Produk (2 rows) */}
-        <div>
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Inventory No (SKU) *</label>
-              <input
-                type="text"
-                required
-                value={formData.inventoryNo || ''}
-                onChange={(e) => setFormData({ ...formData, inventoryNo: e.target.value })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-mono font-black focus:ring-2 focus:ring-amber-500 outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-                placeholder="SKU-XXXX"
-              />
-            </div>
+  const openDetailBarang = async (product: ERPProduct) => {
+    setSelectedProduct(product);
+    setDetailBarang({ item: product, rows: [], total: 0, loading: true });
+    if (canViewPrice) loadHppHistory(product);
+    try {
+      const { rows, total } = await fetchMovement(product.id);
+      setDetailBarang((prev) => (prev?.item.id === product.id ? { ...prev, rows, total, loading: false } : prev));
+    } catch {
+      addToast('Gagal memuat detail barang', 'error');
+      setDetailBarang((prev) => (prev?.item.id === product.id ? { ...prev, loading: false } : prev));
+    }
+  };
 
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Barcode</label>
-              <input
-                type="text"
-                value={formData.barcode || ''}
-                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-mono font-black focus:ring-2 focus:ring-amber-500 outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-                placeholder="EAN / Custom Barcode"
-              />
-            </div>
+  // Right-click "Cetak Barcode": old OnDeleteRowDetail of Frm_InvList (despite its name it adds the item to the
+  // saved barcode print list via sp_MDInventory_PrintBarcodeInsList), with the old confirm and alert texts
+  const handleCetakBarcode = async (product: ERPProduct) => {
+    if (!(await confirmDialog('Benar Barang Ini Yang Anda Maksud?', { title: 'Confirmation', confirmText: 'Yes' }))) return;
+    try {
+      const json = await fetch('/api/barcode-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inventoryId: Number(product.id) }),
+      }).then((r) => r.json());
+      if (!json.success) throw new Error(extractErrorMessage(json));
+      // The old alert shows the item's Description; fall back to the name when it is empty
+      addToast(`Perintah Masukan Berhasil: ${product.description || product.inventoryName} DITAMBAHKAN`, 'success');
+    } catch (err: unknown) {
+      addToast(`Perintah Masukan Gagal: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  };
 
-            <div className="md:col-span-4">
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Nama Barang *</label>
-              <input
-                type="text"
-                required
-                value={formData.inventoryName || ''}
-                onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
-                onBlur={(e) => setFormData({ ...formData, inventoryName: normalizeInventoryName(e.target.value) })}
-                title="Nama akan dirapikan otomatis."
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black focus:ring-2 focus:ring-amber-500 outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-                placeholder="Nama Barang Lengkap"
-              />
-            </div>
+  // Legacy GV_Inventory columns and order; Harga Beli / Total H.Stok are purchase prices (HPP rights only).
+  // S. Etalase / S. Gudang / Grup Etalase are left out: the ERP keeps no per-location stock (client doc item 11).
+  const columns: LegacyColumn<ERPProduct>[] = [
+    { key: 'inventoryNo', caption: 'No. Barang', sortKey: 'inventoryNo', filterKey: 'inventoryno' },
+    { key: 'barcode', caption: 'Barcode', sortKey: 'barcode', filterKey: 'barcode' },
+    { key: 'inventoryName', caption: 'Nama', sortKey: 'inventoryName', filterKey: 'inventoryname' },
+    {
+      key: 'stokAkhir', caption: 'Stok', format: 'n0', sortKey: 'stokAkhir', footer: totals ? fmtN0(totals.stock) : '',
+      render: (p) => <span className={p.stokAkhir < 0 ? 'text-rose-600 font-semibold' : ''}>{fmtN0(p.stokAkhir)}</span>,
+    },
+    {
+      key: 'isActive', caption: '', align: 'center', width: 28,
+      render: (p) => (
+        <input
+          type="checkbox"
+          aria-label={`Aktif ${p.inventoryNo}`}
+          checked={Boolean(p.isActive)}
+          disabled={readOnly}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => handleToggleStatus(p)}
+          className="w-3.5 h-3.5 cursor-pointer align-middle"
+        />
+      ),
+    },
+    { key: 'price', caption: 'Harga Retail', format: 'n0', sortKey: 'price' },
+    ...(canViewPrice
+      ? ([
+          { key: 'priceBuy', caption: 'Harga Beli', format: 'n0' },
+          {
+            key: 'totalStockValue', caption: 'Total H.Stok', format: 'n0', footer: totals ? fmtN0(totals.stockValue) : '',
+            render: (p) => fmtN0(Number(p.stokAkhir || 0) * Number(p.priceBuy || 0)),
+          },
+        ] as LegacyColumn<ERPProduct>[])
+      : []),
+    {
+      key: 'totalRetailValue', caption: 'Total H.Jual', format: 'n0', footer: totals ? fmtN0(totals.retailValue) : '',
+      render: (p) => fmtN0(Number(p.stokAkhir || 0) * Number(p.price || 0)),
+    },
+  ];
 
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Satuan (UoM)</label>
-              <select
-                value={formData.uoMId || 1}
-                onChange={(e) => setFormData({ ...formData, uoMId: parseInt(e.target.value) })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black cursor-pointer outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              >
-                {lookups.uoms.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.uomName}
-                  </option>
-                ))}
-              </select>
-            </div>
+  const monthColumns: LegacyColumn<MonthRow>[] = [
+    { key: 'monthName', caption: 'Bulan' },
+    { key: 'year', caption: 'Tahun', render: (r) => String(r.year) },
+    { key: 'qty', caption: 'Qty', format: 'n0' },
+  ];
 
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Status Barang</label>
-              <select
-                value={formData.isActive ? '1' : '0'}
-                onChange={(e) => setFormData({ ...formData, isActive: e.target.value === '1' })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black cursor-pointer outline-none ${
-                  formData.isActive
-                    ? isDark ? 'bg-emerald-950/40 border-emerald-700 text-emerald-300' : 'bg-emerald-50 border-emerald-400 text-emerald-900'
-                    : isDark ? 'bg-rose-950/40 border-rose-700 text-rose-300' : 'bg-rose-50 border-rose-400 text-rose-900'
-                }`}
-              >
-                <option value="1">Aktif</option>
-                <option value="0">Non-Aktif</option>
-              </select>
-            </div>
+  const monthDetailColumns: LegacyColumn<MovementRow>[] = [
+    { key: 'transactionNo', caption: 'No. Transaksi' },
+    { key: 'date', caption: 'Tanggal', format: 'date' },
+    { key: 'qtyIn', caption: 'In', format: 'n0' },
+    { key: 'qtyOut', caption: 'Out', format: 'n0' },
+  ];
 
-            <div className="md:col-span-4">
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Keterangan / Deskripsi</label>
-              <input
-                type="text"
-                value={formData.description || ''}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black focus:ring-2 focus:ring-amber-500 outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-                placeholder="Deskripsi opsional..."
-              />
-            </div>
+  const detailBarangColumns: LegacyColumn<MovementRow>[] = [
+    { key: 'type', caption: 'Mode' },
+    { key: 'transactionNo', caption: 'No. Transaksi' },
+    { key: 'date', caption: 'Tgl. Transaksi', format: 'date' },
+    { key: 'qtyIn', caption: 'Masuk', format: 'n0' },
+    { key: 'qtyOut', caption: 'Keluar', format: 'n0' },
+  ];
+
+  // Old Frm_InvListDetail GV_HPP: No. Pembelian | Tgl. Beli | Supplier | Harga Beli
+  const hppHistoryColumns: LegacyColumn<HppHistoryRow>[] = [
+    { key: 'mrNo', caption: 'No. Pembelian' },
+    { key: 'mrDate', caption: 'Tgl. Beli', format: 'date' },
+    { key: 'supplierName', caption: 'Supplier' },
+    { key: 'hpp', caption: 'Harga Beli', align: 'right', render: (r) => (r.hpp === null ? '' : fmtN0(r.hpp)) },
+  ];
+
+  // Laporan Stok = legacy "Laporan Stok Akhir" report: IN HPP = HPP x Stok (HPP rights only), IN H. Jual = Stok x Harga
+  const reportRows = useMemo(() => reportProducts ?? [], [reportProducts]);
+  const reportSum = useMemo(() => reportRows.reduce(
+    (acc, p) => {
+      const stock = Number(p.stokAkhir || 0);
+      acc.stock += stock;
+      acc.hpp += stock * Number(p.hpp || 0);
+      acc.retail += stock * Number(p.price || 0);
+      return acc;
+    },
+    { stock: 0, hpp: 0, retail: 0 },
+  ), [reportRows]);
+  const reportColumns: LegacyColumn<ERPProduct>[] = [
+    { key: 'inventoryNo', caption: 'PLU' },
+    { key: 'barcode', caption: 'Barcode' },
+    { key: 'inventoryName', caption: 'Nama Barang' },
+    { key: 'price', caption: 'H. Jual', format: 'n0' },
+    { key: 'stokAkhir', caption: 'Stok', format: 'n0', footer: fmtN0(reportSum.stock) },
+    ...(canViewPrice
+      ? ([{ key: 'inHpp', caption: 'IN HPP', format: 'n0', footer: fmtN0(reportSum.hpp), render: (p) => fmtN0(Number(p.stokAkhir || 0) * Number(p.hpp || 0)) }] as LegacyColumn<ERPProduct>[])
+      : []),
+    { key: 'inRetail', caption: 'IN H. Jual', format: 'n0', footer: fmtN0(reportSum.retail), render: (p) => fmtN0(Number(p.stokAkhir || 0) * Number(p.price || 0)) },
+  ];
+
+  // Keeps the item's current brand / category selectable even when the lookup list lacks it
+  const withCurrent = (list: LookupItem[], id: number | undefined, label: string | undefined, field: 'brandName' | 'categoryName') =>
+    id != null && !list.some((o) => Number(o.id) === Number(id)) ? [{ id, [field]: label || String(id) } as LookupItem, ...list] : list;
+
+  const num = (v: string) => parseFloat(v) || 0;
+
+  const renderEditForm = () => (
+    <GroupBox caption={editingId === 'new' ? 'Barang Baru' : formData.inventoryName || formData.inventoryNo} isDark={isDark} className="shrink-0">
+      <form onSubmit={handleSaveForm} className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-1.5">
+          <FieldRow label="No. Barang :" isDark={isDark}>
+            <LegacyInput isDark={isDark} required value={formData.inventoryNo || ''} onChange={(e) => setFormData({ ...formData, inventoryNo: e.target.value })} />
+          </FieldRow>
+          <FieldRow label="Barcode :" isDark={isDark}>
+            <LegacyInput isDark={isDark} value={formData.barcode || ''} onChange={(e) => setFormData({ ...formData, barcode: e.target.value })} />
+          </FieldRow>
+          <FieldRow label="Kode :" isDark={isDark}>
+            <LegacyInput isDark={isDark} value={formData.kodeHarga || ''} onChange={(e) => setFormData({ ...formData, kodeHarga: e.target.value })} />
+          </FieldRow>
+          <FieldRow label="Nama Barang :" isDark={isDark}>
+            <LegacyInput
+              isDark={isDark}
+              required
+              value={formData.inventoryName || ''}
+              title="Nama akan dirapikan otomatis."
+              onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
+              onBlur={(e) => setFormData({ ...formData, inventoryName: normalizeInventoryName(e.target.value) })}
+            />
+          </FieldRow>
+          <FieldRow label="Kategori :" isDark={isDark}>
+            <LegacySelect isDark={isDark} value={formData.inventoryCategoryId ?? ''} onChange={(e) => setFormData({ ...formData, inventoryCategoryId: Number(e.target.value) })}>
+              {withCurrent(lookups.categories, formData.inventoryCategoryId, formData.categoryName, 'categoryName').map((o) => (
+                <option key={o.id} value={o.id}>{o.categoryName}</option>
+              ))}
+            </LegacySelect>
+          </FieldRow>
+          <FieldRow label="Merk :" isDark={isDark}>
+            <LegacySelect isDark={isDark} value={formData.inventoryBrandId ?? ''} onChange={(e) => setFormData({ ...formData, inventoryBrandId: Number(e.target.value) })}>
+              {withCurrent(lookups.brands, formData.inventoryBrandId, formData.brandName, 'brandName').map((o) => (
+                <option key={o.id} value={o.id}>{o.brandName}</option>
+              ))}
+            </LegacySelect>
+          </FieldRow>
+          <FieldRow label="Satuan :" isDark={isDark}>
+            <LegacySelect isDark={isDark} value={formData.uoMId || 1} onChange={(e) => setFormData({ ...formData, uoMId: parseInt(e.target.value) })}>
+              {lookups.uoms.map((u) => <option key={u.id} value={u.id}>{u.uomName}</option>)}
+            </LegacySelect>
+          </FieldRow>
+          <FieldRow label="Harga Retail :" isDark={isDark}>
+            <LegacyInput isDark={isDark} type="number" required value={formData.price ?? 0} onChange={(e) => setFormData({ ...formData, price: num(e.target.value) })} />
+          </FieldRow>
+          {canViewPrice && (
+            <>
+              <FieldRow label="Harga Beli :" isDark={isDark}>
+                <LegacyInput isDark={isDark} type="number" value={formData.priceBuy ?? 0} onChange={(e) => setFormData({ ...formData, priceBuy: num(e.target.value) })} />
+              </FieldRow>
+              <FieldRow label="HPP :" isDark={isDark}>
+                <LegacyInput isDark={isDark} type="number" value={formData.hpp ?? 0} onChange={(e) => setFormData({ ...formData, hpp: num(e.target.value) })} />
+              </FieldRow>
+              <FieldRow label="Stok Awal :" isDark={isDark}>
+                <LegacyInput isDark={isDark} type="number" value={formData.stokAwal ?? 0} onChange={(e) => setFormData({ ...formData, stokAwal: parseInt(e.target.value) || 0 })} />
+              </FieldRow>
+            </>
+          )}
+          <FieldRow label="Grosir 1 :" isDark={isDark}>
+            <LegacyInput isDark={isDark} type="number" value={formData.grosir1 ?? 0} onChange={(e) => setFormData({ ...formData, grosir1: num(e.target.value) })} />
+          </FieldRow>
+          <FieldRow label="Grosir 2 :" isDark={isDark}>
+            <LegacyInput isDark={isDark} type="number" value={formData.grosir2 ?? 0} onChange={(e) => setFormData({ ...formData, grosir2: num(e.target.value) })} />
+          </FieldRow>
+          <FieldRow label="Grosir 3 :" isDark={isDark}>
+            <LegacyInput isDark={isDark} type="number" value={formData.grosir3 ?? 0} onChange={(e) => setFormData({ ...formData, grosir3: num(e.target.value) })} />
+          </FieldRow>
+          <div className="md:col-span-2">
+            <FieldRow label="Keterangan :" isDark={isDark}>
+              <LegacyInput isDark={isDark} value={formData.description || ''} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+            </FieldRow>
           </div>
+          <label className="flex items-center gap-2 md:pl-[8.5rem] cursor-pointer">
+            <input type="checkbox" checked={Boolean(formData.isActive)} onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })} className="w-3.5 h-3.5" />
+            <span>Barang Aktif</span>
+          </label>
         </div>
-
-        {/* Section 2: Skema Harga & Grosir */}
-        <div className="pt-3 border-t border-slate-300 dark:border-slate-800">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Harga Retail (Jual) *</label>
-              <input
-                type="number"
-                required
-                value={formData.price ?? 0}
-                onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none focus:ring-2 focus:ring-amber-500 ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 text-slate-700 dark:text-slate-300">Aturan Kategori Grosir</label>
-              <select
-                value={formData.wholesaleCategoryId || 1}
-                onChange={(e) => setFormData({ ...formData, wholesaleCategoryId: parseInt(e.target.value) || null })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black cursor-pointer outline-none ${
-                  isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              >
-                {lookups.wholesaleCategories.map((wc) => (
-                  <option key={wc.id} value={wc.id}>
-                    {wc.name} ({wc.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block mb-1 text-amber-700 dark:text-amber-400">
-                Grosir Tier 1 {currentWholesaleCategory ? `(≥${currentWholesaleCategory.tier1_minqty} pcs)` : ''}
-              </label>
-              <input
-                type="number"
-                value={formData.grosir1 ?? 0}
-                onChange={(e) => setFormData({ ...formData, grosir1: parseFloat(e.target.value) || 0 })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none ${
-                  isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-50 border-amber-300 text-slate-950'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 text-amber-700 dark:text-amber-400">
-                Grosir Tier 2 {currentWholesaleCategory ? `(≥${currentWholesaleCategory.tier2_minqty} pcs)` : ''}
-              </label>
-              <input
-                type="number"
-                value={formData.grosir2 ?? 0}
-                onChange={(e) => setFormData({ ...formData, grosir2: parseFloat(e.target.value) || 0 })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none ${
-                  isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-50 border-amber-300 text-slate-950'
-                }`}
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 text-amber-700 dark:text-amber-400">
-                Grosir Tier 3 {currentWholesaleCategory ? `(≥${currentWholesaleCategory.tier3_minqty} pcs)` : ''}
-              </label>
-              <input
-                type="number"
-                value={formData.grosir3 ?? 0}
-                onChange={(e) => setFormData({ ...formData, grosir3: parseFloat(e.target.value) || 0 })}
-                className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none ${
-                  isDark ? 'bg-slate-950 border-amber-900/50 text-amber-400' : 'bg-amber-50 border-amber-300 text-slate-950'
-                }`}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Section 3: Cost / HPP & Purchase Price (If authorized) */}
-        {canViewPrice && (
-          <div className="space-y-2 pt-3 border-t border-slate-300 dark:border-slate-800">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block mb-1 text-emerald-800 dark:text-emerald-400">Harga Beli Terakhir</label>
-                <input
-                  type="number"
-                  value={formData.priceBuy ?? 0}
-                  onChange={(e) => setFormData({ ...formData, priceBuy: parseFloat(e.target.value) || 0 })}
-                  className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none ${
-                    isDark ? 'bg-slate-950 border-slate-700 text-emerald-400' : 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className="block mb-1 text-emerald-800 dark:text-emerald-400">HPP / Cost Modal</label>
-                <input
-                  type="number"
-                  value={formData.hpp ?? 0}
-                  onChange={(e) => setFormData({ ...formData, hpp: parseFloat(e.target.value) || 0 })}
-                  className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none ${
-                    isDark ? 'bg-slate-950 border-slate-700 text-emerald-400' : 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-700 dark:text-slate-300">Stok Awal</label>
-                  {!isCreatingNew && (
-                    <button
-                      type="button"
-                      onClick={() => setShowHppHistory(!showHppHistory)}
-                      className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                    >
-                      {showHppHistory ? 'Sembunyikan Riwayat' : `Lihat Riwayat Penerimaan (${hppHistory.length})`}
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="number"
-                  value={formData.stokAwal ?? 0}
-                  onChange={(e) => setFormData({ ...formData, stokAwal: parseInt(e.target.value) || 0 })}
-                  className={`w-full border-2 rounded-xl px-2.5 py-1.5 font-black outline-none ${
-                    isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-            </div>
-
-            {/* Collapsible HPP History Table */}
-            {showHppHistory && !isCreatingNew && (
-              <div className="mt-2 rounded-xl border-2 border-slate-300 dark:border-slate-800 overflow-hidden">
-                <table className="w-full text-left text-[11px]">
-                  <thead>
-                    <tr className="bg-slate-900 text-white border-b border-slate-950 font-black">
-                      <th className="p-2">No Penerimaan (MR)</th>
-                      <th className="p-2">Tanggal</th>
-                      <th className="p-2">Supplier</th>
-                      <th className="p-2 text-right">HPP Item</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-300 dark:divide-slate-800 font-bold">
-                    {hppHistory.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="p-3 text-center text-slate-500">
-                          Belum ada riwayat penerimaan untuk barang ini.
-                        </td>
-                      </tr>
-                    ) : (
-                      hppHistory.map((h) => (
-                        <tr key={h.id}>
-                          <td className="p-2 font-mono text-amber-600 dark:text-amber-400">{h.mrNo}</td>
-                          <td className="p-2 text-slate-600 dark:text-slate-300">{h.mrDate}</td>
-                          <td className="p-2">{h.supplierName}</td>
-                          <td className="p-2 text-right font-black text-emerald-600 dark:text-emerald-400">
-                            Rp {h.hpp.toLocaleString('id-ID')}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Form Actions */}
-        <div className="pt-3 border-t border-slate-300 dark:border-slate-800 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => { setExpandedRowId(null); setIsCreatingNew(false); }}
-            className="px-4 py-2 rounded-xl border-2 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-black hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-          >
-            Batal
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="px-5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs shadow-md cursor-pointer transition-all flex items-center gap-1.5"
-          >
-            <Check className="w-4 h-4" />
-            <span>{isSaving ? 'Menyimpan...' : 'Simpan Barang'}</span>
-          </button>
+        <div className="flex justify-end gap-2">
+          <LegacyButton isDark={isDark} type="submit" variant="primary" disabled={isSaving}>{isSaving ? 'Menyimpan...' : 'Update'}</LegacyButton>
+          <LegacyButton isDark={isDark} onClick={closeForm}>Cancel</LegacyButton>
         </div>
       </form>
-    </div>
+    </GroupBox>
   );
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+    <LegacyWindow
+      title="Master Barang"
+      isDark={isDark}
+      toolbar={
+        <>
+          <div className="w-full sm:w-96">
+            <FieldRow label="Cari Barang :" isDark={isDark} labelWidth="w-auto">
+              <LegacyInput
+                ref={searchInputRef}
+                isDark={isDark}
+                type="search"
+                placeholder="-- Ketik di sini untuk filter pencarian"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </FieldRow>
+          </div>
+          <LegacyButton isDark={isDark} onClick={() => reloadProducts()} icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />}>
+            Refresh
+          </LegacyButton>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} className="w-3.5 h-3.5" />
+            <span>Tampilkan Barang Aktif Saja</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={minusStock} onChange={(e) => setMinusStock(e.target.checked)} className="w-3.5 h-3.5" />
+            <span>Tampilkan Stok Minus</span>
+          </label>
+          <LegacyButton isDark={isDark} onClick={() => setShowDetail((v) => !v)}>{showDetail ? 'Hide Detail' : 'Show Detail'}</LegacyButton>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            <LegacyButton isDark={isDark} onClick={openStockReport}>Laporan Stok</LegacyButton>
+            <LegacyButton isDark={isDark} onClick={exportToExcel}>Export Data</LegacyButton>
+          </div>
+        </>
+      }
+    >
       {confirmDialogEl}
-      {/* 🔔 FLOATING TOAST NOTIFICATION CONTAINER */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
-        {toasts.map((toast) => (
+        {toasts.map((t) => (
           <div
-            key={toast.id}
+            key={t.id}
             className={`pointer-events-auto px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2.5 animate-in slide-in-from-top-4 fade-in duration-200 ${
-              toast.type === 'success'
+              t.type === 'success'
                 ? isDark ? 'bg-emerald-950/90 border-emerald-800 text-emerald-300' : 'bg-emerald-800 text-white border-emerald-900'
-                : toast.type === 'error'
+                : t.type === 'error'
                 ? isDark ? 'bg-rose-950/90 border-rose-800 text-rose-300' : 'bg-rose-800 text-white border-rose-900'
-                : toast.type === 'warning'
+                : t.type === 'warning'
                 ? isDark ? 'bg-amber-950/90 border-amber-800 text-amber-300' : 'bg-amber-800 text-white border-amber-900'
                 : isDark ? 'bg-indigo-950/90 border-indigo-800 text-indigo-300' : 'bg-indigo-800 text-white border-indigo-900'
             }`}
           >
-            {toast.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-300 shrink-0" />}
-            {toast.type === 'error' && <XCircle className="w-4 h-4 text-rose-300 shrink-0" />}
-            {toast.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />}
-            {toast.type === 'info' && <Zap className="w-4 h-4 text-indigo-300 shrink-0" />}
-            <span>{toast.text}</span>
+            {t.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-300 shrink-0" />}
+            {t.type === 'error' && <XCircle className="w-4 h-4 text-rose-300 shrink-0" />}
+            {t.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />}
+            {t.type === 'info' && <Zap className="w-4 h-4 text-indigo-300 shrink-0" />}
+            <span>{t.text}</span>
           </div>
         ))}
       </div>
 
-      {/* 👑 MASTER BARANG HEADER TOOLBAR */}
-      <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        {/* 🔘 TOOLBAR ACTION BUTTONS */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {mode !== 'stock' && (
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2">
+        <div className="flex-1 min-w-0 min-h-[260px] flex flex-col gap-2">
+          {editingId && renderEditForm()}
+          {!readOnly && !editingId && (
+            // DevExpress "new item row" at the top of the grid
             <button
-              onClick={handleOpenCreateInline}
-              className="px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-              title="Tambah Barang Baru (Alt+N)"
+              type="button"
+              onClick={handleOpenCreate}
+              title="Alt+N"
+              className={`text-left px-2 py-1 border rounded italic cursor-pointer ${c.panel} ${c.muted} ${c.rowHover}`}
             >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Tambah Barang</span>
+              Click here to add a new row
             </button>
           )}
+          <LegacyGrid
+            isDark={isDark}
+            columns={columns}
+            rows={products}
+            rowKey={(p) => p.id}
+            loading={isLoading}
+            emptyText="Tidak ada barang ditemukan."
+            focusedKey={selectedProduct?.id ?? null}
+            onRowClick={setSelectedProduct}
+            onRowDoubleClick={handleOpenEdit}
+            onRowContextMenu={readOnly ? undefined : (p, e) => { setSelectedProduct(p); setRowMenu(menuAt(e, p, 3)); }}
+            sort={sort}
+            onSort={handleSort}
+            filters={columnFilters}
+            onFilterChange={(key, value) => setColumnFilters((prev) => ({ ...prev, [key]: value }))}
+            showFooter
+          />
+          <LegacyPager
+            isDark={isDark}
+            page={currentPage}
+            totalPages={totalPages}
+            total={totalCount}
+            shown={products.length}
+            unit="barang"
+            pageSize={pageSize}
+            onPageSize={setPageSize}
+            onPage={(p) => setPageState({ key: pageKey, page: Math.min(Math.max(1, p), totalPages) })}
+          />
+        </div>
 
-          <button
-            onClick={() => setShowDetailPane(!showDetailPane)}
-            className={`px-2.5 py-1.5 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              showDetailPane
-                ? isDark ? 'bg-amber-500/30 text-amber-200 border-amber-500/60' : 'bg-amber-200 text-amber-900 border-amber-400 shadow-sm'
-                : isDark ? 'bg-slate-700 hover:bg-slate-600 text-slate-100 border-slate-600' : 'bg-white hover:bg-white text-slate-800 border-slate-300'
-            }`}
-          >
-            {showDetailPane ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            <span>Detail Info</span>
-            <span className={`w-2 h-2 rounded-full ${showDetailPane ? (isDark ? 'bg-amber-400' : 'bg-amber-600') : 'bg-slate-500'}`} />
-          </button>
-
-          <Link
-            href="/inventory/barcode"
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-300 border-indigo-700/60' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-300 shadow-sm'
-            }`}
-          >
-            <Printer className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Cetak Barcode</span>
-          </Link>
-
-          <button
-            onClick={async () => {
-              setReportProducts(null);
-              setIsStockReportModalOpen(true);
-              try {
-                setReportProducts(await fetchAllProducts());
-              } catch {
-                addToast('Gagal memuat Laporan Stok', 'error');
-                setIsStockReportModalOpen(false);
-              }
-            }}
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border-purple-500/50' : 'bg-purple-100 hover:bg-purple-200 text-purple-900 border-purple-300 shadow-sm'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4 text-purple-400" />
-            <span>Laporan Stok</span>
-          </button>
-
-          <button
-            onClick={() => {
-              fetchProducts();
-              addToast('Data barang berhasil di-refresh', 'info');
-            }}
-            className={`px-2.5 py-1.5 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-
-          <button
-            onClick={exportToExcel}
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
-            }`}
-          >
-            <Download className="w-4 h-4 text-emerald-500" />
-            <span>Export Excel</span>
-          </button>
-
-          {/* 🔘 3-STATE STATUS FILTER & BRAND FILTER */}
-          <div className={`flex items-center gap-2 border-l-2 pl-2 ml-1 ${isDark ? 'border-slate-800' : 'border-slate-300'}`}>
-            <div className={`flex items-center rounded-xl p-0.5 border ${isDark ? 'border-slate-700 bg-slate-950' : 'border-slate-300 bg-slate-100'}`}>
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  statusFilter === 'all'
-                    ? isDark ? 'bg-slate-800 text-amber-400 shadow-sm' : 'bg-white text-slate-950 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Semua
-              </button>
-              <button
-                onClick={() => setStatusFilter('active')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  statusFilter === 'active'
-                    ? isDark ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800 shadow-sm' : 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Aktif
-              </button>
-              <button
-                onClick={() => setStatusFilter('inactive')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  statusFilter === 'inactive'
-                    ? isDark ? 'bg-rose-950/80 text-rose-400 border border-rose-800 shadow-sm' : 'bg-rose-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Nonaktif
-              </button>
-            </div>
-
-            <label className={`flex items-center gap-1.5 cursor-pointer text-xs font-black transition-colors px-1 ${
-              isDark ? 'text-slate-300 hover:text-white' : 'text-slate-950 hover:text-black'
-            }`}>
-              <input
-                type="checkbox"
-                checked={filterMinusStock}
-                onChange={(e) => setFilterMinusStock(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-500 bg-white text-rose-700 focus:ring-0 cursor-pointer accent-rose-700"
+        {showDetail && (
+          <GroupBox caption="Show Detail" isDark={isDark} className="lg:w-[380px] shrink-0 min-h-[320px]">
+            <div className="font-bold text-[13px] truncate" title={selectedProduct?.inventoryName}>{selectedProduct?.inventoryName || 'Pilih Barang'}</div>
+            {!readOnly && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-24 shrink-0">
+                    <LegacyInput
+                      ref={opnameInputRef}
+                      id="input-opname"
+                      isDark={isDark}
+                      type="number"
+                      aria-label="Qty Opname"
+                      value={opnameQty}
+                      disabled={!selectedProduct || isSubmittingOpname}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setOpnameQty(isNaN(val) ? 0 : val);
+                      }}
+                    />
+                  </div>
+                  <LegacyButton isDark={isDark} variant="primary" disabled={!selectedProduct || isSubmittingOpname} onClick={() => handleSaveOpname('add', opnameQty)}>
+                    Tambahkan Stok Opname
+                  </LegacyButton>
+                </div>
+                <div>
+                  <LegacyButton isDark={isDark} disabled={!selectedProduct || isSubmittingOpname} onClick={handleResetStock}>Reset Stok ke Nol</LegacyButton>
+                </div>
+              </>
+            )}
+            <div className="h-44 shrink-0 flex flex-col">
+              <LegacyGrid
+                isDark={isDark}
+                columns={monthColumns}
+                rows={months}
+                rowKey={(r) => r.key}
+                loading={isLoadingMovement}
+                emptyText={selectedProduct ? 'Belum ada transaksi.' : ''}
+                focusedKey={selectedMonth}
+                onRowClick={(r) => setSelectedMonth((prev) => (prev === r.key ? null : r.key))}
               />
-              <span className={filterMinusStock ? 'text-rose-600 font-black' : ''}>Minus</span>
-            </label>
-
-            {(hasColumnFilters || statusFilter !== 'active' || filterMinusStock || searchQuery) && (
-              <button
-                onClick={() => {
-                  setColumnFilters({});
-                  setStatusFilter('active');
-                  setFilterMinusStock(false);
-                  setSearchQuery('');
-                  if (searchInputRef.current) searchInputRef.current.value = '';
-                }}
-                className={`px-2 py-1 rounded-lg text-[10px] font-black border transition-colors cursor-pointer flex items-center gap-1 ${
-                  isDark ? 'bg-slate-800 border-slate-600 text-rose-400 hover:bg-slate-700' : 'bg-white border-slate-300 text-rose-700 hover:bg-slate-100'
-                }`}
-                title="Reset Filter"
-              >
-                <X className="w-3 h-3" />
-                Reset
-              </button>
+            </div>
+            {selectedMonth && (
+              <div className="flex-1 min-h-[140px] flex flex-col">
+                <LegacyGrid isDark={isDark} columns={monthDetailColumns} rows={monthTransactions} rowKey={(r) => r.id} />
+              </div>
             )}
-          </div>
-        </div>
-
-        {/* Search Bar Input */}
-        <div className="flex items-center gap-3 flex-1 min-w-[280px] w-full">
-          <div className="relative flex-1 group">
-            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-              isDark ? 'text-slate-400 group-focus-within:text-amber-400' : 'text-slate-700 group-focus-within:text-slate-950'
-            }`} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Cari Barang (SKU / Barcode / Nama)... [/]"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full border-2 rounded-xl pl-10 pr-16 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all ${
-                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
-              }`}
-            />
-            {searchQuery ? (
-              <button
-                onClick={() => setSearchQuery('')}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full transition-colors cursor-pointer ${
-                  isDark ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-                }`}
-                title="Bersihkan pencarian"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <kbd className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-black px-1.5 py-0.5 rounded border ${
-                isDark ? 'bg-slate-700 border-slate-600 text-slate-300' : 'bg-slate-200 border-slate-400 text-slate-800'
-              }`}>
-                /
-              </kbd>
+            {movementTotal > movement.length && (
+              <div className={c.muted}>Menampilkan {fmtN0(movement.length)} dari {fmtN0(movementTotal)} mutasi terbaru.</div>
             )}
-          </div>
-        </div>
+          </GroupBox>
+        )}
       </div>
 
-      {/* 🔍 SHOW DETAIL TOP BANNER */}
-      {showDetailPane && selectedProduct && (
-        <div className={`border-b-2 p-4 shrink-0 transition-all shadow-sm ${
-          isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-        }`}>
-          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-300 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <h4 className="font-black text-xs uppercase tracking-wider text-slate-950 dark:text-amber-400">
-                Detail Infobox: {selectedProduct.inventoryName}
-              </h4>
-            </div>
-            <button
-              onClick={() => setShowDetailPane(false)}
-              className="text-xs font-black flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-slate-200 text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" /> Tutup
-            </button>
-          </div>
+      {rowMenu && (
+        <ContextMenu
+          isDark={isDark}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            { label: 'Hapus Barang', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDeleteProduct(rowMenu.row) },
+            { label: 'Detail Barang', icon: <Info className="w-3.5 h-3.5" />, onClick: () => openDetailBarang(rowMenu.row) },
+            { label: 'Stok Opname', icon: <Package className="w-3.5 h-3.5" />, onClick: () => openStockOpname(rowMenu.row) },
+            { label: 'Cetak Barcode', icon: <Printer className="w-3.5 h-3.5" />, onClick: () => handleCetakBarcode(rowMenu.row) },
+          ]}
+        />
+      )}
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs font-black">
-            {/* Box 1: SKU & Barcode */}
-            <div className={`p-3 rounded-xl border-2 space-y-1 ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
-            }`}>
-              <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">SKU / Barcode</div>
-              <div className="font-mono font-black text-sm text-slate-900 dark:text-amber-400">{selectedProduct.inventoryNo}</div>
-              <div className="font-mono text-slate-600 dark:text-slate-300 text-xs font-bold">{selectedProduct.barcode}</div>
-            </div>
-
-            {/* Box 2: UoM & Keterangan */}
-            <div className={`p-3 rounded-xl border-2 space-y-1 ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
-            }`}>
-              <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Satuan & Keterangan</div>
-              <div className="font-black text-sm text-slate-900 dark:text-white">{selectedProduct.uomName || 'Pcs'}</div>
-              <div className="text-slate-600 dark:text-slate-300 text-xs font-bold truncate" title={selectedProduct.description || ''}>{selectedProduct.description || '-'}</div>
-            </div>
-
-            {/* Box 3: Retail Price & HPP */}
-            <div className={`p-3 rounded-xl border-2 space-y-1 ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
-            }`}>
-              <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">{canViewPrice ? 'Harga Retail & HPP' : 'Harga Retail'}</div>
-              <div className="font-black text-sm text-slate-900 dark:text-white">Price: Rp {(selectedProduct.price || 0).toLocaleString('id-ID')}</div>
-              {canViewPrice && (
-                <div className="font-black text-xs text-emerald-700 dark:text-emerald-400">HPP Modal: Rp {(selectedProduct.hpp || 0).toLocaleString('id-ID')}</div>
+      {detailBarang && (
+        <LegacyDialog
+          title="Detail Barang"
+          isDark={isDark}
+          onClose={() => { setDetailBarang(null); setHppHistory(null); }}
+          className={canViewPrice ? 'max-w-6xl' : 'max-w-3xl'}
+        >
+          <div className="font-bold text-[13px]">{detailBarang.item.inventoryName}</div>
+          {/* Old Frm_InvListDetail: transaction history on the left, purchase prices (GV_HPP) on the right */}
+          <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-2">
+            <div className="md:flex-[737] min-w-0 min-h-[300px] flex flex-col gap-1">
+              <LegacyGrid
+                isDark={isDark}
+                columns={detailBarangColumns}
+                rows={detailBarang.rows}
+                rowKey={(r) => r.id}
+                loading={detailBarang.loading}
+                emptyText="Belum ada riwayat transaksi."
+              />
+              {detailBarang.total > detailBarang.rows.length && (
+                <div className={c.muted}>Menampilkan {fmtN0(detailBarang.rows.length)} dari {fmtN0(detailBarang.total)} mutasi terbaru.</div>
               )}
             </div>
-
-            {/* Box 4: Grosir Tiers */}
-            <div className={`p-3 rounded-xl border-2 space-y-1 ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
-            }`}>
-              <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Tier Grosir ({selectedProduct.wholesaleCategory?.name || selectedProduct.wholesaleCategoryName || 'Standard'})
-              </div>
-              <div className="font-black text-xs text-amber-700 dark:text-amber-400">
-                G1 (≥{selectedProduct.wholesaleCategory?.tier1_minqty ?? 3}): Rp {(selectedProduct.grosir1 || 0).toLocaleString('id-ID')}
-              </div>
-              <div className="font-black text-xs text-slate-700 dark:text-slate-300">
-                G2 (≥{selectedProduct.wholesaleCategory?.tier2_minqty ?? 6}): Rp {(selectedProduct.grosir2 || 0).toLocaleString('id-ID')} | G3 (≥{selectedProduct.wholesaleCategory?.tier3_minqty ?? 12}): Rp {(selectedProduct.grosir3 || 0).toLocaleString('id-ID')}
-              </div>
-            </div>
-
-            {/* Box 5: Stock Balance & Quick Opname */}
-            <div className={`p-3 rounded-xl border-2 space-y-1 ${
-              isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300 shadow-sm'
-            }`}>
-              <div className="flex justify-between items-center mb-1">
-                <div className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Stok: {selectedProduct.stokAkhir}</div>
-                {isSubmittingOpname && <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  id="input-opname"
-                  type="number"
-                  value={opnameQty}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    setOpnameQty(isNaN(val) ? 0 : val);
-                  }}
-                  disabled={isSubmittingOpname}
-                  className={`w-full max-w-[70px] border-2 rounded px-2 py-1 text-center font-black outline-none ${
-                    isDark ? 'bg-slate-950 border-slate-700 text-emerald-400' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                  placeholder="Qty"
-                />
-                <button
-                  onClick={() => handleSaveOpname('add')}
-                  disabled={isSubmittingOpname}
-                  className="p-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded transition-all active:scale-95 cursor-pointer"
-                  title="Tambah Stok"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleSaveOpname('set')}
-                  disabled={isSubmittingOpname}
-                  className="p-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded transition-all active:scale-95 cursor-pointer"
-                  title="Set Stok"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 📊 MAIN BODY CONTAINER: HIGH CONTRAST DATA TABLE */}
-      <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
-        <div className="flex-1 min-h-0 p-3.5 flex flex-col">
-          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-xl relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <table className="w-full text-left text-xs border-separate border-spacing-0">
-              <thead className="sticky top-0 z-20">
-                <tr className={`h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}>
-                  <th className="py-1.5 px-2 w-8 text-center"></th>
-                  <th onClick={() => handleSort('inventoryNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Inventory No</span>
-                      {sortField === 'inventoryNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('barcode')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Barcode</span>
-                      {sortField === 'barcode' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('inventoryName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Nama Barang</span>
-                      {sortField === 'inventoryName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('uomName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>UoM</span>
-                      {sortField === 'uomName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('price')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Price (Retail)</span>
-                      {sortField === 'price' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  {canViewPrice && (
-                    <th onClick={() => handleSort('hpp')} className="py-1.5 px-2 text-right cursor-pointer hover:text-emerald-400 transition-colors">
-                      <div className="flex items-center justify-end gap-1">
-                        <span>HPP (Modal)</span>
-                        {sortField === 'hpp' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-emerald-400" /> : <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />)}
-                      </div>
-                    </th>
-                  )}
-                  <th onClick={() => handleSort('description')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center gap-1">
-                      <span>Keterangan</span>
-                      {sortField === 'description' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('grosir1')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Grosir 1</span>
-                      {sortField === 'grosir1' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('grosir2')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Grosir 2</span>
-                      {sortField === 'grosir2' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('grosir3')} className="py-1.5 px-2 text-right cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-end gap-1">
-                      <span>Grosir 3</span>
-                      {sortField === 'grosir3' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th onClick={() => handleSort('stokAkhir')} className="py-1.5 px-2 text-center cursor-pointer hover:text-amber-400 transition-colors">
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Stok Akhir</span>
-                      {sortField === 'stokAkhir' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}
-                    </div>
-                  </th>
-                  <th className="py-1.5 px-2 text-center">Status</th>
-                  <th className="py-1.5 px-2 text-center">Aksi</th>
-                </tr>
-                <ColumnFilterRow
-                  cells={columnFilterCells}
-                  values={columnFilters}
-                  onChange={(key, value) => setColumnFilters((prev) => ({ ...prev, [key]: value }))}
+            {canViewPrice && (
+              <div data-testid="hpp-history" className="md:flex-[557] min-w-0 min-h-[300px] flex flex-col">
+                <LegacyGrid
                   isDark={isDark}
+                  columns={hppHistoryColumns}
+                  rows={hppHistory?.itemId === detailBarang.item.id ? hppHistory.rows : []}
+                  rowKey={(r) => r.id}
+                  loading={hppHistory?.loading ?? false}
+                  emptyText="Belum ada riwayat pembelian."
                 />
-              </thead>
-              <tbody className={`divide-y text-[11px] ${isDark ? 'divide-slate-700' : 'divide-slate-300'}`}>
-                {isCreatingNew && expandedRowId === 'new' && (
-                  <tr>
-                    <td colSpan={canViewPrice ? 14 : 13} className="p-0">
-                      {renderSingleResponsiveForm()}
-                    </td>
-                  </tr>
-                )}
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={canViewPrice ? 14 : 13} className="py-24">
-                      <div className="flex flex-col items-center justify-center animate-pulse">
-                        <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
-                        <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      </div>
-                    </td>
-                  </tr>
-                ) : paginatedProducts.length === 0 ? (
-                  <tr>
-                    <td colSpan={canViewPrice ? 14 : 13} className={`py-12 text-center font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                      Tidak ada barang ditemukan.
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedProducts.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <tr
-                        onClick={() => setSelectedProduct(item)}
-                        onDoubleClick={() => handleToggleExpand(item)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setSelectedProduct(item);
-                          setContextMenu({ x: e.clientX, y: e.clientY, item });
-                        }}
-                        className={`transition-colors cursor-pointer ${
-                          selectedProduct?.id === item.id
-                            ? isDark ? 'bg-slate-700 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-900 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
-                        }`}
-                      >
-                        <td className="py-1 px-2 text-center w-10">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleToggleExpand(item); }}
-                            className={`p-1 rounded transition-colors cursor-pointer ${isDark ? 'hover:bg-slate-600 text-slate-300' : 'hover:bg-slate-300 text-slate-700'}`}
-                          >
-                            {expandedRowId === item.id.toString() ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <Plus className="w-4 h-4" />}
-                          </button>
-                        </td>
-                        <td className={`py-1 px-2 font-mono text-[11px] font-black ${isDark ? 'text-amber-300' : 'text-slate-800'}`}>{item.inventoryNo}</td>
-                        <td className={`py-1 px-2 font-mono text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.barcode}</td>
-                        <td title={item.inventoryName} className={`py-1 px-2 font-black max-w-[280px] truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.inventoryName}</td>
-                        <td className={`py-1 px-2 font-bold ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{item.uomName || 'PCS'}</td>
-                        <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>Rp {(item.price || 0).toLocaleString('id-ID')}</td>
-                        {canViewPrice && <td className={`py-1 px-2 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Rp {(item.hpp || 0).toLocaleString('id-ID')}</td>}
-                        <td className={`py-1 px-2 text-[11px] font-medium max-w-[150px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={item.description || '-'}>
-                          {item.description || '-'}
-                        </td>
-                        <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir1 || 0).toLocaleString('id-ID')}</td>
-                        <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir2 || 0).toLocaleString('id-ID')}</td>
-                        <td className={`py-1 px-2 text-right font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Rp {(item.grosir3 || 0).toLocaleString('id-ID')}</td>
-                        <td className="py-1 px-2 text-center">
-                          <span
-                            className={`px-2 py-0.5 rounded font-black text-[11px] ${
-                              item.stokAkhir <= 0
-                                ? 'bg-rose-700 text-white shadow-sm'
-                                : 'bg-emerald-800 text-white shadow-sm'
-                            }`}
-                          >
-                            {item.stokAkhir}
-                          </span>
-                        </td>
-                        <td className="py-1 px-2 text-center">
-                          <span className={`px-2 py-0.5 rounded font-black text-[10px] ${
-                            item.isActive
-                              ? 'bg-slate-950 text-white'
-                              : 'bg-slate-300 text-slate-950 border border-slate-500 font-black'
-                          }`}>
-                            {item.isActive ? 'AKTIF' : 'NON-AKTIF'}
-                          </span>
-                        </td>
-                        <td className="py-1 px-2 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {mode !== 'stock' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setContextMenu(null);
-                                  handleToggleExpand(item);
-                                }}
-                                className={`p-1 rounded transition-colors cursor-pointer ${
-                                  isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-amber-300' : 'hover:bg-slate-300 text-slate-700 hover:text-amber-700'
-                                }`}
-                                title="Edit Detail Barang"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {mode !== 'stock' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setContextMenu(null);
-                                  setSelectedProduct(item);
-                                  setShowDetailPane(true);
-                                  setTimeout(() => document.getElementById('input-opname')?.focus(), 100);
-                                }}
-                                className={`p-1 rounded transition-colors cursor-pointer ${
-                                  isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-emerald-300' : 'hover:bg-slate-300 text-slate-700 hover:text-emerald-700'
-                                }`}
-                                title="Stok Adjust"
-                              >
-                                <Package className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {mode !== 'stock' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setContextMenu(null);
-                                  handleDeleteProduct(item);
-                                }}
-                                className={`p-1 rounded transition-colors cursor-pointer ${
-                                  isDark ? 'hover:bg-slate-600 text-slate-300 hover:text-rose-300' : 'hover:bg-slate-300 text-slate-700 hover:text-rose-700'
-                                }`}
-                                title="Hapus Barang"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {expandedRowId === item.id.toString() && (
-                        <tr>
-                          <td colSpan={canViewPrice ? 14 : 13} className="p-0">
-                            {renderSingleResponsiveForm()}
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))
-                )}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* 📄 PAGINATION FOOTER */}
-        <div className={`px-4 py-2 border-t-2 flex items-center justify-between text-xs font-black shrink-0 ${
-          isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
-        }`}>
-          <div className="flex items-center gap-3">
-            <span>Menampilkan {paginatedProducts.length} dari total {totalCount} barang</span>
-            <div className="flex items-center gap-1.5">
-              <span>Rows:</span>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(parseInt(e.target.value));
-                  setCurrentPage(1);
-                }}
-                className={`border-2 rounded-lg px-2 py-1 text-xs cursor-pointer focus:outline-none font-black ${
-                  isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-                }`}
-              >
-                <option value={100}>100</option>
-                <option value={200}>200</option>
-                <option value={500}>500</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className={`px-3 py-1 rounded-lg border-2 font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all ${
-                isDark ? 'border-slate-800 hover:bg-slate-800 text-slate-200' : 'border-slate-400 hover:bg-slate-100 text-slate-950'
-              }`}
-            >
-              Sebelumnya
-            </button>
-            <span className={`font-black ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-              Halaman {currentPage} / {totalPages}
-            </span>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className={`px-3 py-1 rounded-lg border-2 font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-all ${
-                isDark ? 'border-slate-800 hover:bg-slate-800 text-slate-200' : 'border-slate-400 hover:bg-slate-100 text-slate-950'
-              }`}
-            >
-              Berikutnya
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 🖱️ DEVEXPRESS CONTEXT MENU (RIGHT CLICK) */}
-      {contextMenu && (
-        <div
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          className={`fixed z-50 w-48 rounded-xl border-2 shadow-2xl py-1 text-xs font-black select-none animate-in fade-in zoom-in-95 duration-100 ${
-            isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-500 text-slate-950'
-          }`}
-        >
-          {mode !== 'stock' && (
-            <>
-              <button
-                onClick={() => {
-                  handleToggleExpand(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className="w-full px-2.5 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <Edit className="w-3.5 h-3.5" />
-                <span>Detail / Edit Barang</span>
-              </button>
-              
-              <button
-                onClick={() => {
-                  const { id, inventoryNo, barcode, stokAwal, stokAkhir, ...rest } = contextMenu.item;
-                  setFormData({
-                    ...rest,
-                    inventoryNo: '',
-                    barcode: '',
-                    stokAwal: 0,
-                    stokAkhir: 0,
-                  });
-                  setExpandedRowId('new');
-                  setIsCreatingNew(true);
-                  setContextMenu(null);
-                  addToast(`Menduplikasi "${contextMenu.item.inventoryName}". Silakan isi SKU baru.`, 'info');
-                }}
-                className="w-full px-2.5 py-1.5 text-left hover:bg-amber-500 hover:text-slate-950 font-black flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Duplikat Barang</span>
-              </button>
-            </>
-          )}
-
-          {mode !== 'stock' && (
-            <>
-              <div className="h-px bg-slate-300 dark:bg-slate-800 my-1" />
-              <button
-                onClick={() => {
-                  setSelectedProduct(contextMenu.item);
-                  setShowDetailPane(true);
-                  setContextMenu(null);
-                  setTimeout(() => document.getElementById('input-opname')?.focus(), 100);
-                }}
-                className="w-full px-2.5 py-1.5 text-left hover:bg-emerald-600 hover:text-white font-black text-emerald-800 flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <Package className="w-3.5 h-3.5" />
-                <span>Stok Adjust</span>
-              </button>
-              <div className="h-px bg-slate-300 dark:bg-slate-800 my-1" />
-              <button
-                onClick={() => {
-                  handleDeleteProduct(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className="w-full px-2.5 py-1.5 text-left hover:bg-rose-600 hover:text-white font-black text-rose-800 flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Hapus Barang</span>
-              </button>
-              <div className="h-px bg-slate-300 dark:bg-slate-700 my-1" />
-              <button
-                onClick={() => {
-                  handleToggleStatus(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className={`w-full px-2.5 py-1.5 text-left hover:bg-slate-600 hover:text-white font-black flex items-center gap-2 cursor-pointer transition-colors ${
-                  contextMenu.item.isActive ? 'text-rose-600' : 'text-emerald-600'
-                }`}
-              >
-                {contextMenu.item.isActive ? <X className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-                <span>Set {contextMenu.item.isActive ? 'Non-Aktif' : 'Aktif'}</span>
-              </button>
-            </>
-          )}
-        </div>
+        </LegacyDialog>
       )}
 
-      {/* 📊 STOCK REPORT MODAL */}
-      {isStockReportModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full max-w-4xl rounded-2xl border-2 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${
-            isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-500 text-slate-950'
-          }`}>
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-950 border-b-2 border-slate-900 text-white">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-purple-400" />
-                <h3 className="font-black text-sm text-white">Laporan Mutasi & Saldo Stok Barang</h3>
-              </div>
-              <button onClick={() => setIsStockReportModalOpen(false)} className="p-1 rounded hover:bg-slate-800 hover:text-white cursor-pointer transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-black">
-              <div className="grid grid-cols-3 gap-4">
-                <div className={`p-4 rounded-xl border-2 ${
-                  isDark ? 'bg-purple-950/30 border-purple-800/50' : 'bg-purple-200 border-purple-400 text-purple-950 shadow-sm'
-                }`}>
-                  <div className="text-[11px] font-black uppercase tracking-wider text-purple-950 dark:text-purple-300">Total Item Terdaftar</div>
-                  <div className="font-black text-2xl mt-1 text-purple-950 dark:text-purple-300">{reportProducts ? `${reportProducts.length} Barang` : 'Memuat...'}</div>
-                </div>
-
-                {canViewPrice && (
-                  <div className={`p-4 rounded-xl border-2 ${
-                    isDark ? 'bg-emerald-950/30 border-emerald-800/50' : 'bg-emerald-200 border-emerald-400 text-emerald-950 shadow-sm'
-                  }`}>
-                    <div className="text-[11px] font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300">Total Nilai Persediaan (HPP)</div>
-                    <div className="font-black text-xl mt-1 text-emerald-950 dark:text-emerald-300">
-                      Rp {(reportProducts ?? []).reduce((acc, p) => acc + (p.hpp || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
-                    </div>
-                  </div>
-                )}
-
-                <div className={`p-4 rounded-xl border-2 ${
-                  isDark ? 'bg-amber-950/30 border-amber-800/50' : 'bg-amber-200 border-amber-400 text-amber-950 shadow-sm'
-                }`}>
-                  <div className="text-[11px] font-black uppercase tracking-wider text-amber-950 dark:text-amber-300">Total Nilai Retail</div>
-                  <div className="font-black text-xl mt-1 text-amber-950 dark:text-amber-300">
-                    Rp {(reportProducts ?? []).reduce((acc, p) => acc + (p.price || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border-2 border-slate-400 dark:border-slate-800 overflow-hidden shadow-sm">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-900 border-b-2 border-slate-950 text-white uppercase text-[11px] font-black">
-                      <th className="p-3">SKU</th>
-                      <th className="p-3">Nama Barang</th>
-                      <th className="p-3 text-center">Stok Awal</th>
-                      <th className="p-3 text-center">Stok Akhir</th>
-                      {canViewPrice && <><th className="p-3 text-right">HPP Unit</th><th className="p-3 text-right">Total Nilai HPP</th></>}
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y font-black ${isDark ? 'divide-slate-800 text-slate-100' : 'divide-slate-300 text-slate-950'}`}>
-                    {(reportProducts ?? []).map((p) => (
-                      <tr key={p.id} className={isDark ? 'hover:bg-slate-800 odd:bg-slate-900 even:bg-slate-800/50' : 'hover:bg-slate-200 odd:bg-white even:bg-slate-100'}>
-                        <td className={`p-3 font-mono font-black ${isDark ? 'text-amber-400' : 'text-slate-950'}`}>{p.inventoryNo}</td>
-                        <td className={`p-3 font-black ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{p.inventoryName}</td>
-                        <td className={`p-3 text-center ${isDark ? 'text-slate-300' : 'text-slate-950'}`}>{p.stokAwal}</td>
-                        <td className={`p-3 text-center font-black ${isDark ? 'text-emerald-400' : 'text-emerald-950'}`}>{p.stokAkhir}</td>
-                        {canViewPrice && (
-                          <>
-                            <td className={`p-3 text-right ${isDark ? 'text-slate-300' : 'text-slate-950'}`}>Rp {(p.hpp || 0).toLocaleString('id-ID')}</td>
-                            <td className={`p-3 text-right font-black ${isDark ? 'text-emerald-400' : 'text-emerald-950'}`}>
-                              Rp {((p.hpp || 0) * (p.stokAkhir || 0)).toLocaleString('id-ID')}
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 p-4 bg-slate-100 dark:bg-slate-950 border-t-2 border-slate-300 dark:border-slate-800">
-              <button
-                onClick={() => setIsStockReportModalOpen(false)}
-                className="px-4 py-2 rounded-xl border-2 border-slate-400 dark:border-slate-700 text-slate-950 dark:text-slate-300 text-xs font-black hover:bg-slate-200 dark:hover:bg-slate-800 cursor-pointer transition-colors"
-              >
-                Tutup
-              </button>
-            </div>
+      {isStockReportOpen && (
+        <LegacyDialog title="Laporan Stok Akhir" isDark={isDark} onClose={() => setIsStockReportOpen(false)} className="max-w-5xl">
+          <div className="flex-1 min-h-[300px] flex flex-col">
+            <LegacyGrid
+              isDark={isDark}
+              columns={reportColumns}
+              rows={reportRows}
+              rowKey={(p) => p.id}
+              loading={reportProducts === null}
+              emptyText="Tidak ada data barang."
+              showFooter
+            />
           </div>
-        </div>
+        </LegacyDialog>
       )}
-    </div>
+    </LegacyWindow>
   );
 }

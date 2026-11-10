@@ -1,53 +1,28 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Search,
-  RefreshCw,
-  Plus,
-  Tag,
-  Edit,
-  Trash2,
-  CheckCircle,
-  XCircle,
-  X,
-  AlertTriangle,
-  Download,
-  Zap,
-  ChevronUp,
-  ChevronDown,
-  Layers,
-} from 'lucide-react';
-import { useDebounce } from '@/hooks/useDebounce';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { RefreshCw, Plus, Edit, Trash2, CheckCircle, XCircle, AlertTriangle, Zap, ArrowLeft, Save } from 'lucide-react';
 import { useConfirmDialog } from '@/components/ConfirmDialog';
+import {
+  LegacyWindow, LegacyButton, GroupBox, FieldRow, LegacyInput, LegacyGrid, ContextMenu, menuAt, lx, fmtN0,
+  type LegacyColumn, type ContextMenuState,
+} from '@/components/legacy';
 
-export interface PromoRuleItem {
-  id: number | string;
-  promoNo?: string;
-  promo_no?: string;
+/** One m_promo row as returned by GET /api/promos/items. */
+export interface PromoRow {
+  id: string;
   promoName: string;
-  promo_name?: string;
-  groupName?: string;
-  group_name?: string;
-  qtyMin?: number;
-  qtyMax?: number;
-  isPartial?: boolean;
-  isGroup?: boolean;
-  description?: string;
+  promoBundle: number;
+  /** Grosir tier 1/2/3 (m_promo.promogrosir) */
+  promoGrosir: number;
+  qtyMin: number;
+  qtyMax: number;
+  isPartial: boolean;
+  /** true = global promo (Promo Global grid), false = per-item quantity promo */
+  isGroup: boolean;
+  description: string | null;
+  discountPct: number;
   isActive: boolean;
-  is_active?: boolean;
-}
-
-export interface PromoGroupItem {
-  id: number | string;
-  promoCode?: string;
-  promoName?: string;
-  groupName?: string;
-  group_name?: string;
-  description?: string;
-  promosCount?: number;
-  promos_count?: number;
-  isActive?: boolean;
 }
 
 interface ToastMessage {
@@ -56,407 +31,229 @@ interface ToastMessage {
   text: string;
 }
 
+/** Detail form state; `kind` picks the old detail group (per-item grosir promo or global promo). */
+interface PromoForm {
+  kind: 'grosir' | 'global';
+  mode: 'create' | 'edit';
+  id?: string;
+  /** Set on create = Add Promo into this existing bundle; unset on create = New Promo (new bundle) */
+  promoBundle?: number;
+  promoGrosir?: number;
+  /** Tiers the bundle already has (Add Promo): their radios are disabled */
+  usedGrosir?: number[];
+  promoName: string;
+  qtyMin: number;
+  qtyMax: number;
+  discountPct?: number;
+  description: string;
+  isActive: boolean;
+}
+
 interface MasterPromoManagerProps {
   isDark: boolean;
 }
 
+const errorText = (json: { error?: unknown }) =>
+  typeof json.error === 'object' && json.error !== null ? (json.error as { message?: string }).message : String(json.error);
+
+/** Loads every m_promo row; returns an error text instead of throwing. */
+async function loadPromos(): Promise<{ rows?: PromoRow[]; error?: string }> {
+  try {
+    const res = await fetch('/api/promos/items?limit=1000');
+    const json = await res.json();
+    if (json.success && Array.isArray(json.data)) return { rows: json.data };
+    return { error: `Gagal memuat promo: ${errorText(json)}` };
+  } catch (err) {
+    console.error('Error fetching promos:', err);
+    return { error: 'Gagal terhubung ke database promo' };
+  }
+}
+
+/** Old Master_Data.Frm_Promo: ".:: Header ::." grids on the left, ".:: Detail ::." form on the right. */
 export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) {
+  const c = lx(isDark);
   const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
-  // Main Data States
-  const [promoTab, setPromoTab] = useState<'rules' | 'groups'>('rules');
-  const [promoRules, setPromoRules] = useState<PromoRuleItem[]>([]);
-  const [promoGroups, setPromoGroups] = useState<PromoGroupItem[]>([]);
+  const [promos, setPromos] = useState<PromoRow[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 500);
-  const [filterOnlyActive, setFilterOnlyActive] = useState<boolean>(true);
-
-  // Selection & Context Menu
-  const [selectedRule, setSelectedRule] = useState<PromoRuleItem | null>(null);
-  const [selectedGroup, setSelectedGroup] = useState<PromoGroupItem | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: PromoRuleItem | PromoGroupItem; type: 'rule' | 'group' } | null>(null);
-
-  // Sorting
-  const [sortField, setSortField] = useState<string>('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  const handleSort = (field: string) => {
-    if (sortField !== field) {
-      setSortField(field);
-      setSortOrder('asc');
-    } else if (sortOrder === 'asc') {
-      setSortOrder('desc');
-    } else {
-      setSortField('');
-      setSortOrder('asc');
-    }
-  };
-
-  // Modals
-  const [isRuleModalOpen, setIsRuleModalOpen] = useState<boolean>(false);
-  const [isGroupModalOpen, setIsGroupModalOpen] = useState<boolean>(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-
-  // Form Data (Quantity-only threshold model)
-  const [ruleFormData, setRuleFormData] = useState<Partial<PromoRuleItem>>({
-    promoName: '',
-    qtyMin: 1,
-    qtyMax: 9999,
-    isPartial: true,
-    isGroup: true,
-    groupName: '',
-    description: '',
-    isActive: true,
-  });
-
-  const [groupFormData, setGroupFormData] = useState<Partial<PromoGroupItem>>({
-    promoCode: '',
-    promoName: '',
-    description: '',
-    isActive: true,
-  });
-
-  // Toasts
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<ContextMenuState<PromoRow> | null>(null);
+  const [form, setForm] = useState<PromoForm | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const addToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString();
+  const addToast = useCallback((text: string, type: ToastMessage['type'] = 'success') => {
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
     setToasts((prev) => [...prev, { id, type, text }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }, []);
 
-  // Fetch Promo Rules
-  const fetchPromoRules = useCallback(async () => {
+  // All m_promo rows (active and inactive); the page splits them into the two old grids
+  const fetchPromos = useCallback(async () => {
     setIsLoading(true);
-    try {
-      let url = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
-      if (filterOnlyActive) url += `&onlyActive=true`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setPromoRules(json.data);
-      }
-    } catch (err) {
-      console.error('Error fetching promo rules:', err);
-      addToast('Gagal terhubung ke database promo rules', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [debouncedSearchQuery, filterOnlyActive, addToast]);
-
-  // Fetch Promo Groups
-  const fetchPromoGroups = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      let url = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
-      if (filterOnlyActive) url += `&onlyActive=true`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setPromoGroups(json.data);
-      }
-    } catch (err) {
-      console.error('Error fetching promo groups:', err);
-      addToast('Gagal terhubung ke database promo groups', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [debouncedSearchQuery, filterOnlyActive, addToast]);
+    const { rows, error } = await loadPromos();
+    if (rows) setPromos(rows);
+    if (error) addToast(error, 'error');
+    setIsLoading(false);
+  }, [addToast]);
 
   useEffect(() => {
-    let isMounted = true;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        let rulesUrl = `/api/promos/items?q=${encodeURIComponent(debouncedSearchQuery)}`;
-        let groupsUrl = `/api/promos?q=${encodeURIComponent(debouncedSearchQuery)}`;
-        if (filterOnlyActive) {
-          rulesUrl += `&onlyActive=true`;
-          groupsUrl += `&onlyActive=true`;
-        }
-        const [rulesRes, groupsRes] = await Promise.all([
-          fetch(rulesUrl),
-          fetch(groupsUrl),
-        ]);
-        const [rulesJson, groupsJson] = await Promise.all([
-          rulesRes.json(),
-          groupsRes.json(),
-        ]);
-        if (isMounted) {
-          if (rulesJson.success && Array.isArray(rulesJson.data)) {
-            setPromoRules(rulesJson.data);
-          }
-          if (groupsJson.success && Array.isArray(groupsJson.data)) {
-            setPromoGroups(groupsJson.data);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching promos:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    };
-    load();
-    return () => { isMounted = false; };
-  }, [debouncedSearchQuery, filterOnlyActive]);
-
-  // Open Rule Modal
-  const handleOpenCreateRuleModal = useCallback(() => {
-    setModalMode('create');
-    setRuleFormData({
-      promoName: '',
-      qtyMin: 1,
-      qtyMax: 9999,
-      isPartial: true,
-      isGroup: true,
-      groupName: '',
-      description: '',
-      isActive: true,
+    let alive = true;
+    loadPromos().then(({ rows, error }) => {
+      if (!alive) return;
+      if (rows) setPromos(rows);
+      if (error) addToast(error, 'error');
+      setIsLoading(false);
     });
-    setIsRuleModalOpen(true);
+    return () => { alive = false; };
+  }, [addToast]);
+
+  // Per-item grosir promos, grouped by Promo Name like the old GV_Promo
+  const grosirRows = useMemo(
+    () => promos
+      .filter((p) => !p.isGroup)
+      .sort((a, b) => a.promoName.localeCompare(b.promoName) || a.promoGrosir - b.promoGrosir || a.qtyMin - b.qtyMin),
+    [promos],
+  );
+  // Global promos (old GV_GroupPromo)
+  const globalRows = useMemo(
+    () => promos.filter((p) => p.isGroup).sort((a, b) => a.promoBundle - b.promoBundle || a.promoGrosir - b.promoGrosir),
+    [promos],
+  );
+
+  const openCreate = useCallback(() => {
+    setForm({ kind: 'grosir', mode: 'create', promoName: '', promoGrosir: 1, qtyMin: 1, qtyMax: 9999, description: '', isActive: true });
   }, []);
 
-  // Open Group Modal
-  const handleOpenCreateGroupModal = useCallback(() => {
-    setModalMode('create');
-    setGroupFormData({
-      promoCode: `PRM-GRP-${Date.now().toString().slice(-4)}`,
-      promoName: '',
-      description: '',
-      isActive: true,
+  // Add Promo: a new tier in the clicked row's bundle, preselecting the first free Grosir tier
+  const openAddPromo = (row: PromoRow) => {
+    const usedGrosir = promos.filter((p) => !p.isGroup && p.promoBundle === row.promoBundle).map((p) => p.promoGrosir);
+    const free = [1, 2, 3].find((n) => !usedGrosir.includes(n));
+    if (!free) return addToast(`Promo "${row.promoName}" sudah punya Grosir 1, 2 dan 3`, 'warning');
+    setForm({
+      kind: 'grosir', mode: 'create', promoBundle: row.promoBundle, promoGrosir: free, usedGrosir,
+      promoName: row.promoName || '', qtyMin: 1, qtyMax: 9999, description: '', isActive: true,
     });
-    setIsGroupModalOpen(true);
-  }, []);
+  };
 
-  // Keyboard Shortcuts
+  const openEdit = (row: PromoRow) => {
+    setFocusedId(row.id);
+    setForm({
+      kind: row.isGroup ? 'global' : 'grosir',
+      mode: 'edit',
+      id: row.id,
+      promoBundle: row.promoBundle,
+      promoGrosir: row.promoGrosir,
+      promoName: row.promoName || '',
+      qtyMin: row.qtyMin,
+      qtyMax: row.qtyMax,
+      discountPct: row.discountPct,
+      description: row.description && row.description !== '-' ? row.description : '',
+      isActive: row.isActive,
+    });
+  };
+
+  // Alt+N = New Promo, Escape = Back (kept from the previous screen)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const isInputFocused =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
-        target?.tagName === 'SELECT' ||
-        target?.isContentEditable;
-
-      if (e.key === 'Escape') {
-        setIsRuleModalOpen(false);
-        setIsGroupModalOpen(false);
-        setContextMenu(null);
-      } else if (e.key === '/' && !isInputFocused) {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setForm(null);
+      else if (e.altKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        searchInputRef.current?.focus();
-      } else if (e.altKey && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        if (promoTab === 'rules') handleOpenCreateRuleModal();
-        else handleOpenCreateGroupModal();
+        openCreate();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [promoTab, handleOpenCreateRuleModal, handleOpenCreateGroupModal]);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openCreate]);
 
-  // Handle Save Rule Form
-  const handleSaveRuleForm = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const minQty = Number(ruleFormData.qtyMin ?? 1);
-    const maxQty = Number(ruleFormData.qtyMax ?? 9999);
-    if (minQty > maxQty) {
-      addToast('Qty Minimum tidak boleh lebih besar dari Qty Maksimum', 'error');
-      return;
-    }
-    try {
-      const isEdit = modalMode === 'edit' && selectedRule;
-      const url = isEdit ? `/api/promos/items/${selectedRule.id}` : `/api/promos/items`;
-      const method = isEdit ? 'PUT' : 'POST';
+    if (!form) return;
+    if (!form.promoName.trim()) return addToast('Promo Name wajib diisi', 'warning');
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ruleFormData),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        setIsRuleModalOpen(false);
-        addToast(isEdit ? 'Aturan promo diperbarui!' : 'Aturan promo baru dibuat!', 'success');
-        fetchPromoRules();
-        fetchPromoGroups();
-      } else {
-        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
-        addToast(`Gagal menyimpan: ${errMsg}`, 'error');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
-    }
-  };
-
-  // Handle Save Group Form
-  const handleSaveGroupForm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const isEdit = modalMode === 'edit' && selectedGroup;
-      const url = isEdit ? `/api/promos/${selectedGroup.id}` : `/api/promos`;
-      const method = isEdit ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(groupFormData),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        setIsGroupModalOpen(false);
-        addToast(isEdit ? 'Kelompok promo diperbarui!' : 'Kelompok promo baru dibuat!', 'success');
-        fetchPromoGroups();
-        fetchPromoRules();
-      } else {
-        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
-        addToast(`Gagal menyimpan: ${errMsg}`, 'error');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
-    }
-  };
-
-  // Handle Delete Rule
-  const handleDeleteRule = async (rule: PromoRuleItem) => {
-    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus promo "${rule.promoName}"?`))) return;
-    try {
-      const res = await fetch(`/api/promos/items/${rule.id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        addToast(`Promo "${rule.promoName}" berhasil dihapus`, 'info');
-        fetchPromoRules();
-        fetchPromoGroups();
-      } else {
-        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
-        addToast(`Gagal menghapus: ${errMsg}`, 'error');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
-    }
-  };
-
-  // Handle Delete Group
-  const handleDeleteGroup = async (group: PromoGroupItem) => {
-    const gName = group.promoName || group.groupName || group.group_name || 'Kelompok Promo';
-    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus kelompok promo "${gName}"?`))) return;
-    try {
-      const res = await fetch(`/api/promos/${group.id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        addToast(`Kelompok promo "${gName}" berhasil dihapus`, 'info');
-        fetchPromoGroups();
-        fetchPromoRules();
-      } else {
-        const errMsg = typeof json.error === 'object' ? json.error?.message : json.error;
-        addToast(`Gagal menghapus: ${errMsg}`, 'error');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
-    }
-  };
-
-  // Toggle Active Rule
-  const handleToggleActiveRule = async (rule: PromoRuleItem) => {
-    try {
-      const res = await fetch(`/api/promos/items/${rule.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !rule.isActive }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        addToast(`Status "${rule.promoName}" diubah menjadi ${!rule.isActive ? 'AKTIF' : 'NON-AKTIF'}`, 'info');
-        fetchPromoRules();
-        fetchPromoGroups();
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Error: ${message}`, 'error');
-    }
-  };
-
-  // Export CSV
-  const exportToCSV = () => {
-    if (promoTab === 'rules') {
-      if (promoRules.length === 0) return addToast('Tidak ada data promo rules untuk diexport', 'warning');
-      const headers = ['ID', 'Nama Promo', 'Qty Min', 'Qty Max', 'Cakupan', 'Status Aktif', 'Keterangan'];
-      const csvRows = [headers.join(',')];
-      promoRules.forEach((r) => {
-        csvRows.push([
-          r.id,
-          `"${r.promoName.replace(/"/g, '""')}"`,
-          r.qtyMin || 1,
-          r.qtyMax || 9999,
-          r.isGroup ? 'GLOBAL' : `"${(r.groupName || r.group_name || '-').replace(/"/g, '""')}"`,
-          r.isActive ? 'AKTIF' : 'NON-AKTIF',
-          `"${(r.description || '').replace(/"/g, '""')}"`,
-        ].join(','));
-      });
-      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Master_Promo_Rules_${new Date().toISOString().slice(0, 10)}.csv`);
-      link.click();
-      addToast(`Berhasil mengexport ${promoRules.length} aturan promo ke CSV`, 'success');
+    // Global promo: the API saves only name, description and Aktif (Qty / Promo % stay read-only)
+    let url: string;
+    let method: 'POST' | 'PUT';
+    let body: Record<string, unknown>;
+    if (form.kind === 'global') {
+      url = `/api/promos/${form.id}`;
+      method = 'PUT';
+      body = { promoName: form.promoName, description: form.description, isActive: form.isActive };
     } else {
-      if (promoGroups.length === 0) return addToast('Tidak ada data kelompok promo untuk diexport', 'warning');
-      const headers = ['ID', 'Kode Promo', 'Nama Kelompok Promo', 'Description', 'Status Aktif'];
-      const csvRows = [headers.join(',')];
-      promoGroups.forEach((g) => {
-        const name = g.groupName || g.promoName || 'Kelompok Promo';
-        csvRows.push([
-          g.id,
-          `"${g.promoCode || ''}"`,
-          `"${name.replace(/"/g, '""')}"`,
-          `"${(g.description || '').replace(/"/g, '""')}"`,
-          g.isActive ? 'AKTIF' : 'NON-AKTIF',
-        ].join(','));
-      });
-      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Master_Promo_Groups_${new Date().toISOString().slice(0, 10)}.csv`);
-      link.click();
-      addToast(`Berhasil mengexport ${promoGroups.length} kelompok promo ke CSV`, 'success');
+      if (Number(form.qtyMin) > Number(form.qtyMax)) {
+        return addToast('Qty Minimum tidak boleh lebih besar dari Qty Maksimum', 'error');
+      }
+      const fields = { promoName: form.promoName, qtyMin: form.qtyMin, qtyMax: form.qtyMax, description: form.description, isActive: form.isActive };
+      if (form.mode === 'edit') {
+        url = `/api/promos/items/${form.id}`;
+        method = 'PUT';
+        body = fields;
+      } else {
+        // New rows from this group are per-item quantity promos, like the old "Promo Grosir Jumlah Barang"
+        url = '/api/promos/items';
+        method = 'POST';
+        body = { ...fields, isPartial: true, isGroup: false, promoGrosir: form.promoGrosir, promoBundle: form.promoBundle };
+      }
+    }
+
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const json = await res.json();
+      if (json.success) {
+        setForm(null);
+        addToast(form.mode === 'edit' ? 'Promo diperbarui!' : 'Promo baru dibuat!', 'success');
+        fetchPromos();
+      } else {
+        addToast(`Gagal menyimpan: ${errorText(json)}`, 'error');
+      }
+    } catch (err: unknown) {
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Close context menu on outside click
-  useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
-  }, []);
-
-  // Sorted Promo Rules
-  const sortedRules = [...promoRules].sort((a, b) => {
-    if (!sortField) return 0;
-    const valA = a[sortField as keyof PromoRuleItem] ?? '';
-    const valB = b[sortField as keyof PromoRuleItem] ?? '';
-    if (typeof valA === 'number' && typeof valB === 'number') {
-      return sortOrder === 'asc' ? valA - valB : valB - valA;
+  const handleDelete = async (row: PromoRow) => {
+    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus promo "${row.promoName}"?`))) return;
+    try {
+      const url = row.isGroup ? `/api/promos/${row.id}` : `/api/promos/items/${row.id}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.success) {
+        addToast(`Promo "${row.promoName}" berhasil dihapus`, 'info');
+        if (form?.id === row.id) setForm(null);
+        fetchPromos();
+      } else {
+        addToast(`Gagal menghapus: ${errorText(json)}`, 'error');
+      }
+    } catch (err: unknown) {
+      addToast(`Error: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
-    return sortOrder === 'asc'
-      ? String(valA).localeCompare(String(valB))
-      : String(valB).localeCompare(String(valA));
-  });
+  };
+
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
+  const inactiveClass = (row: PromoRow) => (row.isActive ? '' : `${c.muted} line-through`);
+
+  const grosirColumns: LegacyColumn<PromoRow>[] = [
+    { key: 'promoGrosir', caption: 'Promo Grosir', width: 100, render: (r) => (r.promoGrosir > 0 ? `Grosir ${r.promoGrosir}` : '') },
+    { key: 'qtyMin', caption: 'Qty Min', format: 'n0', width: 80 },
+    { key: 'qtyMax', caption: 'Qty Max', format: 'n0', width: 80 },
+    { key: 'description', caption: 'Keterangan', render: (r) => (r.description && r.description !== '-' ? r.description : '') },
+  ];
+
+  const globalColumns: LegacyColumn<PromoRow>[] = [
+    { key: 'promoBundle', caption: 'Promo Global No.', align: 'left' },
+    { key: 'promoName', caption: 'Promo Global Name' },
+    { key: 'discountPct', caption: 'Promo Percentage', align: 'right', render: (r) => fmtN0(r.discountPct) },
+    { key: 'qtyMin', caption: 'Qty Min', format: 'n0' },
+    { key: 'qtyMax', caption: 'Qty Max', format: 'n0' },
+    { key: 'description', caption: 'Description', render: (r) => (r.description && r.description !== '-' ? r.description : '') },
+    { key: 'isActive', caption: 'Aktif', align: 'center', render: (r) => <input type="checkbox" checked={r.isActive} readOnly tabIndex={-1} className="pointer-events-none" /> },
+  ];
+
+  const setField = <K extends keyof PromoForm>(key: K, value: PromoForm[K]) => setForm((f) => (f ? { ...f, [key]: value } : f));
+  const isGlobalForm = form?.kind === 'global';
+  const isAddToBundle = form?.mode === 'create' && form.promoBundle !== undefined;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+    <LegacyWindow title="Master Promo" isDark={isDark}>
       {confirmDialogEl}
-      {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
           <div
@@ -480,705 +277,172 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         ))}
       </div>
 
-      {/* 👑 MASTER PROMO TOOLBAR */}
-      <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
-      }`}>
-        {/* Tab Switcher & Search Bar */}
-        <div className="flex items-center gap-3 flex-1 min-w-[300px] max-w-xl">
-          {/* Sub-Tab Navigation */}
-          <div className={`p-1 rounded-xl border flex items-center gap-1 ${
-            isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-200 border-slate-300'
-          }`}>
-            <button
-              onClick={() => setPromoTab('rules')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                promoTab === 'rules'
-                  ? 'bg-amber-500 text-slate-950 shadow-md'
-                  : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-700 hover:text-black'
-              }`}
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-2 overflow-auto lg:overflow-hidden">
+        {/* Header: New Promo / Refresh, global promo grid on top, grosir promo grid below (old order) */}
+        <GroupBox caption=".:: Header ::." isDark={isDark} className="flex-1 min-w-0 min-h-[420px]">
+          <div className="flex items-center justify-between gap-2">
+            <LegacyButton isDark={isDark} icon={<Plus className="w-3.5 h-3.5" />} onClick={() => openCreate()} title="New Promo (Alt+N)">
+              New Promo
+            </LegacyButton>
+            <LegacyButton
+              isDark={isDark}
+              icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />}
+              onClick={() => { fetchPromos(); addToast('Data promo berhasil di-refresh', 'info'); }}
             >
-              Aturan Promo ({promoRules.length})
-            </button>
-            <button
-              onClick={() => setPromoTab('groups')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                promoTab === 'groups'
-                  ? 'bg-amber-500 text-slate-950 shadow-md'
-                  : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-700 hover:text-black'
-              }`}
-            >
-              Kelompok Group ({promoGroups.length})
-            </button>
+              Refresh
+            </LegacyButton>
           </div>
 
-          {/* Search Bar Input */}
-          <div className="relative flex-1 group">
-            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-              isDark ? 'text-slate-400 group-focus-within:text-amber-400' : 'text-slate-700 group-focus-within:text-slate-950'
-            }`} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder={`Cari ${promoTab === 'rules' ? 'Aturan Promo' : 'Kelompok Promo'}... [/]`}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full border-2 rounded-xl pl-10 pr-10 py-1.5 text-xs font-black focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all ${
-                isDark ? 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-400 focus:border-amber-400' : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-700'
-              }`}
+          <div className="h-40 shrink-0 flex flex-col">
+            <LegacyGrid
+              isDark={isDark}
+              columns={globalColumns}
+              rows={globalRows}
+              rowKey={(r) => r.id}
+              loading={isLoading}
+              emptyText="Tidak ada promo global."
+              focusedKey={focusedId}
+              onRowClick={(r) => setFocusedId(r.id)}
+              onRowDoubleClick={openEdit}
+              onRowContextMenu={(r, e) => { setFocusedId(r.id); setRowMenu(menuAt(e, r, 2)); }}
+              rowClassName={inactiveClass}
             />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
-        </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Checkbox Filter Hanya Promo Aktif */}
-          <label className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
-            filterOnlyActive
-              ? isDark ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300' : 'bg-emerald-100 border-emerald-400 text-emerald-950'
-              : isDark ? 'bg-slate-900 border-slate-700 text-slate-400' : 'bg-white border-slate-300 text-slate-700'
-          }`}>
-            <input
-              type="checkbox"
-              checked={filterOnlyActive}
-              onChange={(e) => setFilterOnlyActive(e.target.checked)}
-              className="w-3.5 h-3.5 accent-emerald-500 rounded cursor-pointer"
+          <div className="flex-1 min-h-[200px] flex flex-col">
+            <LegacyGrid
+              isDark={isDark}
+              columns={grosirColumns}
+              rows={grosirRows}
+              rowKey={(r) => r.id}
+              loading={isLoading}
+              emptyText="Tidak ada promo."
+              focusedKey={focusedId}
+              onRowClick={(r) => setFocusedId(r.id)}
+              onRowDoubleClick={openEdit}
+              onRowContextMenu={(r, e) => { setFocusedId(r.id); setRowMenu(menuAt(e, r, 3)); }}
+              rowClassName={inactiveClass}
+              groupBy={(r) => r.promoName || ''}
+              groupCaption={(name) => `Promo Name: ${name}`}
             />
-            <span>Hanya Promo Aktif</span>
-          </label>
-
-          <button
-            onClick={() => {
-              if (promoTab === 'rules') handleOpenCreateRuleModal();
-              else handleOpenCreateGroupModal();
-            }}
-            className="px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-black active:scale-95 text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-            title="Tambah Promo (Alt+N)"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>{promoTab === 'rules' ? 'Tambah Aturan Promo' : 'Tambah Kelompok Group'}</span>
-          </button>
-
-          <button
-            onClick={exportToCSV}
-            className={`px-3 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300 shadow-sm'
-            }`}
-          >
-            <Download className="w-4 h-4 text-emerald-300" />
-            <span>Export CSV</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (promoTab === 'rules') fetchPromoRules();
-              else fetchPromoGroups();
-              addToast('Data promo berhasil di-refresh', 'info');
-            }}
-            className={`px-3 py-2 rounded-xl border-2 text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-950 border-slate-400'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 📄 PROMO DATA TABLE WORKBENCH */}
-      <div className="flex-1 min-h-0 p-4 flex flex-col">
-        {promoTab === 'rules' ? (
-          /* TABLE ATURAN PROMO (Quantity-only threshold model) */
-          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <table className="w-full text-left border-separate border-spacing-0 text-xs">
-              <thead className="sticky top-0 z-20">
-                <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                  <th className="py-3 px-3.5 text-center w-12">ID</th>
-                  <th
-                    className="py-3 px-4 cursor-pointer hover:text-amber-400"
-                    onClick={() => handleSort('promoName')}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Nama Aturan Promo</span>
-                      {sortField === 'promoName' && (
-                        sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="py-3 px-4">Kelompok Target</th>
-                  <th
-                    className="py-3 px-3 text-center cursor-pointer hover:text-amber-400"
-                    onClick={() => handleSort('qtyMin')}
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Qty Min</span>
-                      {sortField === 'qtyMin' && (
-                        sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </div>
-                  </th>
-                  <th
-                    className="py-3 px-3 text-center cursor-pointer hover:text-amber-400"
-                    onClick={() => handleSort('qtyMax')}
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Qty Max</span>
-                      {sortField === 'qtyMax' && (
-                        sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="py-3 px-4">Keterangan</th>
-                  <th className="py-3 px-3 text-center">Status</th>
-                  <th className="py-3 px-3 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={8} className="py-24">
-                      <div className="flex flex-col items-center justify-center animate-pulse">
-                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat aturan promo dari database</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : sortedRules.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
-                      Tidak ada aturan promo ditemukan.
-                    </td>
-                  </tr>
-                ) : (
-                  sortedRules.map((rule) => {
-                    const groupDisplay = rule.isGroup
-                      ? 'GLOBAL'
-                      : (rule.groupName || rule.group_name || 'Spesifik');
-
-                    return (
-                      <tr
-                        key={rule.id}
-                        onClick={() => setSelectedRule(rule)}
-                        onDoubleClick={() => {
-                          setSelectedRule(rule);
-                          setModalMode('edit');
-                          setRuleFormData({ ...rule });
-                          setIsRuleModalOpen(true);
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setSelectedRule(rule);
-                          setContextMenu({ x: e.clientX, y: e.clientY, item: rule, type: 'rule' });
-                        }}
-                        className={`transition-colors cursor-pointer ${
-                          selectedRule?.id === rule.id
-                            ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
-                        }`}
-                      >
-                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{rule.id}</td>
-                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                          <div className="flex items-center gap-2">
-                            <span>{rule.promoName || rule.promo_name || 'Promo Tanpa Nama'}</span>
-                            {rule.promoNo && (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">
-                                {rule.promoNo}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            rule.isGroup
-                              ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                              : 'bg-slate-500/20 text-slate-300'
-                          }`}>
-                            {groupDisplay}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-center font-mono font-bold text-sky-400">
-                          {rule.qtyMin ?? 1}
-                        </td>
-                        <td className="py-3 px-3 text-center font-mono font-bold text-sky-400">
-                          {rule.qtyMax ?? 9999}
-                        </td>
-                        <td className={`py-3 px-4 text-xs truncate max-w-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                          {rule.description || '-'}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                            rule.isActive
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                              : 'bg-rose-500/20 text-rose-400 border-rose-500/40'
-                          }`}>
-                            {rule.isActive ? 'AKTIF' : 'NON-AKTIF'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedRule(rule);
-                                setModalMode('edit');
-                                setRuleFormData({ ...rule });
-                                setIsRuleModalOpen(true);
-                              }}
-                              className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                              title="Edit Promo"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteRule(rule);
-                              }}
-                              className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                              title="Hapus Promo"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
           </div>
-        ) : (
-          /* TABLE KELOMPOK PROMO GROUP */
-          <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
-            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-          }`}>
-            <table className="w-full text-left border-separate border-spacing-0 text-xs">
-              <thead className="sticky top-0 z-20">
-                <tr className={`h-11 whitespace-nowrap font-black uppercase tracking-wider text-[11px] border-b-2 ${
-                  isDark ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-200 text-slate-900 border-slate-300'
-                }`}>
-                  <th className="py-3 px-3.5 text-center w-12">ID</th>
-                  <th className="py-3 px-4">Nama Kelompok Promo</th>
-                  <th className="py-3 px-3 text-center">Jumlah Promo Aktif</th>
-                  <th className="py-3 px-3 text-center">Status</th>
-                  <th className="py-3 px-3 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={5} className="py-24">
-                      <div className="flex flex-col items-center justify-center animate-pulse">
-                        <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
-                        <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat data kelompok promo dari database</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : promoGroups.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className={`py-12 text-center font-bold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>
-                      Tidak ada kelompok promo ditemukan.
-                    </td>
-                  </tr>
-                ) : (
-                  promoGroups.map((group) => {
-                    const name = group.groupName || group.group_name || group.promoName || 'Kelompok Promo';
-                    const count = group.promosCount ?? group.promos_count ?? 0;
+        </GroupBox>
 
-                    return (
-                      <tr
-                        key={group.id}
-                        onClick={() => setSelectedGroup(group)}
-                        onDoubleClick={() => {
-                          setSelectedGroup(group);
-                          setModalMode('edit');
-                          setGroupFormData({
-                            ...group,
-                            promoName: group.promoName || group.groupName || group.group_name || '',
-                          });
-                          setIsGroupModalOpen(true);
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setSelectedGroup(group);
-                          setContextMenu({ x: e.clientX, y: e.clientY, item: group, type: 'group' });
-                        }}
-                        className={`transition-colors cursor-pointer ${
-                          selectedGroup?.id === group.id
-                            ? isDark ? 'bg-slate-800 text-amber-300 font-bold border-l-4 border-amber-500' : 'bg-amber-100 text-slate-950 font-bold border-l-4 border-amber-600'
-                            : isDark ? 'hover:bg-slate-800/50 text-slate-200' : 'hover:bg-white text-slate-900'
-                        }`}
-                      >
-                        <td className={`py-3 px-3.5 text-center font-mono font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{group.id}</td>
-                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{name}</td>
-                        <td className="py-3 px-3 text-center font-mono font-bold text-amber-400">{count} Promo</td>
-                        <td className="py-3 px-3 text-center">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                            group.isActive !== false
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                              : 'bg-rose-500/20 text-rose-400 border-rose-500/40'
-                          }`}>
-                            {group.isActive !== false ? 'AKTIF' : 'NON-AKTIF'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedGroup(group);
-                                setModalMode('edit');
-                                setGroupFormData({
-                                  ...group,
-                                  promoName: group.promoName || group.groupName || group.group_name || '',
-                                });
-                                setIsGroupModalOpen(true);
-                              }}
-                              className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                              title="Edit Group"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteGroup(group);
-                              }}
-                              className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                              title="Hapus Group"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+        {/* Detail: opened by New Promo / Edit Promo / Add Promo, closed by Back */}
+        {form && (
+          <GroupBox caption=".:: Detail ::." isDark={isDark} className="lg:w-[380px] shrink-0">
+            <div>
+              <LegacyButton isDark={isDark} icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={() => setForm(null)}>Back</LegacyButton>
+            </div>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-2 min-h-0 overflow-auto">
+              <GroupBox caption={isGlobalForm ? undefined : 'Promo Grosir Jumlah Barang'} isDark={isDark}>
+                {!isGlobalForm && (
+                  <FieldRow label="Promo Bundle:" isDark={isDark}>
+                    <LegacyInput isDark={isDark} value={form.promoBundle ?? ''} readOnly disabled />
+                  </FieldRow>
                 )}
-              </tbody>
-            </table>
-          </div>
+                <FieldRow label="Promo Name:" isDark={isDark}>
+                  <LegacyInput
+                    isDark={isDark}
+                    required
+                    autoFocus
+                    disabled={isAddToBundle}
+                    title={isAddToBundle ? 'Nama mengikuti Promo Bundle' : undefined}
+                    value={form.promoName}
+                    onChange={(e) => setField('promoName', e.target.value)}
+                  />
+                </FieldRow>
+                {!isGlobalForm && (
+                  // Chosen when creating; fixed when editing (the tier is part of the row's key).
+                  // FieldRow's own markup but a div: a wrapping <label> would send every click to Grosir 1
+                  <div role="radiogroup" aria-label="Promo Grosir" className="flex items-center gap-2 min-w-0">
+                    <span className={`w-32 shrink-0 text-right ${c.muted}`}>Promo Grosir:</span>
+                    <div className="flex-1 min-w-0 flex items-center gap-3">
+                      {[1, 2, 3].map((n) => {
+                        const disabled = form.mode === 'edit' || Boolean(form.usedGrosir?.includes(n));
+                        return (
+                          <label key={n} className={`flex items-center gap-1 ${disabled ? 'opacity-70' : 'cursor-pointer'}`}>
+                            <input
+                              type="radio"
+                              name="promoGrosir"
+                              aria-label={`Grosir ${n}`}
+                              checked={form.promoGrosir === n}
+                              disabled={disabled}
+                              onChange={() => setField('promoGrosir', n)}
+                            />
+                            <span>Grosir {n}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <FieldRow label="Qty Min:" isDark={isDark}>
+                  <LegacyInput
+                    isDark={isDark}
+                    type="number"
+                    min={isGlobalForm ? undefined : 1}
+                    required
+                    disabled={isGlobalForm}
+                    value={form.qtyMin}
+                    onChange={(e) => setField('qtyMin', parseInt(e.target.value, 10) || 1)}
+                  />
+                </FieldRow>
+                <FieldRow label="Qty Max:" isDark={isDark}>
+                  <LegacyInput
+                    isDark={isDark}
+                    type="number"
+                    min={isGlobalForm ? undefined : 1}
+                    required
+                    disabled={isGlobalForm}
+                    value={form.qtyMax}
+                    onChange={(e) => setField('qtyMax', parseInt(e.target.value, 10) || 9999)}
+                  />
+                </FieldRow>
+                {isGlobalForm && (
+                  <FieldRow label="Promo % :" isDark={isDark}>
+                    <LegacyInput isDark={isDark} value={fmtN0(form.discountPct)} readOnly disabled />
+                  </FieldRow>
+                )}
+                <FieldRow label="Keterangan Promo :" isDark={isDark}>
+                  <textarea
+                    rows={3}
+                    value={form.description}
+                    onChange={(e) => setField('description', e.target.value)}
+                    className={`w-full min-w-0 px-2 py-1 rounded border text-xs outline-none focus:ring-1 focus:ring-blue-500 ${c.input}`}
+                  />
+                </FieldRow>
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0" />
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" checked={form.isActive} onChange={(e) => setField('isActive', e.target.checked)} />
+                    <span>Aktif</span>
+                  </label>
+                </div>
+              </GroupBox>
+              <LegacyButton isDark={isDark} type="submit" variant="primary" icon={<Save className="w-3.5 h-3.5" />} className="justify-center">
+                Submit
+              </LegacyButton>
+            </form>
+          </GroupBox>
         )}
       </div>
 
-      {/* 📌 RIGHT-CLICK CONTEXT MENU */}
-      {contextMenu && (
-        <div
-          className={`fixed z-50 w-52 rounded-2xl border shadow-2xl py-1.5 text-xs font-bold overflow-hidden animate-in fade-in duration-100 ${
-            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'
-          }`}
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <div className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border-b border-slate-700/50 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-            Aksi Menu Context
-          </div>
-          <button
-            onClick={() => {
-              if (contextMenu.type === 'rule') {
-                const rule = contextMenu.item as PromoRuleItem;
-                setSelectedRule(rule);
-                setModalMode('edit');
-                setRuleFormData({ ...rule });
-                setIsRuleModalOpen(true);
-              } else {
-                const group = contextMenu.item as PromoGroupItem;
-                setSelectedGroup(group);
-                setModalMode('edit');
-                setGroupFormData({
-                  ...group,
-                  promoName: group.promoName || group.groupName || group.group_name || '',
-                });
-                setIsGroupModalOpen(true);
-              }
-              setContextMenu(null);
-            }}
-            className="w-full px-3.5 py-2 text-left hover:bg-amber-500/20 hover:text-amber-300 flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            <Edit className="w-4 h-4 text-amber-400" />
-            <span>Edit Promo</span>
-          </button>
-
-          {contextMenu.type === 'rule' && (
-            <button
-              onClick={() => {
-                handleToggleActiveRule(contextMenu.item as PromoRuleItem);
-                setContextMenu(null);
-              }}
-              className="w-full px-3.5 py-2 text-left hover:bg-emerald-500/20 hover:text-emerald-300 flex items-center gap-2 cursor-pointer transition-colors"
-            >
-              <Zap className="w-4 h-4 text-emerald-400" />
-              <span>Toggle Status Aktif</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              if (contextMenu.type === 'rule') handleDeleteRule(contextMenu.item as PromoRuleItem);
-              else handleDeleteGroup(contextMenu.item as PromoGroupItem);
-              setContextMenu(null);
-            }}
-            className="w-full px-3.5 py-2 text-left hover:bg-rose-500/20 text-rose-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-700/50"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Hapus Promo</span>
-          </button>
-        </div>
+      {rowMenu && (
+        <ContextMenu
+          isDark={isDark}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            { label: 'Edit Promo', icon: <Edit className="w-3.5 h-3.5" />, onClick: () => openEdit(rowMenu.row) },
+            ...(rowMenu.row.isGroup
+              ? []
+              : [{ label: 'Add Promo', icon: <Plus className="w-3.5 h-3.5" />, onClick: () => openAddPromo(rowMenu.row) }]),
+            { label: 'Hapus Promo', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDelete(rowMenu.row) },
+          ]}
+        />
       )}
-
-      {/* ✏️ FORM MODAL FOR PROMO RULE (Create / Edit) - Quantity-Only Threshold Model */}
-      {isRuleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-xl rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
-            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-          }`}>
-            {/* Modal Header */}
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
-              isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
-            }`}>
-              <div className="flex items-center gap-2 font-black text-sm text-amber-400">
-                <Tag className="w-4 h-4" />
-                <span>{modalMode === 'create' ? 'Tambah Aturan Promo Baru' : 'Edit Aturan Promo'}</span>
-              </div>
-              <button
-                onClick={() => setIsRuleModalOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body Form */}
-            <form onSubmit={handleSaveRuleForm} className="p-6 space-y-4 text-xs font-bold">
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Promo *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Tier Grosir 1 (Qty 5+)"
-                  value={ruleFormData.promoName || ''}
-                  onChange={(e) => setRuleFormData({ ...ruleFormData, promoName: e.target.value })}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty Minimum Order *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={ruleFormData.qtyMin || 1}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, qtyMin: parseInt(e.target.value) || 1 })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Qty Maksimum Order *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={ruleFormData.qtyMax || 9999}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, qtyMax: parseInt(e.target.value) || 9999 })}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Keterangan Promo</label>
-                <textarea
-                  rows={3}
-                  placeholder="Keterangan syarat & ketentuan promo / ambang batas quantity..."
-                  value={ruleFormData.description || ''}
-                  onChange={(e) => setRuleFormData({ ...ruleFormData, description: e.target.value })}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="flex items-center gap-6 pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={ruleFormData.isGroup}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, isGroup: e.target.checked })}
-                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
-                  />
-                  <span>Berlaku Global (Semua Produk)</span>
-                </label>
-
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={ruleFormData.isActive}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, isActive: e.target.checked })}
-                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-                  />
-                  <span className="text-emerald-400">Status Promo Aktif</span>
-                </label>
-              </div>
-
-              {!ruleFormData.isGroup && (
-                <div>
-                  <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Pilih Kelompok Promo *</label>
-                  <select
-                    value={ruleFormData.groupName || ''}
-                    onChange={(e) => setRuleFormData({ ...ruleFormData, groupName: e.target.value })}
-                    required={!ruleFormData.isGroup}
-                    className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="" disabled>Pilih Kelompok Promo</option>
-                    {promoGroups.map(g => (
-                      <option key={g.id} value={g.groupName || g.group_name || g.promoName || ''}>
-                        {g.groupName || g.group_name || g.promoName || 'Kelompok Promo'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Modal Footer Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700/50">
-                <button
-                  type="button"
-                  onClick={() => setIsRuleModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 cursor-pointer font-bold transition-all"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black cursor-pointer shadow-lg transition-all"
-                >
-                  Simpan Aturan Promo
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ✏️ FORM MODAL FOR PROMO GROUP (Create / Edit) */}
-      {isGroupModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden flex flex-col ${
-            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
-          }`}>
-            {/* Modal Header */}
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
-              isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'
-            }`}>
-              <div className="flex items-center gap-2 font-black text-sm text-amber-400">
-                <Layers className="w-4 h-4" />
-                <span>{modalMode === 'create' ? 'Tambah Kelompok Promo Baru' : 'Edit Kelompok Promo'}</span>
-              </div>
-              <button
-                onClick={() => setIsGroupModalOpen(false)}
-                className={`p-1 rounded-lg hover:bg-slate-700 hover:text-white cursor-pointer ${isDark ? "text-slate-400" : "text-slate-600"}`}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body Form */}
-            <form onSubmit={handleSaveGroupForm} className="p-6 space-y-4 text-xs font-bold">
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Kode Promo Group *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="PRM-GRP-01"
-                  value={groupFormData.promoCode || ''}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, promoCode: e.target.value })}
-                  className={`w-full p-2.5 rounded-xl border font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Nama Kelompok Promo *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Promo Grosir Dapur Utama"
-                  value={groupFormData.promoName || ''}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, promoName: e.target.value })}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block mb-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>Deskripsi / Keterangan Group</label>
-                <textarea
-                  rows={3}
-                  placeholder="Keterangan tujuan kelompok promo..."
-                  value={groupFormData.description || ''}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
-                  className={`w-full p-2.5 rounded-xl border font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                    isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={groupFormData.isActive}
-                    onChange={(e) => setGroupFormData({ ...groupFormData, isActive: e.target.checked })}
-                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
-                  />
-                  <span className="text-emerald-400">Status Kelompok Promo Aktif</span>
-                </label>
-              </div>
-
-              {/* Modal Footer Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700/50">
-                <button
-                  type="button"
-                  onClick={() => setIsGroupModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 cursor-pointer font-bold transition-all"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black cursor-pointer shadow-lg transition-all"
-                >
-                  Simpan Kelompok Promo
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
+    </LegacyWindow>
   );
 }

@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { usernameEquals } from '@/lib/username';
-import { getCurrentUser } from '@/lib/session';
+import { createSession, getCurrentUser } from '@/lib/session';
 import { recordAuditEvent } from '@/lib/audit-event';
+import { USER_TYPES } from '@/lib/user-types';
+import { userTypeChangeError } from '@/lib/user-type-rule';
+
+// Any other value is rejected as a client error (400), not a server error
+class UserTypeError extends Error {}
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const currentUser = await getCurrentUser();
@@ -18,7 +24,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   } catch (error: any) { return NextResponse.json({ success: false }, { status: 500 }); }
 }
 
-// Changes the username and/or password. m_user is shared with the legacy POS, which logs in
+// Changes the username, password and/or User Type. m_user is shared with the legacy POS, which logs in
 // against the same plain password column, so it is stored as-is.
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const currentUser = await getCurrentUser();
@@ -54,22 +60,87 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       data.password = body.password;
     }
 
-    await prisma.$transaction(async (tx) => {
+    const newUserType = typeof body.userType === 'string' ? body.userType.trim() : '';
+    if (newUserType && !(USER_TYPES as readonly string[]).includes(newUserType)) {
+      return NextResponse.json({ success: false, error: `User Type "${newUserType}" tidak dikenal.` }, { status: 400 });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // A rename can also take Admin away (username "admin"), so it runs the same check
+      const typeChange = newUserType || data.username
+        ? await changeUserType(tx, existing, newUserType || null, data.username ?? existing.username, currentUser.id)
+        : null;
       await tx.m_user.update({ where: { id: userId }, data });
       await recordAuditEvent({
         actor: currentUser.username,
         eventType: 'USER_UPDATE',
         entityType: 'USER',
         entityId: String(userId),
-        beforeData: { username: existing.username },
-        afterData: { username: data.username ?? existing.username, passwordChanged: data.password !== undefined },
+        beforeData: { username: existing.username, ...(typeChange && { userType: typeChange.before }) },
+        afterData: {
+          username: data.username ?? existing.username,
+          passwordChanged: data.password !== undefined,
+          ...(typeChange && { userType: typeChange.after }),
+        },
       }, tx);
+      return { userTypeChanged: Boolean(typeChange && typeChange.before !== typeChange.after) };
     });
-    return NextResponse.json({ success: true });
+    // Editing your own name or password ends sessions on the old values; keep this one logged in
+    if (userId === currentUser.id && (data.username || data.password !== undefined)) {
+      const fresh = await prisma.m_user.findUnique({ where: { id: userId }, select: { username: true, password: true } });
+      await createSession({ id: userId, username: fresh?.username || currentUser.username, userLevel: currentUser.userLevel }, fresh?.password);
+    }
+    return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
+    if (error instanceof UserTypeError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     console.error('Error updating user:', error);
     return NextResponse.json({ success: false, error: error.message || 'Gagal mengubah user' }, { status: 500 });
   }
+}
+
+// User Type lives on the employee: m_user.employeeid -> m_employee.positionid -> m_position.positionname.
+// An advisory lock serialises User Type changes, so two Admins demoting each other at once cannot both
+// pass the last-Admin check.
+async function changeUserType(
+  tx: Prisma.TransactionClient,
+  user: { id: bigint; username: string | null; employeeid: number },
+  userType: string | null,
+  newUsername: string | null,
+  actorId: number,
+): Promise<{ before: string | null; after: string | null }> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('erp-user-type'))`;
+  const employee = await tx.m_employee.findUnique({ where: { id: user.employeeid } });
+  if (userType) {
+    if (!employee) throw new UserTypeError('Data employee user ini tidak ditemukan, User Type tidak dapat diubah.');
+    const sharing = await tx.m_user.count({ where: { employeeid: user.employeeid } });
+    if (sharing > 1) throw new UserTypeError('Employee user ini dipakai lebih dari satu user, User Type tidak dapat diubah di sini.');
+  }
+  const current = employee?.positionid != null
+    ? await tx.m_position.findUnique({ where: { id: employee.positionid } })
+    : null;
+  const before = current?.positionname ?? null;
+  const after = userType ?? before;
+  if (before === after && newUsername === user.username) return { before, after };
+
+  // The user table is small (store staff), so the Admin rule runs in code instead of being duplicated in SQL
+  const others = await tx.$queryRaw<{ username: string | null; positionname: string | null }[]>`
+    SELECT u.username, p.positionname FROM m_user u
+    LEFT JOIN m_employee e ON e.id = u.employeeid LEFT JOIN m_position p ON p.id = e.positionid
+    WHERE u.id <> ${user.id}`;
+  const refused = userTypeChangeError(
+    { id: Number(user.id), username: user.username, userType: before }, after, actorId, others, newUsername,
+  );
+  if (refused) throw new UserTypeError(refused);
+  if (!userType || before === userType || !employee) return { before, after };
+
+  // Same lookup as Add User: reuse the position with this name, create it when missing
+  const position = await tx.m_position.findFirst({ where: { positionname: userType }, orderBy: { id: 'asc' } })
+    ?? await tx.m_position.create({ data: { positionname: userType, isactive: true } });
+  await tx.m_employee.update({
+    where: { id: employee.id },
+    data: { positionid: Number(position.id), modifieddate: new Date() },
+  });
+  return { before, after: userType };
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
