@@ -5,6 +5,11 @@
 
 const BANGKOK_TZ = 'Asia/Bangkok';
 
+// Building an Intl.DateTimeFormat is slow (~35 µs); reports format thousands of dates, so reuse these
+const DATE_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: BANGKOK_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+const TIME_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: BANGKOK_TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const MONTH_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: BANGKOK_TZ, year: 'numeric', month: '2-digit' });
+
 /**
  * Parses a 'YYYY-MM-DD' string into a JavaScript Date corresponding to
  * 00:00:00.000+07:00 (Start of operational day in Bangkok).
@@ -38,12 +43,7 @@ export function formatBangkokDate(date: Date | string | number): string {
   const d = typeof date === 'object' ? date : new Date(date);
   if (isNaN(d.getTime())) return '';
   // 'sv-SE' locale outputs ISO-formatted date: YYYY-MM-DD
-  return new Intl.DateTimeFormat('sv-SE', {
-    timeZone: BANGKOK_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
+  return DATE_FMT.format(d);
 }
 
 /**
@@ -52,19 +52,8 @@ export function formatBangkokDate(date: Date | string | number): string {
 export function formatBangkokDateTime(date: Date | string | number): string {
   const d = typeof date === 'object' ? date : new Date(date);
   if (isNaN(d.getTime())) return '';
-  const datePart = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: BANGKOK_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
-  const timePart = new Intl.DateTimeFormat('en-GB', {
-    timeZone: BANGKOK_TZ,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(d);
+  const datePart = DATE_FMT.format(d);
+  const timePart = TIME_FMT.format(d);
   return `${datePart} ${timePart}`;
 }
 
@@ -81,11 +70,7 @@ export function getTodayBangkok(): string {
 export function formatBangkokMonth(date: Date | string | number): string {
   const d = typeof date === 'object' ? date : new Date(date);
   if (isNaN(d.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: BANGKOK_TZ,
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(d);
+  const parts = MONTH_FMT.formatToParts(d);
   const year = parts.find((p) => p.type === 'year')?.value || '';
   const month = parts.find((p) => p.type === 'month')?.value || '';
   return `${year}-${month}`;
