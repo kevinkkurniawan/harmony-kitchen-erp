@@ -1,27 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { getTodayBangkok } from '@/lib/date-utils';
 import {
   RefreshCw,
   Search,
-  DollarSign,
-  Receipt,
   Printer,
-  Calendar,
   CreditCard,
-  QrCode,
-  Building2,
-  Clock,
   Eye,
-  Trash2,
   CheckCircle,
   XCircle,
   X,
   AlertTriangle,
   Zap,
-  TrendingUp,
-  User,
   ChevronUp,
   ChevronDown,
   Edit3,
@@ -59,17 +51,25 @@ export interface PosHeader {
   totalQty?: number;
 }
 
-export interface SalesSummary {
-  grossSales: number;
-  totalCount: number;
-  avgBasket: number;
-  paymentBreakdown: {
-    CASH: number;
-    QRIS: number;
-    TRANSFER: number;
-    DEBIT: number;
-    TEMPO: number;
-  };
+/** One row of the legacy Bill Opname grid, as returned by GET /api/sales/monitoring. */
+export interface MonitoringRow {
+  id: number;
+  invoiceNo: string;
+  paymentType: string;
+  bankName: string;
+  transactionValue: number;
+  finalDiscount: number;
+  paymentValue: number;
+  changeValue: number;
+  remarks: string;
+  tunai: number;
+  debit: number;
+  qris: number;
+  creditCard: number;
+  other: number;
+  cashierName: string;
+  isVoid: boolean;
+  isUnpaid: boolean;
 }
 
 interface ToastMessage {
@@ -83,25 +83,42 @@ interface SalesMonitoringManagerProps {
   isDark: boolean;
 }
 
-export default function SalesMonitoringManager({ isDark }: SalesMonitoringManagerProps) {
-  const [sortField, setSortField] = useState<string>('');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [transactions, setTransactions] = useState<PosHeader[]>([]);
-  const [summary, setSummary] = useState<SalesSummary>({
-    grossSales: 0,
-    totalCount: 0,
-    avgBasket: 0,
-    paymentBreakdown: { CASH: 0, QRIS: 0, TRANSFER: 0, DEBIT: 0, TEMPO: 0 },
-  });
+type Column = { key: keyof MonitoringRow; label: string; numeric?: boolean; total?: boolean };
 
-  // Filter States
+// Same columns and order as the legacy Bill Opname grid; numeric ones with a footer total get summed.
+// "Lain-lain" is not in the old grid: transfer / marketplace payments need a column or the totals don't add up.
+const COLUMNS: Column[] = [
+  { key: 'invoiceNo', label: 'No. Nota' },
+  { key: 'paymentType', label: 'Jenis Bayar' },
+  { key: 'bankName', label: 'Bank' },
+  { key: 'transactionValue', label: 'Nom. Transaksi', numeric: true, total: true },
+  { key: 'finalDiscount', label: 'Diskon Akhir', numeric: true, total: true },
+  { key: 'paymentValue', label: 'Nom. Bayar', numeric: true },
+  { key: 'changeValue', label: 'Kembalian', numeric: true },
+  { key: 'remarks', label: 'Keterangan' },
+  { key: 'tunai', label: 'Tunai', numeric: true, total: true },
+  { key: 'debit', label: 'Debit', numeric: true, total: true },
+  { key: 'qris', label: 'Qris', numeric: true, total: true },
+  { key: 'creditCard', label: 'CC', numeric: true, total: true },
+  { key: 'other', label: 'Lain-lain', numeric: true, total: true },
+  { key: 'cashierName', label: 'User' },
+];
+
+const fmt = (n: number) => Number(n || 0).toLocaleString('id-ID');
+
+export default function SalesMonitoringManager({ isDark }: SalesMonitoringManagerProps) {
+  const [sortField, setSortField] = useState<keyof MonitoringRow | ''>('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [transactions, setTransactions] = useState<MonitoringRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Legacy Bill Opname shows one day at a time, opening on today
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayBangkok());
   const [searchQuery, setSearchQuery] = useState<string>('');
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
-  const [activeDateFilter, setActiveDateFilter] = useState<'all' | 'today' | '7days' | 'month'>('all');
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Print Modal
@@ -122,7 +139,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   const [voidReason, setVoidReason] = useState('');
   const [isSubmittingVoid, setIsSubmittingVoid] = useState(false);
 
-  const handleSort = (field: string) => {
+  const handleSort = (field: keyof MonitoringRow) => {
     if (sortField !== field) {
       setSortField(field);
       setSortOrder('asc');
@@ -142,18 +159,18 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
     }, 3500);
   }, []);
 
-  // Load Transactions & KPI Metrics
+  // Load every sale of the selected day (all=true: the footer totals must cover the whole day)
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
       setIsLoading(true);
       try {
-        const url = `/api/sales/monitoring?q=${encodeURIComponent(debouncedSearchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+        const url = `/api/sales/monitoring?all=true&q=${encodeURIComponent(debouncedSearchQuery)}&dateFrom=${selectedDate}&dateTo=${selectedDate}`;
         const res = await fetch(url);
         const json = await res.json();
-        if (isMounted && (json.success || Array.isArray(json.data))) {
-          setTransactions(json.data || []);
-          if (json.summary) setSummary(json.summary);
+        if (isMounted && Array.isArray(json.data)) {
+          setTransactions(json.data);
+          setTotalCount(json.pagination?.total ?? json.data.length);
         }
       } catch (err) {
         console.error('Error fetching sales monitoring data:', err);
@@ -163,50 +180,35 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
     }
     loadData();
     return () => { isMounted = false; };
-  }, [debouncedSearchQuery, dateFrom, dateTo]);
+  }, [debouncedSearchQuery, selectedDate, reloadKey]);
 
-  const reloadData = async () => {
-    setIsLoading(true);
-    try {
-      const url = `/api/sales/monitoring?q=${encodeURIComponent(debouncedSearchQuery)}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success || Array.isArray(json.data)) {
-        setTransactions(json.data || []);
-        if (json.summary) setSummary(json.summary);
+  const reloadData = () => setReloadKey((k) => k + 1);
+
+  const sortedRows = useMemo(() => {
+    if (!sortField) return transactions;
+    return [...transactions].sort((a, b) => {
+      const valA = a[sortField];
+      const valB = b[sortField];
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [transactions, sortField, sortOrder]);
+
+  // Footer totals, like the legacy grid footer; void and unpaid notes are not money received
+  const totals = useMemo(() => {
+    const sums: Partial<Record<keyof MonitoringRow, number>> = {};
+    for (const row of transactions) {
+      if (row.isVoid || row.isUnpaid) continue;
+      for (const col of COLUMNS) {
+        if (col.total) sums[col.key] = (sums[col.key] || 0) + Number(row[col.key] || 0);
       }
-    } catch (err) {
-      console.error('Error fetching sales monitoring data:', err);
-    } finally {
-      setIsLoading(false);
     }
-  };
-
-  // Quick Date Filter Handlers
-  const handleQuickDateFilter = (filterType: 'all' | 'today' | '7days' | 'month') => {
-    setActiveDateFilter(filterType);
-    const today = new Date();
-    const formatDate = (d: Date) => d.toISOString().slice(0, 10);
-
-    if (filterType === 'today') {
-      setDateFrom(formatDate(today));
-      setDateTo(formatDate(today));
-    } else if (filterType === '7days') {
-      const past7 = new Date(today.getTime() - 7 * 86400000);
-      setDateFrom(formatDate(past7));
-      setDateTo(formatDate(today));
-    } else if (filterType === 'month') {
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      setDateFrom(formatDate(monthStart));
-      setDateTo(formatDate(today));
-    } else {
-      setDateFrom('');
-      setDateTo('');
-    }
-  };
+    return sums;
+  }, [transactions]);
 
   // View Single POS Invoice Detail
-  const handleViewReceipt = async (id: string) => {
+  const handleViewReceipt = async (id: number) => {
     try {
       const res = await fetch(`/api/sales/monitoring/${id}`);
       const json = await res.json();
@@ -344,438 +346,190 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
         ))}
       </div>
 
-      {/* 📊 METRICS HEADER & MAIN TOOLBAR */}
-      <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
+      {/* TOOLBAR: Hari Ini | Tanggal | Refresh, as in the legacy Bill Opname form */}
+      <div className={`px-4 py-3 border-b flex flex-wrap items-center gap-3 ${
         isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              Sales Monitoring Real-time
-            </h2>
-            <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Pemantauan Omset Penjualan POS Kasir Dapur, Metode Pembayaran & Rincian Struk Nota
-            </p>
-          </div>
-        </div>
-
+        <button
+          onClick={() => setSelectedDate(getTodayBangkok())}
+          className={`px-3.5 py-1.5 rounded-xl border text-xs font-black cursor-pointer ${
+            isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
+          }`}
+        >
+          Hari Ini
+        </button>
+        <label className={`flex items-center gap-2 text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+          <span>Tanggal :</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+            className={`p-1.5 rounded-xl border text-xs font-bold focus:outline-none ${
+              isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+            }`}
+          />
+        </label>
         <button
           onClick={reloadData}
-          className={`px-3.5 py-2 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer ${
+          className={`px-3.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 cursor-pointer ${
             isDark ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-900 border-slate-300'
           }`}
         >
           <RefreshCw className={`w-4 h-4 text-indigo-400 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>Refresh Live Sales</span>
+          <span>Refresh</span>
         </button>
-      </div>
-
-      {/* 📊 KPI SUMMARY METRIC CARDS */}
-      <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-            <DollarSign className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Omset Penjualan</div>
-            <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              Rp {(summary?.grossSales ?? 0).toLocaleString('id-ID')}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
-            <Receipt className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Struk Transaksi</div>
-            <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
-              {summary?.totalCount ?? 0} Nota Lunas
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Rata-Rata Struk (Basket)</div>
-            <div className={`text-lg font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>
-              Rp {(summary?.avgBasket ?? 0).toLocaleString('id-ID')}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-            <QrCode className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Paling Dominan</div>
-            <div className={`text-sm font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              QRIS & CASH POS
-            </div>
-          </div>
+        <div className="relative ml-auto w-full sm:w-64">
+          <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-slate-600'}`} />
+          <input
+            type="text"
+            placeholder="Cari No. Nota / User..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={`w-full border rounded-xl pl-9 pr-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+              isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
+            }`}
+          />
         </div>
       </div>
 
-      {/* 💳 PAYMENT METHOD BREAKDOWN CARDS */}
-      <div className={`px-4 py-3 border-b grid grid-cols-2 md:grid-cols-5 gap-3 text-xs ${
-        isDark ? 'bg-slate-900/30 border-slate-800' : 'bg-slate-100/70 border-slate-300'
-      }`}>
-        <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-emerald-400" />
-            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>CASH / Tunai:</span>
-          </div>
-          <span className="font-mono font-black text-emerald-400">
-            Rp {(summary.paymentBreakdown?.CASH || 0).toLocaleString('id-ID')}
-          </span>
+      {totalCount > transactions.length && (
+        <div className="px-4 py-1.5 text-[11px] font-bold bg-amber-500/15 text-amber-600">
+          Menampilkan {transactions.length} dari {totalCount} nota; total di bawah hanya untuk nota yang tampil.
         </div>
+      )}
 
-        <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <QrCode className="w-4 h-4 text-blue-400" />
-            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>QRIS Instant:</span>
-          </div>
-          <span className="font-mono font-black text-blue-400">
-            Rp {(summary.paymentBreakdown?.QRIS || 0).toLocaleString('id-ID')}
-          </span>
-        </div>
-
-        <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-indigo-400" />
-            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Bank Transfer:</span>
-          </div>
-          <span className="font-mono font-black text-indigo-400">
-            Rp {(summary.paymentBreakdown?.TRANSFER || 0).toLocaleString('id-ID')}
-          </span>
-        </div>
-
-        <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-purple-400" />
-            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>EDC Debit/Credit:</span>
-          </div>
-          <span className="font-mono font-black text-purple-400">
-            Rp {(summary.paymentBreakdown?.DEBIT || 0).toLocaleString('id-ID')}
-          </span>
-        </div>
-
-        <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-400" />
-            <span className={`font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Tempo / Corporate:</span>
-          </div>
-          <span className="font-mono font-black text-amber-400">
-            Rp {(summary.paymentBreakdown?.TEMPO || 0).toLocaleString('id-ID')}
-          </span>
-        </div>
-      </div>
-
-      {/* 🔍 FILTER & SEARCH BAR */}
-      <div className={`p-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <div className="flex items-center gap-3 flex-1 flex-wrap min-w-[300px]">
-          {/* Live Search Input */}
-          <div className="relative flex-1 max-w-xs">
-            <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-            <input
-              type="text"
-              placeholder="Cari No Struk / Kasir / Customer..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full border rounded-xl pl-10 pr-4 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400' : 'bg-white border-slate-300 text-slate-900'
-              }`}
-            />
-          </div>
-
-          {/* Date From & Date To */}
-          <div className="flex items-center gap-2 text-xs font-bold">
-            <Calendar className={`w-4 h-4 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setActiveDateFilter('all');
-              }}
-              className={`p-1.5 rounded-xl border text-xs font-bold focus:outline-none ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-              }`}
-            />
-            <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>-</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setActiveDateFilter('all');
-              }}
-              className={`p-1.5 rounded-xl border text-xs font-bold focus:outline-none ${
-                isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
-              }`}
-            />
-          </div>
-        </div>
-
-        {/* Quick Date Range Buttons */}
-        <div className="flex items-center gap-1.5 text-xs font-bold">
-          <button
-            onClick={() => handleQuickDateFilter('all')}
-            className={`px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              activeDateFilter === 'all'
-                ? 'bg-indigo-500 text-white border-indigo-600'
-                : isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-900'
-            }`}
-          >
-            Semua Tanggal
-          </button>
-          <button
-            onClick={() => handleQuickDateFilter('today')}
-            className={`px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              activeDateFilter === 'today'
-                ? 'bg-indigo-500 text-white border-indigo-600'
-                : isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-900'
-            }`}
-          >
-            Hari Ini
-          </button>
-          <button
-            onClick={() => handleQuickDateFilter('7days')}
-            className={`px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              activeDateFilter === '7days'
-                ? 'bg-indigo-500 text-white border-indigo-600'
-                : isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-900'
-            }`}
-          >
-            7 Hari Terakhir
-          </button>
-          <button
-            onClick={() => handleQuickDateFilter('month')}
-            className={`px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              activeDateFilter === 'month'
-                ? 'bg-indigo-500 text-white border-indigo-600'
-                : isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-900'
-            }`}
-          >
-            Bulan Ini
-          </button>
-        </div>
-      </div>
-
-      {/* 📄 MAIN TRANSACTION TABLE WORKBENCH */}
+      {/* GRID: legacy Bill Opname columns, footer totals in place of summary cards */}
       <div className="flex-1 min-h-0 p-4 flex flex-col">
-        <div className={`flex-1 min-h-0 overflow-auto rounded-2xl border-2 shadow-lg relative ${
+        <div className={`flex-1 min-h-0 overflow-auto rounded-xl border ${
           isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
         }`}>
           <table className="w-full text-left border-separate border-spacing-0 text-xs">
             <thead className="sticky top-0 z-20">
-              <tr className={"h-11 whitespace-nowrap uppercase text-[11px] font-black tracking-wider border-b-2 " + (isDark ? "bg-slate-800 text-slate-100 border-slate-700" : "bg-slate-200 text-slate-900 border-slate-300")}>
-                <th onClick={() => handleSort('invoiceNo')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>No. Struk</span>{sortField === 'invoiceNo' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('invoiceDate')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tanggal & Jam</span>{sortField === 'invoiceDate' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('cashierName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Kasir / Officer</span>{sortField === 'cashierName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('customerName')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Customer / Meja</span>{sortField === 'customerName' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('paymentType')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1"><span>Tipe Pembayaran</span>{sortField === 'paymentType' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('subtotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Subtotal</span>{sortField === 'subtotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('discValue')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Diskon Promo</span>{sortField === 'discValue' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('grandTotal')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Grand Total (Rp)</span>{sortField === 'grandTotal' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th onClick={() => handleSort('status')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Status</span>{sortField === 'status' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                <th className="py-1.5 px-2 text-center w-28">Aksi</th>
+              <tr className={`h-9 whitespace-nowrap text-[11px] font-black ${isDark ? 'bg-slate-800 text-slate-100' : 'bg-slate-200 text-slate-900'}`}>
+                <th className="py-1.5 px-2 text-center w-10" title="Void">.::.</th>
+                {COLUMNS.map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => handleSort(col.key)}
+                    className="py-1.5 px-2 cursor-pointer hover:text-amber-500"
+                  >
+                    <div className={`flex items-center gap-1 ${col.numeric ? 'justify-end' : ''}`}>
+                      <span>{col.label}</span>
+                      {sortField === col.key && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-500" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-500" />)}
+                    </div>
+                  </th>
+                ))}
+                <th className="py-1.5 px-2 text-center w-24">Aksi</th>
               </tr>
             </thead>
-            <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
+            <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="py-24">
-                    <div className="flex flex-col items-center justify-center animate-pulse">
-                      <div className="w-12 h-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin mb-4 shadow-lg shadow-indigo-500/20"></div>
-                      <h3 className="text-lg font-black text-indigo-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Mengambil data penjualan real-time dari POS Cloud Database</p>
-                    </div>
+                  <td colSpan={COLUMNS.length + 2} className={`py-16 text-center font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    Memuat data...
                   </td>
                 </tr>
-              ) : transactions.length === 0 ? (
+              ) : sortedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className={`py-16 text-center font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                    Belum ada data transaksi penjualan POS untuk filter yang dipilih.
+                  <td colSpan={COLUMNS.length + 2} className={`py-16 text-center font-bold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    Tidak ada nota pada tanggal ini.
                   </td>
                 </tr>
               ) : (
-                [...transactions].sort((a: any, b: any) => {
-                  if (!sortField) return 0;
-                  
-                  let valA = a[sortField];
-                  let valB = b[sortField];
-                  
-                  if (sortField === 'invoiceNo') { valA = a.invoiceNo || a.salesPOSNo || a.sales_pos_no || '-'; valB = b.invoiceNo || b.salesPOSNo || b.sales_pos_no || '-'; }
-                  if (sortField === 'invoiceDate') { valA = a.invoiceDate || a.transactionDate || a.salesPOSDate || a.sales_pos_date || '-'; valB = b.invoiceDate || b.transactionDate || b.salesPOSDate || b.sales_pos_date || '-'; }
-                  if (sortField === 'cashierName') { valA = a.cashierName || a.cashier_name || ''; valB = b.cashierName || b.cashier_name || ''; }
-                  if (sortField === 'customerName') { valA = a.customerName || a.customer_name || ''; valB = b.customerName || b.customer_name || ''; }
-                  if (sortField === 'paymentType') { valA = a.paymentType || a.paymentMethod || ''; valB = b.paymentType || b.paymentMethod || ''; }
-                  if (sortField === 'subtotal') { valA = a.subtotal ?? a.totalAmount ?? a.total_amount ?? 0; valB = b.subtotal ?? b.totalAmount ?? b.total_amount ?? 0; }
-                  if (sortField === 'discValue') { valA = a.discValue ?? a.discount ?? a.discountAmount ?? a.discount_amount ?? 0; valB = b.discValue ?? b.discount ?? b.discountAmount ?? b.discount_amount ?? 0; }
-                  if (sortField === 'grandTotal') { valA = a.grandTotal ?? a.grand_total ?? 0; valB = b.grandTotal ?? b.grand_total ?? 0; }
-                  if (sortField === 'status') { valA = a.isVoid ? 'VOID' : 'LUNAS'; valB = a.isVoid ? 'VOID' : 'LUNAS'; }
-
-                  if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-                  if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-                  return 0;
-                }).map((row: any) => {
-                  const invoice = row.invoiceNo || row.salesPOSNo || row.sales_pos_no || '-';
-                  const txDate = row.invoiceDate || row.transactionDate || row.salesPOSDate || row.sales_pos_date || '-';
-                  const cashier = row.cashierName || row.cashier_name || 'Kasir Utama';
-                  const customer = row.customerName || row.customer_name || 'Pelanggan Umum';
-                  const payType = row.paymentType || row.paymentMethod || 'CASH';
-                  const subtotal = row.subtotal ?? row.totalAmount ?? row.total_amount ?? 0;
-                  const disc = row.discValue ?? row.discount ?? row.discountAmount ?? row.discount_amount ?? 0;
-                  const grandTotal = row.grandTotal ?? row.grand_total ?? 0;
-                  const isVoid = Boolean(row.isVoid || row.status === 'VOID' || row.status === 'Void');
-
-                  return (
-                    <tr
-                      key={row.id}
-                      tabIndex={0}
-                      onDoubleClick={() => handleViewReceipt(row.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleViewReceipt(row.id);
-                        }
-                      }}
-                      className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
-                        isVoid
-                          ? isDark ? 'bg-rose-950/20 opacity-75 hover:bg-rose-950/40 text-slate-400' : 'bg-rose-50/50 opacity-75 hover:bg-rose-100/60 text-slate-500'
-                          : isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800'
-                      }`}
-                      title="Double-click atau tekan Enter untuk melihat detail nota"
-                    >
-                      <td className="py-3.5 px-4 text-center font-mono font-black text-indigo-400">{invoice}</td>
-                      <td className={`py-3.5 px-4 font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>{txDate}</td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                        <User className={`w-3.5 h-3.5 ${isDark ? "text-slate-400" : "text-slate-600"}`} />
-                        <span>{cashier}</span>
+                sortedRows.map((row) => (
+                  <tr
+                    key={row.id}
+                    tabIndex={0}
+                    onDoubleClick={() => handleViewReceipt(row.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleViewReceipt(row.id);
+                      }
+                    }}
+                    className={`whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${
+                      row.isVoid
+                        ? isDark ? 'bg-rose-950/30 text-slate-500 line-through' : 'bg-rose-50 text-slate-400 line-through'
+                        : isDark ? 'even:bg-slate-800/40 hover:bg-slate-700 text-slate-100' : 'even:bg-slate-50 hover:bg-slate-100 text-slate-800'
+                    }`}
+                    title="Double-click atau tekan Enter untuk melihat detail nota"
+                  >
+                    <td className={`py-1.5 px-2 text-center border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                      <input type="checkbox" checked={row.isVoid} readOnly tabIndex={-1} aria-label={row.isVoid ? 'VOID' : 'Tidak void'} className="pointer-events-none" />
+                    </td>
+                    {COLUMNS.map((col) => (
+                      <td
+                        key={col.key}
+                        className={`py-1.5 px-2 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'} ${col.numeric ? 'text-right font-mono' : ''} ${col.key === 'invoiceNo' ? 'font-mono font-bold' : ''}`}
+                      >
+                        {col.numeric ? fmt(Number(row[col.key])) : String(row[col.key] ?? '')}
                       </td>
-                      <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{customer}</td>
-                      <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
-                          payType === 'CASH'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : payType === 'QRIS'
-                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        }`}>
-                          {payType}
-                        </span>
-                      </td>
-                      <td className={`py-3.5 px-4 text-right font-mono ${isDark ? "text-slate-300" : "text-slate-700"}`}>Rp {Number(subtotal).toLocaleString('id-ID')}</td>
-                      <td className="py-3.5 px-4 text-right font-mono text-rose-400">
-                        {disc > 0 ? `- Rp ${Number(disc).toLocaleString('id-ID')}` : '-'}
-                      </td>
-                      <td className={`py-3.5 px-4 text-right font-mono font-black ${isVoid ? 'line-through text-slate-500' : 'text-emerald-400'}`}>
-                        Rp {Number(grandTotal).toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {isVoid ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                            VOID
-                          </span>
-                        ) : row.isUnpaid ? (
-                          <span
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-slate-500/20 text-slate-400 border border-slate-500/30"
-                            title="Nota dari aplikasi lama tanpa pembayaran; tidak dihitung di omzet"
-                          >
-                            BELUM BAYAR
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            LUNAS
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                    ))}
+                    <td className={`py-1 px-2 text-center border-b no-underline ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewReceipt(row.id);
+                          }}
+                          className="p-1 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
+                          title="Lihat & Cetak Struk"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {/* An unpaid sale has no payment to correct */}
+                        {!row.isUnpaid && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleViewReceipt(row.id);
+                              handleOpenPaymentCorrection(row);
                             }}
-                            className="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
-                            title="Lihat & Cetak Struk"
+                            className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-500 cursor-pointer"
+                            title="Ubah Metode Pembayaran"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Edit3 className="w-4 h-4" />
                           </button>
-                          {/* An unpaid sale has no payment to correct */}
-                          {!row.isUnpaid && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenPaymentCorrection(row);
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-amber-500/20 text-amber-400 cursor-pointer"
-                              title="Ubah Metode Pembayaran"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          )}
-                          {isVoid ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenVoidModal(row, 'UNVOID');
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 cursor-pointer"
-                              title="Pulihkan Transaksi (UNVOID)"
-                            >
-                              <RotateCcw className="w-4 h-4" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenVoidModal(row, 'VOID');
-                              }}
-                              className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                              title="Batalkan Transaksi (VOID)"
-                            >
-                              <Ban className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                        )}
+                        {row.isVoid ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenVoidModal(row, 'UNVOID');
+                            }}
+                            className="p-1 rounded-lg hover:bg-emerald-500/20 text-emerald-500 cursor-pointer"
+                            title="Pulihkan Transaksi (UNVOID)"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenVoidModal(row, 'VOID');
+                            }}
+                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-500 cursor-pointer"
+                            title="Batalkan Transaksi (VOID)"
+                          >
+                            <Ban className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
+            <tfoot className="sticky bottom-0 z-10">
+              <tr className={`h-9 whitespace-nowrap font-black ${isDark ? 'bg-slate-800 text-slate-100' : 'bg-slate-200 text-slate-900'}`}>
+                <td className="py-1.5 px-2" />
+                {COLUMNS.map((col) => (
+                  <td key={col.key} className={`py-1.5 px-2 ${col.numeric ? 'text-right font-mono' : ''}`}>
+                    {col.total ? fmt(totals[col.key] || 0) : ''}
+                  </td>
+                ))}
+                <td className="py-1.5 px-2" />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

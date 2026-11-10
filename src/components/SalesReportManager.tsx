@@ -2,16 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  FileSpreadsheet,
   Calendar,
-  CreditCard,
   Printer,
   RefreshCw,
   TrendingUp,
-  ShoppingBag,
-  DollarSign,
   Package,
-  CheckCircle,
   Sparkles,
   PieChart,
   BarChart3,
@@ -191,28 +186,8 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
         </div>
       </div>
 
-      {/* 📊 PAGE HEADER (HIDDEN ON PRINT) */}
-      <div
-        className={`p-6 rounded-3xl border shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all no-print ${
-          isDark ? 'bg-gradient-to-r from-slate-900 via-purple-950/20 to-slate-900 border-slate-800' : 'bg-gradient-to-r from-purple-50/70 via-white to-purple-50/40 border-purple-200'
-        }`}
-      >
-        <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-2xl bg-purple-500 text-white font-black shadow-lg shadow-purple-500/20">
-            <FileSpreadsheet className="w-7 h-7" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                Laporan Penjualan ERP
-              </h1>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Rekapitulasi Penjualan Harian, Bulanan, Per Barang, dan Profit Analysis
-            </p>
-          </div>
-        </div>
-
+      {/* ACTION TOOLBAR (HIDDEN ON PRINT) */}
+      <div className="flex items-center justify-end gap-4 no-print">
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 no-print">
           <button
@@ -293,104 +268,13 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
         }
       `}</style>
 
-      {/* 📈 KPI STATS CARDS */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${canViewPrice ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
-        {/* Total Omset Bersih */}
-        <div
-          className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
-          }`}
-        >
-          <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500 font-bold">
-            <DollarSign className="w-6 h-6" />
-          </div>
-          <div>
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Omset Bersih
-            </span>
-            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
-              {formatIDR(summaryData?.netSales || 0)}
-            </div>
-            <span className="text-[10px] text-emerald-500 font-semibold">
-              Bruto: {formatIDR(summaryData?.grossSales || 0)}
-            </span>
-          </div>
-        </div>
-
-        {/* Total Transaksi */}
-        <div
-          className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
-          }`}
-        >
-          <div className="p-3 rounded-xl bg-amber-500/10 text-amber-500 font-bold">
-            <ShoppingBag className="w-6 h-6" />
-          </div>
-          <div>
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Transaksi
-            </span>
-            <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
-              {summaryData?.totalOrders || 0} Orders
-            </div>
-            <span className="text-[10px] text-amber-500 font-semibold">
-              {summaryData?.totalItemsSold || 0} Total Qty Item Terjual
-            </span>
-          </div>
-        </div>
-
-        {/* Total Profit Margin (Admin only) */}
-        {canViewPrice && (
-          <div
-            className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-              isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
-            }`}
-          >
-            <div className="p-3 rounded-xl bg-purple-500/10 text-purple-500 font-bold">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-            <div>
-              <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-                Profit / Margin Keuntungan
-              </span>
-              <div className="text-lg font-black text-purple-400 mt-0.5">
-                {formatIDR(summaryData?.profit || 0)}
-              </div>
-              <span className="text-[10px] text-purple-400 font-semibold">
-                Margin: {summaryData?.profitMarginPct || 0}%
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Payment Breakdown (QRIS & Cash) */}
-        <div
-          className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
-          }`}
-        >
-          <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500 font-bold">
-            <CreditCard className="w-6 h-6" />
-          </div>
-          <div>
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Metode Pembayaran Utama
-            </span>
-            <div className="text-xs font-black text-slate-900 dark:text-white mt-1 space-y-0.5">
-              <div>Cash: <strong className="text-emerald-400">{formatIDR(summaryData?.cashSales || 0)}</strong></div>
-              <div>QRIS: <strong className="text-blue-400">{formatIDR(summaryData?.qrisSales || 0)}</strong></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 🔍 FILTER & TAB NAVIGATION CONTROLS */}
       <div
         className={`p-4 rounded-2xl border shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 ${
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
         }`}
       >
-        {/* 4 Report Tabs (1:1 Admin.Frm_Report) */}
+        {/* 4 Report Tabs */}
         <div className={`flex flex-wrap gap-1.5 p-1 rounded-xl border ${isDark ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-100 border-slate-200'}`}>
           <button
             onClick={() => setActiveTab('daily')}
@@ -401,7 +285,7 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
-            <span>Laporan Harian (Rpt_Daily)</span>
+            <span>Laporan Harian</span>
           </button>
 
           <button
@@ -413,7 +297,7 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
-            <span>Laporan Bulanan (Rpt_Monthly)</span>
+            <span>Laporan Bulanan</span>
           </button>
 
           <button
@@ -425,7 +309,7 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
             }`}
           >
             <Package className="w-3.5 h-3.5" />
-            <span>Per Barang (Rpt_InventorySales)</span>
+            <span>Per Barang</span>
           </button>
 
           <button
@@ -437,7 +321,7 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
             }`}
           >
             <PieChart className="w-3.5 h-3.5" />
-            <span>{canViewPrice ? 'Summary & Profit (Rpt_Summary)' : 'Summary (Rpt_Summary)'}</span>
+            <span>{canViewPrice ? 'Summary & Profit' : 'Summary'}</span>
           </button>
         </div>
 
@@ -524,7 +408,6 @@ export default function SalesReportManager({ isDark, canViewPrice = false }: Sal
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin mb-4 shadow-lg shadow-purple-500/20"></div>
                         <h3 className="text-lg font-black text-purple-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Menghitung rekapitulasi data penjualan dari Cloud Database</p>
                       </div>
                     </td>
                   </tr>

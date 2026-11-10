@@ -480,49 +480,6 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
         ))}
       </div>
 
-      {/* 📊 SUMMARY CARDS HEADER */}
-      <div className={`p-4 border-b grid grid-cols-2 md:grid-cols-3 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-purple-50/60 border-purple-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
-            <Tag className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Total Aturan Promo</div>
-            <div className={`text-lg font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>{promoRules.length}</div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-emerald-50/60 border-emerald-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-            <CheckCircle className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Promo Aktif</div>
-            <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              {promoRules.filter(r => r.isActive).length}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-indigo-50/60 border-indigo-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Kelompok Promo Group</div>
-            <div className={`text-lg font-black ${isDark ? 'text-indigo-300' : 'text-indigo-950'}`}>{promoGroups.length}</div>
-          </div>
-        </div>
-      </div>
-
       {/* 👑 MASTER PROMO TOOLBAR */}
       <div className={`px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shadow-sm ${
         isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-300'

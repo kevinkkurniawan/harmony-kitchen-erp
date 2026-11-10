@@ -11,7 +11,7 @@ async function loginAsAdmin(page: any) {
 async function openPricedReceiptMenu(page: any) {
   const menuBtn = page.locator('aside button:has-text("Penerimaan Barang dengan Harga")');
   await menuBtn.click();
-  await expect(page.getByText('Total Tagihan Penerimaan', { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('input[placeholder="Cari No MR / PO / Supplier / Surat Jalan..."]')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 8: Penerimaan Barang dengan Harga — End-to-End Audit Suite', () => {
@@ -20,13 +20,11 @@ test.describe('Menu 8: Penerimaan Barang dengan Harga — End-to-End Audit Suite
     await openPricedReceiptMenu(page);
   });
 
-  test('1. Renders 4 KPI cards, priced receipts list table, and supports column sorting', async ({ page }) => {
+  test('1. Renders no summary cards, priced receipts list table, and supports column sorting', async ({ page }) => {
     await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
 
-    await expect(page.getByText('Total Tagihan Penerimaan', { exact: true })).toBeVisible();
-    await expect(page.getByText('Total Faktur MR', { exact: true })).toBeVisible();
-    await expect(page.getByText('Status Pembayaran', { exact: true })).toBeVisible();
-    await expect(page.getByText('Supplier Terhubung', { exact: true })).toBeVisible();
+    // Summary cards were removed (not in the legacy screen)
+    await expect(page.getByText('Total Tagihan Penerimaan', { exact: true })).toHaveCount(0);
 
     // Sort columns
     await page.click('th:has-text("No MR")');
@@ -121,7 +119,7 @@ test.describe('Menu 8: Penerimaan Barang dengan Harga — End-to-End Audit Suite
 
     // Test List toolbar Refresh button
     await page.click('button[title="Refresh Data"]');
-    await expect(page.getByText('Total Tagihan Penerimaan', { exact: true })).toBeVisible();
+    await expect(page.locator('input[placeholder="Cari No MR / PO / Supplier / Surat Jalan..."]')).toBeVisible();
 
     // Switch to Create mode
     await page.click('button:has-text("Input Penerimaan Baru")');
@@ -129,7 +127,7 @@ test.describe('Menu 8: Penerimaan Barang dengan Harga — End-to-End Audit Suite
 
     // Test "Kembali ke Daftar Faktur" button in top toolbar
     await page.click('button:has-text("Kembali ke Daftar Faktur")');
-    await expect(page.getByText('Total Tagihan Penerimaan', { exact: true })).toBeVisible();
+    await expect(page.locator('input[placeholder="Cari No MR / PO / Supplier / Surat Jalan..."]')).toBeVisible();
 
     // Switch to Create mode again
     await page.click('button:has-text("Input Penerimaan Baru")');
@@ -137,7 +135,7 @@ test.describe('Menu 8: Penerimaan Barang dengan Harga — End-to-End Audit Suite
 
     // Test "Batal" button next to Simpan
     await page.click('button:has-text("Batal")');
-    await expect(page.getByText('Total Tagihan Penerimaan', { exact: true })).toBeVisible();
+    await expect(page.locator('input[placeholder="Cari No MR / PO / Supplier / Surat Jalan..."]')).toBeVisible();
 
     // Switch to Create mode again to test item removal via Trash2
     await page.click('button:has-text("Input Penerimaan Baru")');

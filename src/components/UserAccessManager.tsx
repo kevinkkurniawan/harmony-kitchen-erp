@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  UserCheck,
   ShieldCheck,
   Plus,
   RefreshCw,
@@ -10,15 +9,10 @@ import {
   CheckCircle,
   XCircle,
   Key,
-  Users,
-  CheckSquare,
-  Square,
   Sparkles,
   Lock,
-  Eye,
   Edit,
   Trash2,
-  Printer,
   X,
   User as UserIcon,
   ChevronUp,
@@ -377,22 +371,8 @@ export default function UserAccessManager({ isDark }: UserAccessManagerProps) {
 
       {/* Header Bar */}
       <div
-        className={`p-6 rounded-3xl border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
-          isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
-        }`}
+        className={`flex items-center justify-end gap-4 ${isDark ? 'text-white' : 'text-slate-900'}`}
       >
-        <div className="flex items-center gap-3.5">
-          <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-2xl border border-emerald-500/20">
-            <ShieldCheck className="w-7 h-7" />
-          </div>
-          <div>
-            <h1 className="text-xl font-black tracking-tight">User ERP & Hak Akses</h1>
-            <p className={`text-xs mt-0.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Kelola daftar user ERP, peran, serta hak akses modul dan kapabilitas sensitif.
-            </p>
-          </div>
-        </div>
-
         <div className="flex items-center gap-3">
           <button
             onClick={loadUsers}

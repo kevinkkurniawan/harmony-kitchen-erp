@@ -17,7 +17,7 @@ async function loginAsAdmin(page: any) {
 async function openUserAccessMenu(page: any) {
   const menuBtn = page.locator('aside button:has-text("User ERP & Hak Akses")');
   await menuBtn.click();
-  await expect(page.locator('h1:has-text("User ERP & Hak Akses")')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('button:has-text("Tambah User")')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 11: User ERP & Hak Akses — End-to-End Audit Suite', () => {

@@ -14,7 +14,7 @@ async function openMasterSupplierMenu(page: any) {
     await page.click('aside button:has-text("Master Data")');
   }
   await menuBtn.click();
-  await expect(page.getByText('Total Supplier', { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('input[placeholder^="Cari Supplier"]')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 6: Master Supplier — End-to-End Audit Suite', () => {
@@ -23,14 +23,11 @@ test.describe('Menu 6: Master Supplier — End-to-End Audit Suite', () => {
     await openMasterSupplierMenu(page);
   });
 
-  test('1. Renders 4 KPI cards, supplier table, and supports column sorting', async ({ page }) => {
+  test('1. Renders the supplier table with no summary cards, and supports column sorting', async ({ page }) => {
     await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Verify 4 KPI cards
-    await expect(page.getByText('Total Supplier', { exact: true })).toBeVisible();
-    await expect(page.getByText('Supplier Aktif', { exact: true })).toBeVisible();
-    await expect(page.getByText('Supplier PKP (Taxable)', { exact: true })).toBeVisible();
-    await expect(page.getByText('Kota Jaringan Supplier', { exact: true })).toBeVisible();
+    // Summary cards were removed (not in the legacy screen)
+    await expect(page.getByText('Total Supplier', { exact: true })).toHaveCount(0);
 
     // Sort columns
     await page.click('th:has-text("Kode Supplier")');
@@ -102,8 +99,8 @@ test.describe('Menu 6: Master Supplier — End-to-End Audit Suite', () => {
 
     // Right-click context menu -> Toggle Status Aktif (sets to NON-AKTIF)
     await editedRow.click({ button: 'right' });
-    await expect(page.locator('button:has-text("&Toggle Status Aktif")')).toBeVisible();
-    await page.click('button:has-text("&Toggle Status Aktif")');
+    await expect(page.locator('button:has-text("Toggle Status Aktif")')).toBeVisible();
+    await page.click('button:has-text("Toggle Status Aktif")');
     await expect(page.locator('text=diubah menjadi NON-AKTIF')).toBeVisible({ timeout: 10000 });
 
     // Because 'Hanya Aktif' is checked by default, row should disappear

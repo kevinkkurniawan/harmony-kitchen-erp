@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
@@ -54,11 +55,25 @@ export async function GET(req: Request) {
       }
     }
 
+    // Optional server-side sort (paged screens sort the whole result, not one page); id keeps pages stable
+    const SORTABLE: Record<string, string> = {
+      inventoryNo: 'inventoryno', barcode: 'barcode', inventoryName: 'inventoryname', description: 'description',
+      price: 'price', grosir1: 'grosir1', grosir2: 'grosir2', grosir3: 'grosir3', stokAkhir: 'stokupdate',
+      uomName: 'uomname',
+      ...(mayViewHpp ? { hpp: 'hpp' } : {}),
+    };
+    const sortCol = SORTABLE[searchParams.get('sort') || ''];
+    const sortDir: Prisma.SortOrder = searchParams.get('order') === 'desc' ? 'desc' : 'asc';
+    const orderBy: Prisma.m_inventoryOrderByWithRelationInput[] = [];
+    if (sortCol === 'uomname') orderBy.push({ m_uom: { uomname: sortDir } });
+    else if (sortCol) orderBy.push({ [sortCol]: { sort: sortDir, nulls: 'last' } });
+    orderBy.push({ id: 'asc' });
+
     const [total, items] = await Promise.all([
       prisma.m_inventory.count({ where }),
       prisma.m_inventory.findMany({ 
         where, 
-        orderBy: { id: 'asc' }, 
+        orderBy, 
         skip: paginationParams.skip, 
         take: paginationParams.limit,
         include: {

@@ -86,7 +86,13 @@ export function normalizeSale(header: any, details: any[], payments: any[]): Nor
     hpp += Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
   });
 
-  const paidTotal = payments.reduce((sum, pm) => sum + Number(pm.transactionvalue || 0), 0);
+  // Legacy transactionvalue is before the bill discount (voucher + discount), so the paid net subtracts it.
+  // Only legacy rows: the new POS stores marketplace payments in voucher.
+  const billDisc = isLegacySale(header)
+    ? payments.reduce((sum, pm) => sum + Number(pm.voucher || 0) + Number(pm.discount || 0), 0)
+    : 0;
+  disc += billDisc;
+  const paidTotal = payments.reduce((sum, pm) => sum + Number(pm.transactionvalue || 0), 0) - billDisc;
   const net = Number(header.grandtotal) || paidTotal || lineTotal;
 
   let payGroup: PayGroup;

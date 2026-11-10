@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { getCurrentUser } from '@/lib/session';
 import { canUserViewHpp } from '@/lib/capabilities';
-import { parseBangkokStartOfDay, parseBangkokEndOfDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
+import { dateColumnDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
 import { parseColumnFilters } from '@/lib/column-filter';
 import { isUnpaidLegacySale, normalizeSale, type NormalizedSale } from '@/lib/sales-normalize';
 
@@ -18,13 +18,11 @@ export async function GET(request: Request) {
     const endDateParam = searchParams.get('endDate') || searchParams.get('dateTo');
     const paymentMethodParam = searchParams.get('paymentMethod');
 
-    // Parse Bangkok timezone dates (+07:00)
-    const startDate = startDateParam
-      ? parseBangkokStartOfDay(startDateParam)
-      : parseBangkokStartOfDay(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-    const endDate = endDateParam
-      ? parseBangkokEndOfDay(endDateParam)
-      : parseBangkokEndOfDay(getTodayBangkok());
+    // salesposdate is a DATE column: compare calendar days (default: last 30 days up to today, Bangkok)
+    const startDate =
+      dateColumnDay(startDateParam) ??
+      dateColumnDay(formatBangkokDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))!;
+    const endDate = dateColumnDay(endDateParam) ?? dateColumnDay(getTodayBangkok())!;
 
     const filteredParams = new URLSearchParams(searchParams);
     filteredParams.delete('startDate');

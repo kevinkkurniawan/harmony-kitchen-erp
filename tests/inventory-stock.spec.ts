@@ -14,7 +14,7 @@ async function openInventoryStockMenu(page: any) {
     await page.click('aside button:has-text("Inventory")');
   }
   await menuBtn.click();
-  await expect(page.locator('text=Total SKU Aktif')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('th:has-text("Stok Akhir")')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
@@ -23,18 +23,12 @@ test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
     await openInventoryStockMenu(page);
   });
 
-  test('1. Renders 4 KPI cards, stock table columns, and status badges accurately', async ({ page }) => {
+  test('1. Renders the stock table columns and status badges, with no summary cards', async ({ page }) => {
     // Wait for loading state to finish
     await expect(page.locator('text=Memuat Kartu Stok...')).toHaveCount(0, { timeout: 15000 });
 
-    // Check 4 KPI cards exist and resolved (not "...")
-    const totalSkuCard = page.locator('p:has-text("Total SKU Aktif") + h3');
-    await expect(totalSkuCard).not.toHaveText('...', { timeout: 10000 });
-    const totalSkuText = await totalSkuCard.innerText();
-    expect(Number(totalSkuText.replace(/\D/g, ''))).toBeGreaterThan(0);
-
-    const totalValueCard = page.locator('p:has-text("Total Nilai Persediaan") + h3');
-    await expect(totalValueCard).toContainText('Rp ', { timeout: 10000 });
+    // Summary cards were removed (not in the legacy screen)
+    await expect(page.locator('text=Total SKU Aktif')).toHaveCount(0);
 
     // Table headers
     await expect(page.locator('th:has-text("Kode Barang")')).toBeVisible();
@@ -51,7 +45,7 @@ test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
     await expect(page.locator('tbody button:has-text("Kartu Stok")').first()).toBeVisible();
   });
 
-  test('2. Search, Warehouse Filter, Minus Stock Filter, and Column Sorting work in sync with KPIs', async ({ page }) => {
+  test('2. Search, Warehouse Filter, Minus Stock Filter, and Column Sorting', async ({ page }) => {
     await expect(page.locator('text=Memuat Kartu Stok...')).toHaveCount(0, { timeout: 15000 });
 
     // 1. Search for known SKU BLG-PCD026
@@ -63,13 +57,9 @@ test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
     await expect(page.locator('tbody td:has-text("BLG-PCD026")')).toBeVisible();
     await expect(page.locator('tbody td:has-text("Maslon Dutch Oven 26cm")')).toBeVisible();
 
-    // KPI Total SKU Aktif should sync with search query
-    const totalSkuCard = page.locator('p:has-text("Total SKU Aktif") + h3');
-    await expect(totalSkuCard).toHaveText('1', { timeout: 10000 });
-
     // Clear search
     await searchInput.fill('');
-    await expect(totalSkuCard).not.toHaveText('1', { timeout: 10000 });
+    await expect(page.locator('tbody tr').nth(1)).toBeVisible({ timeout: 10000 });
 
     // 2. Test Column Sorting on Stok Akhir
     const stokAkhirHeader = page.locator('th:has-text("Stok Akhir")');
@@ -81,7 +71,6 @@ test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
     const warehouseSelect = page.locator('select').first();
     await warehouseSelect.selectOption('2'); // warehouse '2' ('tes') has 0 items in s_stockinventory
     await expect(page.locator('text=Tidak ada barang yang cocok dengan filter.')).toBeVisible({ timeout: 10000 });
-    await expect(totalSkuCard).toHaveText('0');
 
     // Switch back to ALL
     await warehouseSelect.selectOption('ALL');
@@ -132,12 +121,12 @@ test.describe('Menu 3: Inventory Stock — End-to-End Audit Suite', () => {
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^kartu-stok-inventory-\d{4}-\d{2}-\d{2}\.csv$/);
 
-    // Test Refresh button triggers fresh API calls
-    const metricsResponsePromise = page.waitForResponse(
-      (res) => res.url().includes('/api/inventory/stock-metrics') && res.status() === 200
+    // Test Refresh button triggers a fresh item fetch
+    const itemsResponsePromise = page.waitForResponse(
+      (res) => res.url().includes('/api/inventory?') && res.status() === 200
     );
     await page.click('button[title="Refresh Data"]');
-    const metricsRes = await metricsResponsePromise;
-    expect(metricsRes.ok()).toBe(true);
+    const itemsRes = await itemsResponsePromise;
+    expect(itemsRes.ok()).toBe(true);
   });
 });

@@ -3,10 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
-  Package,
-  AlertTriangle,
   Archive,
-  BarChart3,
   RefreshCw,
   Store,
   FileSpreadsheet,
@@ -14,20 +11,9 @@ import {
   ChevronDown,
   ChevronUp,
   History,
-  ArrowRight,
-  TrendingUp,
-  TrendingDown,
-  CheckCircle,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import ColumnFilterRow, { columnFilterQuery } from '@/components/ColumnFilterRow';
-
-interface StockMetrics {
-  totalItems: number;
-  totalValue: number;
-  lowStockCount: number;
-  outOfStockCount: number;
-}
 
 interface InventoryItem {
   id: string;
@@ -62,11 +48,14 @@ interface InventoryStockManagerProps {
   isDark: boolean;
 }
 
-export default function InventoryStockManager({ isDark, canViewPrice = true }: InventoryStockManagerProps) {
+export default function InventoryStockManager({ isDark }: InventoryStockManagerProps) {
   // State
-  const [metrics, setMetrics] = useState<StockMetrics | null>(null);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Server-side pages: the catalog has ~11k items, one page holds PAGE_SIZE
+  const PAGE_SIZE = 100;
+  const [pageState, setPageState] = useState<{ filterKey: string; page: number }>({ filterKey: '', page: 1 });
+  const [totalItems, setTotalItems] = useState(0);
   
   // Filters
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -76,6 +65,11 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   const debouncedColumnFilters = useDebounce(columnFilters, 500);
   const [warehouseId, setWarehouseId] = useState('ALL');
   const [minusStockOnly, setMinusStockOnly] = useState(false);
+
+  // The page belongs to one filter combination; any filter change starts again at page 1
+  const filterKey = JSON.stringify([debouncedSearchQuery, debouncedColumnFilters, warehouseId, minusStockOnly]);
+  const page = pageState.filterKey === filterKey ? pageState.page : 1;
+  const setPage = (update: (p: number) => number) => setPageState({ filterKey, page: update(page) });
 
   // Drill-down State
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -102,30 +96,13 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
     }
   };
 
-  // Fetch Metrics (guarded against out-of-order responses)
-  const metricsReqIdRef = React.useRef(0);
-  const fetchMetrics = useCallback(async () => {
-    const reqId = ++metricsReqIdRef.current;
-    try {
-      let url = `/api/inventory/stock-metrics?warehouseId=${warehouseId}&q=${encodeURIComponent(debouncedSearchQuery)}${columnFilterQuery(debouncedColumnFilters)}`;
-      if (minusStockOnly) url += '&minusStock=true';
-      const res = await fetch(url);
-      const json = await res.json();
-      if (reqId === metricsReqIdRef.current && json.success) {
-        setMetrics(json.data);
-      }
-    } catch (e) {
-      console.error('Failed to fetch metrics', e);
-    }
-  }, [warehouseId, debouncedSearchQuery, debouncedColumnFilters, minusStockOnly]);
-
   // Fetch Items (guarded against out-of-order responses)
   const itemsReqIdRef = React.useRef(0);
   const fetchItems = useCallback(async () => {
     const reqId = ++itemsReqIdRef.current;
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=100&onlyActive=true${columnFilterQuery(debouncedColumnFilters)}`;
+      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&page=${page}&limit=${PAGE_SIZE}&onlyActive=true${columnFilterQuery(debouncedColumnFilters)}`;
       if (minusStockOnly) url += '&minusStock=true';
       if (warehouseId !== 'ALL') url += `&warehouseId=${warehouseId}`;
       
@@ -133,6 +110,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
       const json = await res.json();
       if (reqId === itemsReqIdRef.current && json.success && Array.isArray(json.data)) {
         setItems(json.data);
+        setTotalItems(json.pagination?.total ?? json.data.length);
       }
     } catch (e) {
       console.error('Failed to fetch inventory items', e);
@@ -141,7 +119,9 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
         setIsLoading(false);
       }
     }
-  }, [debouncedSearchQuery, debouncedColumnFilters, warehouseId, minusStockOnly]);
+  }, [debouncedSearchQuery, debouncedColumnFilters, warehouseId, minusStockOnly, page]);
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
   const fetchWarehouses = useCallback(async () => {
     try {
@@ -160,9 +140,8 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   }, [fetchWarehouses]);
 
   useEffect(() => {
-    fetchMetrics();
     fetchItems();
-  }, [fetchMetrics, fetchItems]);
+  }, [fetchItems]);
 
   const sortedItems = React.useMemo(() => {
     return [...items].sort((a, b) => {
@@ -208,7 +187,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   };
 
   const handleRefresh = async () => {
-    await Promise.all([fetchMetrics(), fetchItems()]);
+    await fetchItems();
     if (expandedRow) {
       await fetchLedgerForItem(expandedRow);
     }
@@ -244,51 +223,6 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
   return (
     <div className={`h-full flex flex-col ${isDark ? 'bg-slate-950 text-slate-200' : 'bg-slate-50 text-slate-900'}`}>
       
-      {/* 📊 KPI CARDS OVERVIEW (Phase 2 Requirement) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 shrink-0">
-        <div className={`p-4 rounded-2xl border flex items-center gap-4 shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-xl">
-            <Package className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total SKU Aktif</p>
-            <h3 className="text-2xl font-black">{metrics ? metrics.totalItems.toLocaleString() : '...'}</h3>
-          </div>
-        </div>
-
-        <div className={`p-4 rounded-2xl border flex items-center gap-4 shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
-            <BarChart3 className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Nilai Persediaan</p>
-            <h3 className="text-xl font-black text-emerald-500">
-              {canViewPrice ? `Rp ${metrics ? metrics.totalValue.toLocaleString('id-ID') : '...'}` : 'Rp ••••••••'}
-            </h3>
-          </div>
-        </div>
-
-        <div className={`p-4 rounded-2xl border flex items-center gap-4 shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl">
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Peringatan Stok Tipis</p>
-            <h3 className="text-2xl font-black text-amber-500">{metrics ? metrics.lowStockCount.toLocaleString() : '...'}</h3>
-          </div>
-        </div>
-
-        <div className={`p-4 rounded-2xl border flex items-center gap-4 shadow-sm ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <div className="p-3 bg-rose-500/10 text-rose-500 rounded-xl">
-            <Archive className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Stok Kosong / Minus</p>
-            <h3 className="text-2xl font-black text-rose-500">{metrics ? metrics.outOfStockCount.toLocaleString() : '...'}</h3>
-          </div>
-        </div>
-      </div>
-
       {/* 🎛️ FILTERS & ACTIONS BAR */}
       <div className={`px-5 py-3 border-y flex flex-wrap items-center justify-between gap-4 shrink-0 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div className="flex flex-wrap items-center gap-3">
@@ -526,6 +460,35 @@ export default function InventoryStockManager({ isDark, canViewPrice = true }: I
               )}
             </tbody>
           </table>
+        </div>
+
+      </div>
+
+      {/* PAGINATION FOOTER */}
+      <div className={`mx-5 mb-3 px-3 py-2 rounded-xl border shrink-0 flex items-center justify-between text-xs font-black ${
+        isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+      }`}>
+        <span>Menampilkan {items.length} dari total {totalItems} barang</span>
+        <div className="flex items-center gap-2">
+          <button
+            disabled={page === 1 || isLoading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className={`px-3 py-1 rounded-lg border font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+              isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'
+            }`}
+          >
+            Sebelumnya
+          </button>
+          <span>Halaman {page} / {totalPages}</span>
+          <button
+            disabled={page >= totalPages || isLoading}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className={`px-3 py-1 rounded-lg border font-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+              isDark ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-300 hover:bg-slate-100'
+            }`}
+          >
+            Berikutnya
+          </button>
         </div>
       </div>
 

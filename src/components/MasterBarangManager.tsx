@@ -98,6 +98,8 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+  // Matching rows on the server; the list holds only the current page
+  const [totalCount, setTotalCount] = useState(0);
 
   // Toast Notification State
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -132,6 +134,8 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
 
   // Stock Report Modal State
   const [isStockReportModalOpen, setIsStockReportModalOpen] = useState(false);
+  // Laporan Stok covers every matching item, not just the page on screen
+  const [reportProducts, setReportProducts] = useState<ERPProduct[] | null>(null);
 
   // Form Fields State (Single Unified Form)
   const [formData, setFormData] = useState<Partial<ERPProduct>>({
@@ -174,17 +178,36 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     return fallback;
   };
 
+  // Inventory API URL for the current filters and sort; the server pages and sorts the whole catalog
+  const inventoryUrl = useCallback((page: number, limit: number) => {
+    let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&page=${page}&limit=${limit}${columnFilterQuery(debouncedColumnFilters)}`;
+    if (filterMinusStock) url += `&minusStock=true`;
+    if (statusFilter) url += `&status=${statusFilter}`;
+    if (sortField) url += `&sort=${sortField}&order=${sortOrder}`;
+    return url;
+  }, [debouncedSearchQuery, debouncedColumnFilters, filterMinusStock, statusFilter, sortField, sortOrder]);
+
+  // Every matching item (for export and Laporan Stok), fetched in API-max batches
+  const fetchAllProducts = useCallback(async (): Promise<ERPProduct[]> => {
+    const BATCH = 5000;
+    const all: ERPProduct[] = [];
+    for (let page = 1; ; page++) {
+      const json = await fetch(inventoryUrl(page, BATCH)).then((r) => r.json());
+      if (!json.success || !Array.isArray(json.data)) throw new Error(json.error || 'Gagal memuat data barang');
+      all.push(...json.data);
+      if (json.data.length < BATCH || all.length >= (json.pagination?.total ?? 0)) return all;
+    }
+  }, [inventoryUrl]);
+
   // Fetch Inventory List from PostgreSQL
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000${columnFilterQuery(debouncedColumnFilters)}`;
-      if (filterMinusStock) url += `&minusStock=true`;
-      if (statusFilter) url += `&status=${statusFilter}`;
-      const res = await fetch(url);
+      const res = await fetch(inventoryUrl(currentPage, pageSize));
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setProducts(json.data);
+        setTotalCount(json.pagination?.total ?? json.data.length);
         if (json.data.length > 0) {
           setSelectedProduct((prev) => prev ? (json.data.find((p: ERPProduct) => p.id === prev.id) || json.data[0]) : json.data[0]);
         }
@@ -195,7 +218,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearchQuery, debouncedColumnFilters, filterMinusStock, statusFilter, addToast]);
+  }, [inventoryUrl, currentPage, pageSize, addToast]);
 
   // Initial load and filter change trigger
   useEffect(() => {
@@ -203,13 +226,11 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     const runFetch = async () => {
       setIsLoading(true);
       try {
-        let url = `/api/inventory?q=${encodeURIComponent(debouncedSearchQuery)}&limit=1000${columnFilterQuery(debouncedColumnFilters)}`;
-        if (filterMinusStock) url += `&minusStock=true`;
-        if (statusFilter) url += `&status=${statusFilter}`;
-        const res = await fetch(url);
+        const res = await fetch(inventoryUrl(currentPage, pageSize));
         const json = await res.json();
         if (isMounted && json.success && Array.isArray(json.data)) {
           setProducts(json.data);
+          setTotalCount(json.pagination?.total ?? json.data.length);
           if (json.data.length > 0) {
             setSelectedProduct((prev) => prev ? (json.data.find((p: ERPProduct) => p.id === prev.id) || json.data[0]) : json.data[0]);
           }
@@ -222,7 +243,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     };
     runFetch();
     return () => { isMounted = false; };
-  }, [debouncedSearchQuery, debouncedColumnFilters, filterMinusStock, statusFilter]);
+  }, [inventoryUrl, currentPage, pageSize]);
 
   // Fetch Dropdown Lookups on Mount
   useEffect(() => {
@@ -356,6 +377,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
 
   // Sort Handler
   const handleSort = (field: keyof ERPProduct) => {
+    setCurrentPage(1);
     if (sortField !== field) {
       setSortField(field);
       setSortOrder('asc');
@@ -367,25 +389,18 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     }
   };
 
-  // Processed & Filtered & Sorted Products
-  const sortedProducts = [...products];
-
-  const orderedProducts = sortField ? sortedProducts.sort((a, b) => {
-      const valA = a[sortField] ?? '';
-      const valB = b[sortField] ?? '';
-      if (typeof valA === 'number' && typeof valB === 'number') {
-        return sortOrder === 'asc' ? valA - valB : valB - valA;
-      }
-      return sortOrder === 'asc'
-        ? String(valA).localeCompare(String(valB))
-        : String(valB).localeCompare(String(valA));
-    }) : sortedProducts;
-
-  // Paginated Products
-  const totalPages = Math.ceil(orderedProducts.length / pageSize) || 1;
-  const paginatedProducts = orderedProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // The server already sorted and paged the list
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const paginatedProducts = products;
 
   const exportToExcel = async () => {
+    let orderedProducts: ERPProduct[];
+    try {
+      orderedProducts = await fetchAllProducts();
+    } catch {
+      addToast('Gagal memuat data barang untuk export', 'error');
+      return;
+    }
     if (orderedProducts.length === 0) {
       addToast('Tidak ada data barang untuk diexport', 'warning');
       return;
@@ -946,7 +961,16 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
           </Link>
 
           <button
-            onClick={() => setIsStockReportModalOpen(true)}
+            onClick={async () => {
+              setReportProducts(null);
+              setIsStockReportModalOpen(true);
+              try {
+                setReportProducts(await fetchAllProducts());
+              } catch {
+                addToast('Gagal memuat Laporan Stok', 'error');
+                setIsStockReportModalOpen(false);
+              }
+            }}
             className={`px-2.5 py-1.5 rounded-xl border text-xs font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
               isDark ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border-purple-500/50' : 'bg-purple-100 hover:bg-purple-200 text-purple-900 border-purple-300 shadow-sm'
             }`}
@@ -1297,7 +1321,6 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin mb-4 shadow-lg shadow-emerald-500/20"></div>
                         <h3 className="text-lg font-black text-emerald-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Memuat master data barang dari ERP Database</p>
                       </div>
                     </td>
                   </tr>
@@ -1436,7 +1459,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
           isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
         }`}>
           <div className="flex items-center gap-3">
-            <span>Menampilkan {paginatedProducts.length} dari total {orderedProducts.length} barang</span>
+            <span>Menampilkan {paginatedProducts.length} dari total {totalCount} barang</span>
             <div className="flex items-center gap-1.5">
               <span>Rows:</span>
               <select
@@ -1592,7 +1615,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
                   isDark ? 'bg-purple-950/30 border-purple-800/50' : 'bg-purple-200 border-purple-400 text-purple-950 shadow-sm'
                 }`}>
                   <div className="text-[11px] font-black uppercase tracking-wider text-purple-950 dark:text-purple-300">Total Item Terdaftar</div>
-                  <div className="font-black text-2xl mt-1 text-purple-950 dark:text-purple-300">{products.length} Barang</div>
+                  <div className="font-black text-2xl mt-1 text-purple-950 dark:text-purple-300">{reportProducts ? `${reportProducts.length} Barang` : 'Memuat...'}</div>
                 </div>
 
                 {canViewPrice && (
@@ -1601,7 +1624,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
                   }`}>
                     <div className="text-[11px] font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-300">Total Nilai Persediaan (HPP)</div>
                     <div className="font-black text-xl mt-1 text-emerald-950 dark:text-emerald-300">
-                      Rp {products.reduce((acc, p) => acc + (p.hpp || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
+                      Rp {(reportProducts ?? []).reduce((acc, p) => acc + (p.hpp || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
                     </div>
                   </div>
                 )}
@@ -1611,7 +1634,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
                 }`}>
                   <div className="text-[11px] font-black uppercase tracking-wider text-amber-950 dark:text-amber-300">Total Nilai Retail</div>
                   <div className="font-black text-xl mt-1 text-amber-950 dark:text-amber-300">
-                    Rp {products.reduce((acc, p) => acc + (p.price || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
+                    Rp {(reportProducts ?? []).reduce((acc, p) => acc + (p.price || 0) * (p.stokAkhir || 0), 0).toLocaleString('id-ID')}
                   </div>
                 </div>
               </div>
@@ -1628,7 +1651,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
                     </tr>
                   </thead>
                   <tbody className={`divide-y font-black ${isDark ? 'divide-slate-800 text-slate-100' : 'divide-slate-300 text-slate-950'}`}>
-                    {products.map((p) => (
+                    {(reportProducts ?? []).map((p) => (
                       <tr key={p.id} className={isDark ? 'hover:bg-slate-800 odd:bg-slate-900 even:bg-slate-800/50' : 'hover:bg-slate-200 odd:bg-white even:bg-slate-100'}>
                         <td className={`p-3 font-mono font-black ${isDark ? 'text-amber-400' : 'text-slate-950'}`}>{p.inventoryNo}</td>
                         <td className={`p-3 font-black ${isDark ? 'text-slate-100' : 'text-slate-950'}`}>{p.inventoryName}</td>

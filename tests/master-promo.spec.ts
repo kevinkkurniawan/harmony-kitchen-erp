@@ -14,7 +14,7 @@ async function openMasterPromoMenu(page: any) {
     await page.click('aside button:has-text("Master Data")');
   }
   await menuBtn.click();
-  await expect(page.locator('text=Total Aturan Promo')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('input[placeholder*="Cari Aturan Promo"]')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 5: Master Promo — End-to-End Audit Suite', () => {
@@ -23,13 +23,11 @@ test.describe('Menu 5: Master Promo — End-to-End Audit Suite', () => {
     await openMasterPromoMenu(page);
   });
 
-  test('1. Renders KPI cards, Aturan Promo & Kelompok Group tabs, and column sorting', async ({ page }) => {
+  test('1. Renders no summary cards, Aturan Promo & Kelompok Group tabs, and column sorting', async ({ page }) => {
     await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Verify 3 summary cards are visible
-    await expect(page.locator('text=Total Aturan Promo')).toBeVisible();
-    await expect(page.getByText('Promo Aktif', { exact: true })).toBeVisible();
-    await expect(page.locator('text=Kelompok Promo Group')).toBeVisible();
+    // Summary cards were removed (not in the legacy screen)
+    await expect(page.locator('text=Total Aturan Promo')).toHaveCount(0);
 
     // Sort columns
     await page.click('th:has-text("Nama Aturan Promo")');

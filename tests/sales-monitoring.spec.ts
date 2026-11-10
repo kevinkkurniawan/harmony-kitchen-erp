@@ -17,7 +17,7 @@ async function loginAsAdmin(page: any) {
 async function openSalesMonitoringMenu(page: any) {
   const menuBtn = page.locator('aside button:has-text("Sales Monitoring")');
   await menuBtn.click();
-  await expect(page.getByText('Sales Monitoring Real-time', { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('th:has-text("Nom. Transaksi")')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
@@ -91,70 +91,46 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
     await openSalesMonitoringMenu(page);
   });
 
-  test('1. Renders 4 KPI cards, 5 payment method cards, Refresh button, and supports 9 column sorting', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+  test('1. Renders the legacy Bill Opname toolbar, columns and footer totals, with no summary cards', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Verify 4 KPI Summary Cards
-    await expect(page.getByText('Total Omset Penjualan', { exact: true })).toBeVisible();
-    await expect(page.getByText('Total Struk Transaksi', { exact: true })).toBeVisible();
-    await expect(page.getByText('Rata-Rata Struk (Basket)', { exact: true })).toBeVisible();
-    await expect(page.getByText('Paling Dominan', { exact: true })).toBeVisible();
-
-    // Verify 5 Payment Method Breakdown Cards
-    await expect(page.locator('text=CASH / Tunai:')).toBeVisible();
-    await expect(page.locator('text=QRIS Instant:')).toBeVisible();
-    await expect(page.locator('text=Bank Transfer:')).toBeVisible();
-    await expect(page.locator('text=EDC Debit/Credit:')).toBeVisible();
-    await expect(page.locator('text=Tempo / Corporate:')).toBeVisible();
-
-    // Verify Refresh Live Sales button
-    const refreshBtn = page.locator('button:has-text("Refresh Live Sales")');
-    await expect(refreshBtn).toBeVisible();
+    // Toolbar like the legacy form: Hari Ini | Tanggal | Refresh
+    await expect(page.locator('button:has-text("Hari Ini")')).toBeVisible();
+    await expect(page.locator('input[type="date"]')).toHaveCount(1);
+    const refreshBtn = page.locator('button:has-text("Refresh")');
     await refreshBtn.click();
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 10000 });
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 10000 });
 
-    // Sort all 9 table headers
-    await page.click('th:has-text("No. Struk")');
-    await page.click('th:has-text("Tanggal & Jam")');
-    await page.click('th:has-text("Kasir / Officer")');
-    await page.click('th:has-text("Customer / Meja")');
-    await page.click('th:has-text("Tipe Pembayaran")');
-    await page.click('th:has-text("Subtotal")');
-    await page.click('th:has-text("Diskon Promo")');
-    await page.click('th:has-text("Grand Total (Rp)")');
-    await page.click('th:has-text("Status")');
+    // The KPI and payment cards are gone
+    await expect(page.getByText('Total Omset Penjualan', { exact: true })).toHaveCount(0);
+    await expect(page.locator('text=CASH / Tunai:')).toHaveCount(0);
+
+    // Legacy columns, each sortable
+    for (const label of ['No. Nota', 'Jenis Bayar', 'Bank', 'Nom. Transaksi', 'Diskon Akhir', 'Nom. Bayar', 'Kembalian', 'Keterangan', 'Tunai', 'Debit', 'Qris', 'CC', 'Lain-lain', 'User']) {
+      await page.locator('thead th', { hasText: label }).first().click();
+    }
+    await expect(page.locator('tfoot tr')).toHaveCount(1);
   });
 
-  test('2. Quick date filter buttons, manual date inputs, and live search bar', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+  test('2. Hari Ini, date picker and search', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Test Quick Date buttons
+    const dateInput = page.locator('input[type="date"]');
+    await dateInput.fill('2026-01-01');
     await page.click('button:has-text("Hari Ini")');
-    await page.click('button:has-text("7 Hari Terakhir")');
-    await page.click('button:has-text("Bulan Ini")');
-    await page.click('button:has-text("Semua Tanggal")');
 
-    // Test Manual Date Inputs
-    const dateInputs = page.locator('input[type="date"]');
-    await expect(dateInputs).toHaveCount(2);
-    await dateInputs.nth(0).fill('2026-01-01');
-    await dateInputs.nth(1).fill('2026-12-31');
-
-    // Test Live Search Bar with test invoice
-    const searchInput = page.locator('input[placeholder="Cari No Struk / Kasir / Customer..."]');
+    // The test sale is dated today, so it shows after Hari Ini
+    const searchInput = page.locator('input[placeholder="Cari No. Nota / User..."]');
     await searchInput.fill(testInvoiceNo);
     await expect(page.locator(`td:has-text("${testInvoiceNo}")`)).toBeVisible({ timeout: 10000 });
-
-    // Clear search
     await searchInput.fill('');
-    await page.click('button:has-text("Semua Tanggal")');
   });
 
   test('3. View & Print Receipt modal, keyboard / double-click triggers, Cetak Struk action, and modal dismissal', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
     // Filter to find our test invoice
-    const searchInput = page.locator('input[placeholder="Cari No Struk / Kasir / Customer..."]');
+    const searchInput = page.locator('input[placeholder="Cari No. Nota / User..."]');
     await searchInput.fill(testInvoiceNo);
     const row = page.locator(`tr:has-text("${testInvoiceNo}")`);
     await expect(row).toBeVisible({ timeout: 10000 });
@@ -185,9 +161,9 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
   });
 
   test('4. Payment Method Correction flow: cancel trigger, X trigger, change to QRIS, and verify table update', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    const searchInput = page.locator('input[placeholder="Cari No Struk / Kasir / Customer..."]');
+    const searchInput = page.locator('input[placeholder="Cari No. Nota / User..."]');
     await searchInput.fill(testInvoiceNo);
     const row = page.locator(`tr:has-text("${testInvoiceNo}")`);
     await expect(row).toBeVisible({ timeout: 10000 });
@@ -215,13 +191,13 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
 
     // Verify toast & badge updated
     await expect(page.locator('text=Tipe pembayaran berhasil diubah ke QRIS')).toBeVisible({ timeout: 10000 });
-    await expect(row.locator('span:has-text("QRIS")')).toBeVisible();
+    await expect(row.locator('td:has-text("QRIS")')).toBeVisible();
   });
 
   test('5. VOID & UNVOID flow: cancel triggers, X triggers, voiding with stock adjustment, and unvoid restoration', async ({ page }) => {
-    await expect(page.locator('text=Sedang Mengambil Data...')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    const searchInput = page.locator('input[placeholder="Cari No Struk / Kasir / Customer..."]');
+    const searchInput = page.locator('input[placeholder="Cari No. Nota / User..."]');
     await searchInput.fill(testInvoiceNo);
     const row = page.locator(`tr:has-text("${testInvoiceNo}")`);
     await expect(row).toBeVisible({ timeout: 10000 });
@@ -248,7 +224,7 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
 
     // Assert row transitioned to VOID
     await expect(page.locator('text=berhasil di-VOID')).toBeVisible({ timeout: 10000 });
-    await expect(row.locator('span:has-text("VOID")')).toBeVisible();
+    await expect(row.locator('input[type="checkbox"]')).toBeChecked();
 
     // 2. UNVOID MODAL
     const unvoidBtn = row.locator('button[title="Pulihkan Transaksi (UNVOID)"]');
@@ -267,6 +243,6 @@ test.describe('Menu 9: Sales Monitoring — End-to-End Audit Suite', () => {
 
     // Assert row transitioned back to LUNAS
     await expect(page.locator('text=berhasil di-UNVOID')).toBeVisible({ timeout: 10000 });
-    await expect(row.locator('span:has-text("LUNAS")')).toBeVisible();
+    await expect(row.locator('input[type="checkbox"]')).not.toBeChecked();
   });
 });

@@ -7,18 +7,40 @@ import {
   Plus,
   Trash2,
   RefreshCw,
-  Tag,
   CheckCircle,
   XCircle,
   AlertTriangle,
   Zap,
-  Sliders,
-  Eye,
   ArrowLeft,
 } from 'lucide-react';
 import { ERPProduct } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
 import { searchInventory, lookupInventoryByScan } from '@/lib/inventory-lookup';
+import { encodeBarcode } from '@/lib/barcode';
+
+/** Real scannable bars for a stored barcode value, drawn as SVG (one unit = one module). */
+function BarcodeBars({ value, height }: { value: string; height: string }) {
+  const encoded = encodeBarcode(value);
+  if (!encoded) return <div style={{ height }} />;
+  // Quiet zone of 10 modules each side so scanners find the start/stop patterns
+  const quiet = 10;
+  const total = encoded.modules.length + quiet * 2;
+  return (
+    <svg
+      data-testid="barcode-svg"
+      data-symbology={encoded.symbology}
+      viewBox={`0 0 ${total} 10`}
+      preserveAspectRatio="none"
+      shapeRendering="crispEdges"
+      style={{ width: '100%', height, display: 'block' }}
+    >
+      <rect x={0} y={0} width={total} height={10} fill="#fff" />
+      {Array.from(encoded.modules).map((m, i) =>
+        m === '1' ? <rect key={i} x={quiet + i} y={0} width={1} height={10} fill="#000" /> : null,
+      )}
+    </svg>
+  );
+}
 
 interface BarcodeQueueItem {
   product: ERPProduct;
@@ -275,15 +297,6 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}
-          <div className="flex items-center gap-2">
-            <Printer className="w-5 h-5 text-indigo-500" />
-            <div>
-              <h2 className="font-black text-sm">Generator & Cetak Barcode Label (3 Kolom / Baris)</h2>
-              <p className="text-[10px] text-slate-500 font-semibold">
-                Roll 108mm • 3 Label per Baris (@ 33×15mm / 36×18.2mm) • Urutan Kiri ke Kanan (Kolom 1 ➔ 2 ➔ 3)
-              </p>
-            </div>
-          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -539,20 +552,9 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                             {prod.inventoryName}
                           </div>
 
-                          {/* Simulated standard barcode visual */}
+                          {/* Barcode (same encoder as the printed label) */}
                           <div className="flex flex-col items-center w-full px-1 my-0.5">
-                            <div className="h-5 w-full flex items-center justify-center gap-[1px] overflow-hidden">
-                              {Array.from({ length: 24 }).map((_, i) => (
-                                <div
-                                  key={i}
-                                  className="bg-black h-full"
-                                  style={{
-                                    width: (i % 3 === 0 || i % 7 === 0) ? '2px' : '1px',
-                                    opacity: (i % 5 === 0) ? 0.75 : 1,
-                                  }}
-                                />
-                              ))}
-                            </div>
+                            <BarcodeBars value={prod.barcode || prod.inventoryNo} height="20px" />
                             <div className="text-[8px] font-black tracking-wider mt-0.5 truncate max-w-full">
                               {prod.barcode || prod.inventoryNo}
                             </div>
@@ -605,17 +607,8 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                     </div>
 
                     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.5mm 0' }}>
-                      <div style={{ height: '5.5mm', width: '92%', display: 'flex', justifyContent: 'center', gap: '1px' }}>
-                        {Array.from({ length: 26 }).map((_, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              backgroundColor: 'black',
-                              height: '100%',
-                              width: (i % 3 === 0 || i % 7 === 0) ? '2px' : '1px',
-                            }}
-                          />
-                        ))}
+                      <div style={{ width: '96%' }}>
+                        <BarcodeBars value={prod.barcode || prod.inventoryNo} height="5.5mm" />
                       </div>
                       <div style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.5px', lineHeight: 1 }}>
                         {prod.barcode || prod.inventoryNo}

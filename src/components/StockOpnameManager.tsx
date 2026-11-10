@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  PackageCheck,
   Plus,
   RefreshCw,
   Save,
@@ -13,15 +12,9 @@ import {
   Store,
   Barcode as BarcodeIcon,
   Trash2,
-  Layers,
   Sparkles,
   Minus,
   AlertTriangle,
-  Check,
-  ArrowDownRight,
-  ArrowUpRight,
-  DollarSign,
-  Package,
   Printer,
   Download,
   ChevronUp,
@@ -886,14 +879,9 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
         {/* Title & Transaction Selector */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20">
-              <PackageCheck className="w-5 h-5" />
-            </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-black text-slate-900 dark:text-white tracking-tight leading-none">
-                  Stok Opname
-                </h1>
+                <span className={`text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>No. Transaksi :</span>
                 <span
                   data-testid="opname-status-badge"
                   className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
@@ -1102,67 +1090,6 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
           <span className="text-[10px] uppercase tracking-wider font-black">Read-Only</span>
         </div>
       )}
-
-      {/* 📊 SUMMARY METRICS CARDS (Unified Single Qty) */}
-      <div className={`px-5 py-3.5 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm shrink-0 ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-            <Package className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Item Opname</div>
-            <div className={`text-lg font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              {stats.totalItems} Barang
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Qty</div>
-            <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              {stats.totalQty} Unit
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400">
-            <CheckCircle className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Status Transaksi</div>
-            <div className={`text-lg font-black ${isDark ? 'text-indigo-300' : 'text-indigo-950'}`}>
-              {opnameStatus}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-            <DollarSign className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Nilai Opname</div>
-            <div className={`text-sm font-black font-mono ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              {formatMoney(stats.totalValue)}
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* MODE: Penyesuaian (+/-) like legacy OPM, or Cek Stok (hitung fisik) like legacy SCO */}
       <div
@@ -1431,7 +1358,6 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat riwayat Stok Opname dari ERP Database</p>
                       </div>
                     </td>
                   </tr>
@@ -1444,7 +1370,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
                     </td>
                   </tr>
                 ) : (
-                  filteredTableItems.slice(0, 100).map((item, idx) => (
+                  filteredTableItems.map((item, idx) => (
                     <tr
                       key={item.inventoryId}
                       className={"transition-colors " + (isDark ? 'hover:bg-slate-700 text-slate-100' : 'hover:bg-slate-200 odd:bg-white even:bg-white text-slate-800')}
@@ -1621,7 +1547,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
                     </tr>
                   </thead>
                   <tbody className={`divide-y text-xs ${isDark ? 'divide-slate-800' : 'divide-slate-200'}`}>
-                    {opnameItems.slice(0, 100).map((item) => (
+                    {opnameItems.map((item) => (
                       <tr key={item.inventoryId} className={isDark ? 'bg-slate-900' : 'bg-white'}>
                         <td className="px-4 py-2 font-mono font-bold text-slate-400">{item.inventoryNo}</td>
                         <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>

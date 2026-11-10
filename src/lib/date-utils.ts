@@ -90,3 +90,12 @@ export function formatBangkokMonth(date: Date | string | number): string {
   const month = parts.find((p) => p.type === 'month')?.value || '';
   return `${year}-${month}`;
 }
+
+/**
+ * A 'YYYY-MM-DD' day as the value of a Postgres DATE column (UTC midnight), or null if malformed.
+ * Comparing a DATE column with a +07:00 instant shifts the range one day back, so use this for DATE columns.
+ */
+export function dateColumnDay(dateStr: string | null | undefined): Date | null {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  return new Date(`${dateStr}T00:00:00Z`);
+}

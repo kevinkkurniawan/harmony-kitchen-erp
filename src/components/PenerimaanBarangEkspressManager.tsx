@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   RefreshCw,
-  Package,
   Trash2,
   CheckCircle,
   XCircle,
@@ -11,9 +10,6 @@ import {
   AlertTriangle,
   Zap,
   Printer,
-  Building2,
-  FileText,
-  Truck,
   ScanLine,
   Search,
   Plus,
@@ -429,24 +425,10 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
         ))}
       </div>
 
-      {/* 📊 METRICS HEADER & MAIN TOOLBAR */}
-      <div className={`p-4 border-b flex flex-wrap items-center justify-between gap-4 shadow-sm ${
+      {/* MAIN TOOLBAR */}
+      <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-end gap-4 shadow-sm ${
         isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
       }`}>
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-orange-500/20 text-orange-400 border border-orange-500/30">
-            <Package className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className={`text-base font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              Penerimaan Barang Ekspress
-            </h2>
-            <p className={`text-xs font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Modul Purchasing Goods Receipt Fisik Gudang tanpa Kunci Harga Modal
-            </p>
-          </div>
-        </div>
-
         {/* View Switcher & Action Buttons */}
         <div className="flex items-center gap-2">
           {viewMode === 'create' ? (
@@ -474,65 +456,6 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
       {/* 🟢 MODE 1: DAFTAR TRANSAKSI PENERIMAAN EKSPRESS (LIST VIEW) */}
       {viewMode === 'list' && (
         <div className="flex-1 overflow-hidden flex flex-col p-4 gap-4">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-            <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <div className="p-2.5 rounded-xl bg-orange-500/20 text-orange-400">
-                <Package className="w-5 h-5" />
-              </div>
-              <div>
-                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Transaksi</div>
-                <div className={`text-lg font-black ${isDark ? 'text-orange-300' : 'text-orange-950'}`}>
-                  {receiptsList.length} Nota MR
-                </div>
-              </div>
-            </div>
-
-            <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div>
-                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Supplier Terhubung</div>
-                <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>
-                  {suppliersList.length} Pemasok
-                </div>
-              </div>
-            </div>
-
-            <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-                <Truck className="w-5 h-5" />
-              </div>
-              <div>
-                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Penerimaan Selesai</div>
-                <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-                  {receiptsList.filter((r) => !r.isVoid).length} Sukses
-                </div>
-              </div>
-            </div>
-
-            <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
-            }`}>
-              <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Gudang Utama</div>
-                <div className={`text-sm font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>
-                  Gudang Dapur
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Search & Filter Toolbar */}
           <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 shadow-sm ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-300'
@@ -585,7 +508,6 @@ export default function PenerimaanBarangEkspressManager({ isDark }: PenerimaanBa
                       <div className="flex flex-col items-center justify-center animate-pulse">
                         <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                         <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                        <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat daftar transaksi penerimaan ekspress dari Database</p>
                       </div>
                     </td>
                   </tr>

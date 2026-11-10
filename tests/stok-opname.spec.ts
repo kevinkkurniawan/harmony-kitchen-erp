@@ -16,7 +16,7 @@ async function openStokOpnameMenu(page: Page) {
   await expect(sidebarBtn).toBeVisible({ timeout: 10000 });
   await sidebarBtn.click();
 
-  await expect(page.getByRole('heading', { name: 'Stok Opname', exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('opname-status-badge')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Sedang Mengambil Data...')).toBeHidden({ timeout: 25000 });
 }
 
@@ -42,11 +42,9 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
     await loginAs(page, 'admin', '5555');
     await openStokOpnameMenu(page);
 
-    // Verify KPI Cards show unified Qty metrics
-    await expect(page.getByText('Total Item Opname')).toBeVisible();
-    await expect(page.getByText('Total Qty', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Status Transaksi')).toBeVisible();
-    await expect(page.getByText('Total Nilai Opname').first()).toBeVisible();
+    // Summary cards were removed; the footer still shows the unified Qty totals
+    await expect(page.getByText('Total Item Opname')).toHaveCount(0);
+    await expect(page.getByText(/Total Qty/).first()).toBeVisible();
 
     // Verify Table Headers have unified "Qty" and NO "Qty Sistem", "Qty Fisik", or "Selisih"
     const thead = page.locator('table thead').first();

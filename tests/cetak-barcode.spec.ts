@@ -14,7 +14,7 @@ async function openBarcodePrintMenu(page: any) {
     await page.click('aside button:has-text("Master Data")');
   }
   await menuBtn.click();
-  await expect(page.locator('h2:has-text("Generator & Cetak Barcode Label (3 Kolom / Baris)")')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('text=Sertakan Harga')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Menu 4: Cetak Barcode — End-to-End Audit Suite', () => {

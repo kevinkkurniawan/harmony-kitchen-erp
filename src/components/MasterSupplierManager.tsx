@@ -20,7 +20,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  ShieldAlert,
 } from 'lucide-react';
 import { Supplier } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -309,8 +308,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
       : String(valB).localeCompare(String(valA));
   });
 
-  // Calculate unique cities
-  const uniqueCitiesCount = new Set(suppliers.map((s) => s.city).filter(Boolean)).size;
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
@@ -337,63 +334,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             <span>{t.text}</span>
           </div>
         ))}
-      </div>
-
-      {/* 📊 SUMMARY CARDS HEADER */}
-      <div className={`px-5 py-3 border-b grid grid-cols-2 md:grid-cols-4 gap-3.5 shadow-sm ${
-        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-300'
-      }`}>
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-blue-50/60 border-blue-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
-            <Building2 className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Total Supplier</div>
-            <div className={`text-lg font-black ${isDark ? 'text-blue-300' : 'text-blue-950'}`}>{suppliers.length}</div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-emerald-50/60 border-emerald-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
-            <CheckCircle className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Supplier Aktif</div>
-            <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-              {suppliers.filter((s) => s.isActive !== false).length}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-amber-50/60 border-amber-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-            <ShieldAlert className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Supplier PKP (Taxable)</div>
-            <div className={`text-lg font-black ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              {suppliers.filter((s) => s.isTaxable).length}
-            </div>
-          </div>
-        </div>
-
-        <div className={`p-3.5 rounded-2xl border flex items-center gap-3.5 ${
-          isDark ? 'bg-slate-800/80 border-slate-700/80' : 'bg-purple-50/60 border-purple-200/80'
-        }`}>
-          <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-400">
-            <MapPin className="w-5 h-5" />
-          </div>
-          <div>
-            <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Kota Jaringan Supplier</div>
-            <div className={`text-lg font-black ${isDark ? 'text-purple-300' : 'text-purple-950'}`}>{uniqueCitiesCount} Kota</div>
-          </div>
-        </div>
       </div>
 
       {/* 👑 MASTER SUPPLIER TOOLBAR */}
@@ -519,7 +459,6 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
                     <div className="flex flex-col items-center justify-center animate-pulse">
                       <div className="w-12 h-12 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin mb-4 shadow-lg shadow-amber-500/20"></div>
                       <h3 className="text-lg font-black text-amber-400 tracking-wider uppercase">Sedang Mengambil Data...</h3>
-                      <p className={`text-xs mt-2 font-semibold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Memuat master data supplier dari ERP Database</p>
                     </div>
                   </td>
                 </tr>
@@ -656,7 +595,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             className="w-full px-3.5 py-2 text-left hover:bg-amber-500/20 hover:text-amber-300 flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Edit className="w-4 h-4 text-amber-400" />
-            <span>&Edit Supplier</span>
+            <span>Edit Supplier</span>
           </button>
 
           <button
@@ -667,7 +606,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             className="w-full px-3.5 py-2 text-left hover:bg-emerald-500/20 hover:text-emerald-300 flex items-center gap-2 cursor-pointer transition-colors"
           >
             <Zap className="w-4 h-4 text-emerald-400" />
-            <span>&Toggle Status Aktif</span>
+            <span>Toggle Status Aktif</span>
           </button>
 
           <button
@@ -678,7 +617,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
             className="w-full px-3.5 py-2 text-left hover:bg-rose-500/20 text-rose-400 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-700/50"
           >
             <Trash2 className="w-4 h-4" />
-            <span>&Hapus Supplier</span>
+            <span>Hapus Supplier</span>
           </button>
         </div>
       )}
