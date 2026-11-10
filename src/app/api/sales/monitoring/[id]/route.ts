@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
-import { requireCapability } from '@/lib/capabilities';
+import { canUserViewHpp, requireCapability } from '@/lib/capabilities';
+import { getCurrentUser } from '@/lib/session';
 import { recordAuditEvent } from '@/lib/audit-event';
 import { isLegacySale, isUnpaidLegacySale, legacyPaymentTypeCode, salePaymentType } from '@/lib/sales-normalize';
 
@@ -9,6 +10,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params;
     const headerId = Number(id);
+    const mayViewHpp = canUserViewHpp(await getCurrentUser());
 
     const header = await prisma.t_salesposheader.findUnique({
       where: { id: headerId },
@@ -41,9 +43,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         brandName: inv?.m_brand?.brandname || 'General',
         qty: Number(d.qty || 0),
         price: Number(d.price || 0),
-        hpp: Number(d.unithpp || d.hpp || 0),
-        totalHpp: Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * Number(d.qty || 0))),
-        hppProvenance: d.hppprovenance || 'EXACT',
+        ...(mayViewHpp ? {
+          hpp: Number(d.unithpp || d.hpp || 0),
+          totalHpp: Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * Number(d.qty || 0))),
+          hppProvenance: d.hppprovenance || 'EXACT',
+        } : {}),
         disc: Number(d.disc || 0),
         subtotal: Number(d.subtotal || 0),
         wholesalePriceSource: d.pricesource || null,

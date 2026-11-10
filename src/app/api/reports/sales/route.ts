@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { getCurrentUser } from '@/lib/session';
-import { hasCapability } from '@/lib/capabilities';
+import { canUserViewHpp } from '@/lib/capabilities';
 import { parseBangkokStartOfDay, parseBangkokEndOfDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
 import { parseColumnFilters } from '@/lib/column-filter';
 import { isUnpaidLegacySale, normalizeSale, type NormalizedSale } from '@/lib/sales-normalize';
@@ -10,7 +10,7 @@ import { isUnpaidLegacySale, normalizeSale, type NormalizedSale } from '@/lib/sa
 export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
-    const canViewProfit = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const canViewProfit = canUserViewHpp(user);
 
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'daily';

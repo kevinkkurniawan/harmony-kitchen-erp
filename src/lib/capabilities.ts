@@ -77,13 +77,12 @@ export const SENSITIVE_CAPABILITIES: CapabilityDefinition[] = [
     description: 'Mencetak label barcode dari browser',
     category: 'Barcode',
   },
-  {
-    code: 'VIEW_HPP_PROFIT',
-    name: 'Lihat HPP & Net Income',
-    description: 'Melihat data HPP, laba kotor, dan margin pada laporan dan transaksi',
-    category: 'Reporting',
-  },
 ];
+
+// Client rule: only Admin sees HPP (cost, profit, margin); no per-user grant
+export function canUserViewHpp(user: SessionUser | null): boolean {
+  return user?.userLevel === 'Admin';
+}
 
 export async function hasCapability(user: SessionUser | null, capabilityCode: string): Promise<boolean> {
   if (!user) return false;

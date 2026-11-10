@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
-import { hasCapability, requireCapability } from '@/lib/capabilities';
+import { canUserViewHpp, requireCapability } from '@/lib/capabilities';
 import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
 import { parseColumnFilters, buildInventorySearchConditions } from '@/lib/column-filter';
 import { apiError, apiSuccess } from '@/lib/api-response';
@@ -10,7 +10,7 @@ import { apiError, apiSuccess } from '@/lib/api-response';
 export async function GET(req: Request) {
   try {
     const user = await getCurrentUser();
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const { searchParams } = new URL(req.url);
     const paginationParams = getPaginationParams(req, 100, 5000);
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
     if ('errorResponse' in auth) return auth.errorResponse;
 
     const user = auth.user;
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const body = await req.json();
     const nameError = validateInventoryName(body.inventoryName || body.inventory_name);

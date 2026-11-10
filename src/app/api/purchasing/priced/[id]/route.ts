@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiError, apiSuccess } from '@/lib/api-response';
 import { getCurrentUser } from '@/lib/session';
-import { hasCapability } from '@/lib/capabilities';
+import { canUserViewHpp } from '@/lib/capabilities';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -11,7 +11,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
     }
 
-    const canViewPrice = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const canViewPrice = canUserViewHpp(user);
 
     const { id } = await params;
     const mr = await prisma.t_materialreceiveheader.findUnique({
