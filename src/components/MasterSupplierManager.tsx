@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Supplier } from '@/types/erp';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface ToastMessage {
   id: string;
@@ -36,6 +37,7 @@ interface MasterSupplierManagerProps {
 }
 
 export default function MasterSupplierManager({ isDark }: MasterSupplierManagerProps) {
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
   // Main Data States
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -219,7 +221,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
   // Handle Delete Supplier
   const handleDeleteSupplier = async (supplier: Supplier) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus supplier "${supplier.supplierName}"?`)) return;
+    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus supplier "${supplier.supplierName}"?`))) return;
     try {
       const res = await fetch(`/api/suppliers/${supplier.id}`, { method: 'DELETE' });
       const json = await res.json();
@@ -312,6 +314,7 @@ export default function MasterSupplierManager({ isDark }: MasterSupplierManagerP
 
   return (
     <div className={`flex-1 flex flex-col h-full overflow-hidden select-none relative ${isDark ? 'bg-slate-950' : 'bg-slate-100/60'}`}>
+      {confirmDialogEl}
       {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (

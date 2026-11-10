@@ -19,6 +19,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 export interface PromoRuleItem {
   id: number | string;
@@ -60,6 +61,7 @@ interface MasterPromoManagerProps {
 }
 
 export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) {
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
   // Main Data States
   const [promoTab, setPromoTab] = useState<'rules' | 'groups'>('rules');
   const [promoRules, setPromoRules] = useState<PromoRuleItem[]>([]);
@@ -324,7 +326,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
 
   // Handle Delete Rule
   const handleDeleteRule = async (rule: PromoRuleItem) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus promo "${rule.promoName}"?`)) return;
+    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus promo "${rule.promoName}"?`))) return;
     try {
       const res = await fetch(`/api/promos/items/${rule.id}`, { method: 'DELETE' });
       const json = await res.json();
@@ -345,7 +347,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
   // Handle Delete Group
   const handleDeleteGroup = async (group: PromoGroupItem) => {
     const gName = group.promoName || group.groupName || group.group_name || 'Kelompok Promo';
-    if (!confirm(`Apakah Anda yakin ingin menghapus kelompok promo "${gName}"?`)) return;
+    if (!(await confirmDialog(`Apakah Anda yakin ingin menghapus kelompok promo "${gName}"?`))) return;
     try {
       const res = await fetch(`/api/promos/${group.id}`, { method: 'DELETE' });
       const json = await res.json();
@@ -453,6 +455,7 @@ export default function MasterPromoManager({ isDark }: MasterPromoManagerProps) 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+      {confirmDialogEl}
       {/* 🔔 FLOATING TOAST NOTIFICATIONS */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
