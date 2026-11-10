@@ -57,7 +57,6 @@ export const MODULE_LABEL_MAP: Record<string, { label: string; group: string }> 
   'sales-sync-stok': { label: 'Sales: Sync Stock', group: '📊 Sales' },
   'sales-monitoring': { label: 'Sales: Sales Monitoring', group: '📊 Sales' },
   'laporan-penjualan': { label: 'Report: Laporan Penjualan', group: '📑 Report' },
-  'user-management': { label: 'Admin: User ERP & Hak Akses', group: '🛡️ Admin System' },
 };
 
 interface UserAccessManagerProps {

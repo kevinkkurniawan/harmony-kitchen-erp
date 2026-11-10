@@ -5,7 +5,7 @@ import { SessionUser } from '@/lib/session';
 export const ERP_MODULE_CODES = [
   'memo-sync-stok', 'stok-opname', 'master-barang', 'inventory-stok', 'master-promo',
   'master-supplier', 'penerimaan-barang', 'penerimaan-barang-harga', 'sales-sync-stok',
-  'sales-monitoring', 'laporan-penjualan', 'user-management',
+  'sales-monitoring', 'laporan-penjualan',
 ] as const;
 
 export interface StoredPermission {

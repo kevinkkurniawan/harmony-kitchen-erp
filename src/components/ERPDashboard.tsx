@@ -386,7 +386,8 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
             )}
 
             {/* ADMIN EXCLUSIVE TAB: USER ERP MANAGEMENT */}
-            {canView('user-management') && (
+            {/* Only Admin manages ERP users and access rights */}
+            {isAdmin && (
               <div className="pt-2">
                 <div className="px-3.5 pt-2 pb-1 text-[11px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -426,7 +427,7 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
           {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} canViewPrice={canViewHpp} />}
 
-          {activeTab === 'user-management' && <UserAccessManager isDark={isDark} />}
+          {activeTab === 'user-management' && isAdmin && <UserAccessManager isDark={isDark} />}
         </main>
       </div>
 

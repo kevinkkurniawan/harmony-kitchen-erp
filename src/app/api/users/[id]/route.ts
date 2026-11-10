@@ -5,6 +5,10 @@ import { getCurrentUser } from '@/lib/session';
 import { recordAuditEvent } from '@/lib/audit-event';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || currentUser.userLevel !== 'Admin') {
+    return NextResponse.json({ success: false, error: 'Hanya Admin yang dapat melihat data user.' }, { status: 403 });
+  }
   try {
     const { id } = await params;
     const user = await prisma.m_user.findUnique({ where: { id: Number(id) } });

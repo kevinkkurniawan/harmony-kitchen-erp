@@ -5,6 +5,10 @@ import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
 
 export async function GET(req: Request) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser || currentUser.userLevel !== 'Admin') {
+    return NextResponse.json({ success: false, error: 'Hanya Admin yang dapat melihat daftar user.' }, { status: 403 });
+  }
   try {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
