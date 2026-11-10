@@ -10,7 +10,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params;
     const headerId = Number(id);
-    const mayViewHpp = canUserViewHpp(await getCurrentUser());
+    const user = await getCurrentUser();
+    if (!user) return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
+    const mayViewHpp = canUserViewHpp(user);
 
     const header = await prisma.t_salesposheader.findUnique({
       where: { id: headerId },

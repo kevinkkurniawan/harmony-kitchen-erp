@@ -412,7 +412,7 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} />}
           {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} />}
-          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
+          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} />}
           {activeTab === 'cetak-barcode' && <BarcodePrintManager isDark={isDark} />}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}
@@ -420,7 +420,7 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
           {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
           {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} canViewPrice={hasPermission('penerimaan-barang', 'canViewPrice')} />}
-          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
+          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} canViewPrice={canViewHpp} />}
 
           {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} canViewPrice={hasPermission('sales-monitoring', 'canViewPrice')} />}
 

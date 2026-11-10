@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { getCurrentUser } from '@/lib/session';
+import { canUserViewHpp } from '@/lib/capabilities';
 
 export async function GET(req: Request) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ success: false, error: 'Sesi login diperlukan.' }, { status: 401 });
+    // Purchase prices become HPP, so Admin-only
+    const canViewPrice = canUserViewHpp(user);
+
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
@@ -45,9 +52,9 @@ export async function GET(req: Request) {
       supplier_name: supplierMap.get(po.supplierid) || 'Unknown Supplier',
       delivery_date: po.deliverydate,
       description: po.description || '',
-      subtotal: Number(po.grandtotal || 0) - Number(po.taxvalue || 0),
-      tax: Number(po.taxvalue || 0),
-      grand_total: Number(po.grandtotal || 0),
+      subtotal: canViewPrice ? Number(po.grandtotal || 0) - Number(po.taxvalue || 0) : null,
+      tax: canViewPrice ? Number(po.taxvalue || 0) : null,
+      grand_total: canViewPrice ? Number(po.grandtotal || 0) : null,
       status: po.status ? 'Approved' : 'Draft',
       created_at: po.createddate,
       items: po.t_purchaseorderdetail.map((d: any) => {
@@ -58,8 +65,8 @@ export async function GET(req: Request) {
           inventory_no: inv?.inventoryno || '',
           inventory_name: inv?.inventoryname || '',
           qty: Number(d.qty),
-          unit_price: Number(d.price || 0),
-          subtotal: Number(d.qty) * Number(d.price || 0),
+          unit_price: canViewPrice ? Number(d.price || 0) : null,
+          subtotal: canViewPrice ? Number(d.qty) * Number(d.price || 0) : null,
         };
       }),
     }));

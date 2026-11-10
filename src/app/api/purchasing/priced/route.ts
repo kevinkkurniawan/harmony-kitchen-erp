@@ -3,9 +3,15 @@ import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { parseColumnFilters } from '@/lib/column-filter';
 import { apiError } from '@/lib/api-response';
+import { getCurrentUser } from '@/lib/session';
+import { canUserViewHpp } from '@/lib/capabilities';
 
 export async function GET(req: Request) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
+    const canViewPrice = canUserViewHpp(user);
+
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q') || '';
     const paginationParams = getPaginationParams(req, 50);
@@ -110,11 +116,11 @@ export async function GET(req: Request) {
         disc_percentage: Number(mr.discpercentage || 0),
         ppnPercentage: Number(mr.ppnpercentage || 0),
         ppn_percentage: Number(mr.ppnpercentage || 0),
-        subtotal: Number(mr.grandtotal || 0) - Number(mr.ppnvalue || 0),
-        tax: Number(mr.ppnvalue || 0),
-        ppnValue: Number(mr.ppnvalue || 0),
-        grandTotal: Number(mr.grandtotal || 0),
-        grand_total: Number(mr.grandtotal || 0),
+        subtotal: canViewPrice ? Number(mr.grandtotal || 0) - Number(mr.ppnvalue || 0) : null,
+        tax: canViewPrice ? Number(mr.ppnvalue || 0) : null,
+        ppnValue: canViewPrice ? Number(mr.ppnvalue || 0) : null,
+        grandTotal: canViewPrice ? Number(mr.grandtotal || 0) : null,
+        grand_total: canViewPrice ? Number(mr.grandtotal || 0) : null,
         totalQty,
         total_qty: totalQty,
         items: mr.t_materialreceivedetail.map((d: any) => {
@@ -130,11 +136,11 @@ export async function GET(req: Request) {
             uomName: inv?.m_uom?.uomname || inv?.m_uom?.uomcode || 'PCS',
             uom_name: inv?.m_uom?.uomname || inv?.m_uom?.uomcode || 'PCS',
             qty: Number(d.qty || 0),
-            price: Number(d.price || 0),
-            unit_price: Number(d.price || 0),
+            price: canViewPrice ? Number(d.price || 0) : null,
+            unit_price: canViewPrice ? Number(d.price || 0) : null,
             discPercentage: Number(d.discpersen1 || 0),
             disc_percentage: Number(d.discpersen1 || 0),
-            subtotal: Number(d.subtotal || 0),
+            subtotal: canViewPrice ? Number(d.subtotal || 0) : null,
             description: d.description || '',
           };
         }),

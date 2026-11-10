@@ -46,7 +46,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       due_date: mr.duedate ? new Date(mr.duedate).toISOString().slice(0, 10) : '-',
       down_payment: Number(mr.downpayment || 0),
       disc_percentage: Number(mr.discpercentage || 0),
-      disc_value: Number(mr.discvalue || 0),
+      disc_value: canViewPrice ? Number(mr.discvalue || 0) : null,
       ppn_percentage: Number(mr.ppnpercentage || 0),
       description: mr.description || '-',
       ...(canViewPrice

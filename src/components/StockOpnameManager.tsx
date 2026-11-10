@@ -36,7 +36,8 @@ export interface OpnameEntry {
   barcode: string;
   inventoryName: string;
   qty: number;
-  price: number;
+  // Undefined when the server hides it (non-admin); saving then lets the server pick the price
+  price?: number;
   description: string;
 }
 
@@ -79,9 +80,12 @@ interface Warehouse {
 
 interface StockOpnameManagerProps {
   isDark: boolean;
+  canViewPrice?: boolean;
 }
 
-export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) {
+export default function StockOpnameManager({ isDark, canViewPrice = false }: StockOpnameManagerProps) {
+  // Opname prices can be HPP, so non-admins see them masked
+  const formatMoney = (value: number) => (canViewPrice ? `Rp ${value.toLocaleString('id-ID')}` : 'Rp ••••••');
   // Master & Lookup States
   const [inventoryList, setInventoryList] = useState<InventoryLookupItem[]>([]);
   const [historyList, setHistoryList] = useState<OpnameHistoryHeader[]>([]);
@@ -477,7 +481,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
       return;
     }
 
-    const headers = ['No', 'No. Barang / SKU', 'Barcode', 'Nama Barang', 'Qty', 'Harga Satuan', 'Total Nilai', 'Catatan'];
+    const headers = ['No', 'No. Barang / SKU', 'Barcode', 'Nama Barang', 'Qty', ...(canViewPrice ? ['Harga Satuan', 'Total Nilai'] : []), 'Catatan'];
     const rows = opnameItems.map((item, idx) => {
       const totalItemValue = item.qty * (item.price || 0);
       return [
@@ -486,8 +490,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
         `"${item.barcode}"`,
         `"${item.inventoryName.replace(/"/g, '""')}"`,
         item.qty,
-        item.price || 0,
-        totalItemValue,
+        ...(canViewPrice ? [item.price || 0, totalItemValue] : []),
         `"${(item.description || '').replace(/"/g, '""')}"`,
       ].join(',');
     });
@@ -557,7 +560,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             barcode: d.barcode,
             inventoryName: d.inventoryName || d.inventory_name,
             qty: d.qty !== undefined ? Number(d.qty) : Number(d.physical_qty ?? d.physicalQty ?? 0),
-            price: Number(d.price || 0),
+            price: d.price === null || d.price === undefined ? undefined : Number(d.price),
             description: d.description || d.notes || 'Stok Opname',
           }))
         );
@@ -714,7 +717,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           barcode: it.barcode,
           inventoryName: it.inventoryName,
           qty: Number(it.qty ?? 0),
-          price: Number(it.price ?? 0),
+          price: it.price === null || it.price === undefined ? undefined : Number(it.price),
           description: it.description || 'Draft Opname',
         }))
       );
@@ -1155,7 +1158,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
           <div>
             <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Nilai Opname</div>
             <div className={`text-sm font-black font-mono ${isDark ? 'text-amber-300' : 'text-amber-950'}`}>
-              Rp {stats.totalValue.toLocaleString('id-ID')}
+              {formatMoney(stats.totalValue)}
             </div>
           </div>
         </div>
@@ -1535,7 +1538,7 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
             </div>
 
             <div className={`text-xs font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Total Nilai Opname: <strong className="text-emerald-400 font-mono text-sm">Rp {stats.totalValue.toLocaleString('id-ID')}</strong>
+              Total Nilai Opname: <strong className="text-emerald-400 font-mono text-sm">{formatMoney(stats.totalValue)}</strong>
             </div>
           </div>
         </div>
@@ -1623,9 +1626,9 @@ export default function StockOpnameManager({ isDark }: StockOpnameManagerProps) 
                         <td className="px-4 py-2 font-mono font-bold text-slate-400">{item.inventoryNo}</td>
                         <td className="px-4 py-2 font-bold text-amber-500">{item.inventoryName}</td>
                         <td className="px-4 py-2 text-center font-mono font-black">{opnameMode === 'ADJUST' && item.qty > 0 ? `+${item.qty}` : item.qty}</td>
-                        <td className="px-4 py-2 text-right font-mono">Rp {(item.price || 0).toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-2 text-right font-mono">{formatMoney(item.price || 0)}</td>
                         <td className="px-4 py-2 text-right font-mono font-bold text-emerald-400">
-                          Rp {(item.qty * (item.price || 0)).toLocaleString('id-ID')}
+                          {formatMoney(item.qty * (item.price || 0))}
                         </td>
                       </tr>
                     ))}
