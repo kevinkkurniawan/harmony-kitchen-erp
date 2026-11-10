@@ -5,7 +5,7 @@ import { getCurrentUser } from '@/lib/session';
 import { canUserViewHpp } from '@/lib/capabilities';
 import { dateColumnDay, formatBangkokDate, formatBangkokMonth, getTodayBangkok } from '@/lib/date-utils';
 import { parseColumnFilters } from '@/lib/column-filter';
-import { isUnpaidLegacySale, normalizeSale, type NormalizedSale } from '@/lib/sales-normalize';
+import { isLegacySale, normalizeSaleTotals, type NormalizedSale, type SaleTotals } from '@/lib/sales-normalize';
 
 export async function GET(request: Request) {
   try {
@@ -64,40 +64,24 @@ export async function GET(request: Request) {
     const allSales = await prisma.t_salesposheader.findMany({
       where,
       orderBy: { salesposdate: 'desc' },
+      select: { id: true, salesposdate: true, grandtotal: true, paymenttypecode: true, status: true, manualdiscountamount: true },
     });
 
-    // A long period covers tens of thousands of sales; query their lines and payments in chunks
-    // to stay under Postgres's bind-parameter limit.
-    const headerIds = allSales.map((s: any) => Number(s.id));
-    const idChunks: number[][] = [];
-    for (let i = 0; i < headerIds.length; i += 10000) idChunks.push(headerIds.slice(i, i + 10000));
-    const [details, payments] = await Promise.all([
-      Promise.all(idChunks.map((ids) => prisma.t_salesposdetail.findMany({ where: { salesposheaderid: { in: ids } } }))).then((r) => r.flat()),
-      Promise.all(idChunks.map((ids) => prisma.t_salespayment.findMany({ where: { salesposid: { in: ids } } }))).then((r) => r.flat()),
-    ]);
-
-    const detailsByHeader = new Map<number, any[]>();
-    details.forEach((d: any) => {
-      const hid = Number(d.salesposheaderid);
-      if (!detailsByHeader.has(hid)) detailsByHeader.set(hid, []);
-      detailsByHeader.get(hid)!.push(d);
-    });
-    const paymentsByHeader = new Map<number, any[]>();
-    payments.forEach((pm: any) => {
-      const hid = Number(pm.salesposid);
-      if (!paymentsByHeader.has(hid)) paymentsByHeader.set(hid, []);
-      paymentsByHeader.get(hid)!.push(pm);
-    });
+    // Sum each sale's lines and payments in the database instead of loading every row (a year is ~35k lines).
+    // The ids go as one array parameter, so no chunking for Postgres's bind-parameter limit.
+    const headerIds = allSales.map((s) => Number(s.id));
+    const totalsById = await loadSaleTotals(headerIds);
 
     // Legacy sales without a payment were never paid; the old app leaves them out of its totals too
-    const paidSales = allSales.filter((s: any) => !isUnpaidLegacySale(s, paymentsByHeader.get(Number(s.id)) || []));
+    const emptyTotals: SaleTotals = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: 0, paidValue: 0, payDisc: 0, firstPayTypeId: null };
+    const paidSales = allSales.filter((s) => {
+      const t = totalsById.get(Number(s.id)) ?? emptyTotals;
+      return !(isLegacySale(s) && t.payCount === 0);
+    });
 
     const normalized = new Map<number, NormalizedSale>();
-    paidSales.forEach((s: any) => {
-      normalized.set(
-        Number(s.id),
-        normalizeSale(s, detailsByHeader.get(Number(s.id)) || [], paymentsByHeader.get(Number(s.id)) || [])
-      );
+    paidSales.forEach((s) => {
+      normalized.set(Number(s.id), normalizeSaleTotals(s, totalsById.get(Number(s.id)) ?? emptyTotals));
     });
 
     const pmFilter = paymentMethodParam && paymentMethodParam !== 'All' ? paymentMethodParam.toUpperCase() : null;
@@ -207,38 +191,21 @@ export async function GET(request: Request) {
 
     // 3. ITEM SALES REPORT
     if (type === 'items') {
-      const itemMap = new Map<number, {
-        inventoryId: number;
-        totalQtySold: number;
-        totalRevenue: number;
-        totalCost: number;
-      }>();
-
-      sales.forEach((s: any) => {
-        const s_details = detailsByHeader.get(Number(s.id)) || [];
-        s_details.forEach((d: any) => {
-          const invId = Number(d.inventoryid);
-          if (!invId) return;
-
-          if (!itemMap.has(invId)) {
-            itemMap.set(invId, {
-              inventoryId: invId,
-              totalQtySold: 0,
-              totalRevenue: 0,
-              totalCost: 0,
-            });
-          }
-
-          const entry = itemMap.get(invId)!;
-          const qty = Number(d.qty || 0);
-          const revenue = Number(d.subtotal || 0);
-          const lineHpp = Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
-
-          entry.totalQtySold += qty;
-          entry.totalRevenue += revenue;
-          entry.totalCost += lineHpp;
-        });
-      });
+      const saleIds = sales.map((s) => Number(s.id));
+      const itemRows = saleIds.length === 0 ? [] : await prisma.$queryRaw<{ inventoryid: number; qty: unknown; revenue: unknown; cost: unknown }[]>`
+        SELECT d.inventoryid,
+               SUM(COALESCE(d.qty, 0)) AS qty,
+               SUM(COALESCE(d.subtotal, 0)) AS revenue,
+               SUM(COALESCE(d.totalhpp, COALESCE(d.unithpp, 0) * COALESCE(d.qty, 0))) AS cost
+        FROM t_salesposdetail d
+        WHERE d.salesposheaderid = ANY(${saleIds}::int[]) AND d.inventoryid IS NOT NULL AND d.inventoryid <> 0
+        GROUP BY d.inventoryid`;
+      const itemMap = new Map(itemRows.map((r) => [Number(r.inventoryid), {
+        inventoryId: Number(r.inventoryid),
+        totalQtySold: Number(r.qty),
+        totalRevenue: Number(r.revenue),
+        totalCost: Number(r.cost),
+      }]));
 
       const invIds = Array.from(itemMap.keys());
       const inventories = await prisma.m_inventory.findMany({
@@ -320,4 +287,56 @@ export async function GET(request: Request) {
     console.error('Error generating sales report:', err);
     return apiError('INTERNAL_ERROR', err.message || 'Gagal membuat laporan penjualan', 500);
   }
+}
+
+/**
+ * Per-sale sums of lines and payments, matching saleTotals() in sales-normalize.
+ * Line HPP falls back to unithpp * qty only when totalhpp is NULL (a stored 0 stays 0), like the JS version.
+ */
+async function loadSaleTotals(headerIds: number[]): Promise<Map<number, SaleTotals>> {
+  const totals = new Map<number, SaleTotals>();
+  if (headerIds.length === 0) return totals;
+  const [lines, pays] = await Promise.all([
+    prisma.$queryRaw<{ id: number; linedisc: unknown; linetotal: unknown; items: unknown; hpp: unknown }[]>`
+      SELECT d.salesposheaderid AS id,
+             SUM(COALESCE(d.disc, 0) + COALESCE(d.disc2, 0) + COALESCE(d.disc3, 0)) AS linedisc,
+             SUM(COALESCE(d.subtotal, COALESCE(d.price, 0) * COALESCE(d.qty, 0))) AS linetotal,
+             SUM(COALESCE(d.qty, 0)) AS items,
+             SUM(COALESCE(d.totalhpp, COALESCE(d.unithpp, 0) * COALESCE(d.qty, 0))) AS hpp
+      FROM t_salesposdetail d
+      WHERE d.salesposheaderid = ANY(${headerIds}::int[])
+      GROUP BY d.salesposheaderid`,
+    prisma.$queryRaw<{ id: number; paycount: unknown; paidvalue: unknown; paydisc: unknown; firstpaytypeid: number | null }[]>`
+      SELECT p.salesposid AS id,
+             COUNT(*) AS paycount,
+             SUM(COALESCE(p.transactionvalue, 0)) AS paidvalue,
+             SUM(COALESCE(p.voucher, 0) + COALESCE(p.discount, 0)) AS paydisc,
+             MIN(p.paymenttypeid) AS firstpaytypeid
+      FROM t_salespayment p
+      WHERE p.salesposid = ANY(${headerIds}::int[])
+      GROUP BY p.salesposid`,
+  ]);
+  const get = (id: number) => {
+    let t = totals.get(id);
+    if (!t) {
+      t = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: 0, paidValue: 0, payDisc: 0, firstPayTypeId: null };
+      totals.set(id, t);
+    }
+    return t;
+  };
+  lines.forEach((r) => {
+    const t = get(Number(r.id));
+    t.lineDisc = Number(r.linedisc);
+    t.lineTotal = Number(r.linetotal);
+    t.items = Number(r.items);
+    t.hpp = Number(r.hpp);
+  });
+  pays.forEach((r) => {
+    const t = get(Number(r.id));
+    t.payCount = Number(r.paycount);
+    t.paidValue = Number(r.paidvalue);
+    t.payDisc = Number(r.paydisc);
+    t.firstPayTypeId = r.firstpaytypeid === null ? null : Number(r.firstpaytypeid);
+  });
+  return totals;
 }

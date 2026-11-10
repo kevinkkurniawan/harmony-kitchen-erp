@@ -74,37 +74,62 @@ export function payGroupFromText(text: string): PayGroup {
  * in t_salespayment, so reading the header alone reports them as Rp 0.
  */
 export function normalizeSale(header: any, details: any[], payments: any[]): NormalizedSale {
-  let disc = Number(header.manualdiscountamount || 0);
-  let items = 0;
-  let hpp = 0;
-  let lineTotal = 0;
-  details.forEach((d: any) => {
-    disc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
-    const qty = Number(d.qty || 0);
-    items += qty;
-    lineTotal += Number(d.subtotal ?? Number(d.price || 0) * qty);
-    hpp += Number(d.totalhpp || (Number(d.unithpp || d.hpp || 0) * qty));
-  });
+  return normalizeSaleTotals(header, saleTotals(details, payments));
+}
 
+/** Per-sale sums of its lines and payments: what normalizeSale needs, also computable in SQL (see reports). */
+export interface SaleTotals {
+  lineDisc: number;
+  lineTotal: number;
+  items: number;
+  hpp: number;
+  payCount: number;
+  paidValue: number;
+  /** voucher + discount on the payment rows (the legacy bill discount) */
+  payDisc: number;
+  firstPayTypeId: number | null;
+}
+
+type Num = number | string | { toString(): string } | null | undefined;
+type LineLike = { disc?: Num; disc2?: Num; disc3?: Num; qty?: Num; subtotal?: Num; price?: Num; totalhpp?: Num; unithpp?: Num };
+type PaymentLike = { transactionvalue?: Num; voucher?: Num; discount?: Num; paymenttypeid?: Num };
+type SaleHeaderLike = { status?: string | null; grandtotal?: Num; paymenttypecode?: string | null; manualdiscountamount?: Num };
+
+export function saleTotals(details: LineLike[], payments: PaymentLike[]): SaleTotals {
+  const t: SaleTotals = { lineDisc: 0, lineTotal: 0, items: 0, hpp: 0, payCount: payments.length, paidValue: 0, payDisc: 0, firstPayTypeId: null };
+  details.forEach((d) => {
+    t.lineDisc += Number(d.disc || 0) + Number(d.disc2 || 0) + Number(d.disc3 || 0);
+    const qty = Number(d.qty || 0);
+    t.items += qty;
+    t.lineTotal += Number(d.subtotal ?? Number(d.price || 0) * qty);
+    t.hpp += Number(d.totalhpp || (Number(d.unithpp || 0) * qty));
+  });
+  payments.forEach((pm) => {
+    t.paidValue += Number(pm.transactionvalue || 0);
+    t.payDisc += Number(pm.voucher || 0) + Number(pm.discount || 0);
+  });
+  if (payments.length > 0) t.firstPayTypeId = Number(payments[0].paymenttypeid);
+  return t;
+}
+
+export function normalizeSaleTotals(header: SaleHeaderLike, t: SaleTotals): NormalizedSale {
   // Legacy transactionvalue is before the bill discount (voucher + discount), so the paid net subtracts it.
   // Only legacy rows: the new POS stores marketplace payments in voucher.
-  const billDisc = isLegacySale(header)
-    ? payments.reduce((sum, pm) => sum + Number(pm.voucher || 0) + Number(pm.discount || 0), 0)
-    : 0;
-  disc += billDisc;
-  const paidTotal = payments.reduce((sum, pm) => sum + Number(pm.transactionvalue || 0), 0) - billDisc;
-  const net = Number(header.grandtotal) || paidTotal || lineTotal;
+  const billDisc = isLegacySale(header) ? t.payDisc : 0;
+  const disc = Number(header.manualdiscountamount || 0) + t.lineDisc + billDisc;
+  const paidTotal = t.paidValue - billDisc;
+  const net = Number(header.grandtotal) || paidTotal || t.lineTotal;
 
   let payGroup: PayGroup;
   if (header.paymenttypecode) {
     payGroup = payGroupFromText(header.paymenttypecode);
-  } else if (payments.length > 0) {
-    payGroup = LEGACY_PAYMENT_GROUP[Number(payments[0].paymenttypeid)] ?? 'OTHER';
+  } else if (t.payCount > 0) {
+    payGroup = LEGACY_PAYMENT_GROUP[Number(t.firstPayTypeId)] ?? 'OTHER';
   } else {
     payGroup = 'CASH';
   }
 
-  return { net, disc, items, hpp, payGroup };
+  return { net, disc, items: t.items, hpp: t.hpp, payGroup };
 }
 
 /** Legacy sales (synced from the old POS) have no status; every new-app sale has one. */

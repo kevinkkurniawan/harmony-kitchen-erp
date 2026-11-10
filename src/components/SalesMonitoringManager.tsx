@@ -123,6 +123,9 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
   // Print Modal
   const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
+  const [receiptLoadingId, setReceiptLoadingId] = useState<number | null>(null);
+  // Right-click menu like the legacy Bill Opname grid: Reprint / Void / Unvoid
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: MonitoringRow } | null>(null);
   const [printData, setPrintData] = useState<{ header: PosHeader; items: PosItemDetail[] } | null>(null);
 
   // Payment Correction Modal
@@ -184,6 +187,20 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
 
   const reloadData = () => setReloadKey((k) => k + 1);
 
+  useEffect(() => {
+    if (!rowMenu) return;
+    const close = () => setRowMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [rowMenu]);
+
   const sortedRows = useMemo(() => {
     if (!sortField) return transactions;
     return [...transactions].sort((a, b) => {
@@ -208,7 +225,10 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   }, [transactions]);
 
   // View Single POS Invoice Detail
+  // The receipt is fetched on demand; receiptLoadingId shows feedback and blocks repeat clicks meanwhile
   const handleViewReceipt = async (id: number) => {
+    if (receiptLoadingId !== null) return;
+    setReceiptLoadingId(id);
     try {
       const res = await fetch(`/api/sales/monitoring/${id}`);
       const json = await res.json();
@@ -220,6 +240,9 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
       }
     } catch (err) {
       console.error('Error fetching receipt detail:', err);
+      addToast('Gagal memuat detail nota', 'error');
+    } finally {
+      setReceiptLoadingId(null);
     }
   };
 
@@ -441,6 +464,11 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                     key={row.id}
                     tabIndex={0}
                     onDoubleClick={() => handleViewReceipt(row.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      // Keep the menu on screen near the right / bottom edge
+                      setRowMenu({ x: Math.min(e.clientX, window.innerWidth - 180), y: Math.min(e.clientY, window.innerHeight - 120), row });
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -475,7 +503,9 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
                           className="p-1 rounded-lg hover:bg-indigo-500/20 text-indigo-400 cursor-pointer"
                           title="Lihat & Cetak Struk"
                         >
-                          <Eye className="w-4 h-4" />
+                          {receiptLoadingId === row.id
+                            ? <RefreshCw className="w-4 h-4 animate-spin" />
+                            : <Eye className="w-4 h-4" />}
                         </button>
                         {/* An unpaid sale has no payment to correct */}
                         {!row.isUnpaid && (
@@ -533,6 +563,55 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
           </table>
         </div>
       </div>
+
+      {rowMenu && (
+        <div
+          style={{ top: rowMenu.y, left: rowMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+          className={`fixed z-50 w-44 rounded-xl border shadow-2xl py-1 text-xs font-bold ${
+            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-900'
+          }`}
+        >
+          <button
+            onClick={() => { const r = rowMenu.row; setRowMenu(null); handleViewReceipt(r.id); }}
+            className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-indigo-500 hover:text-white cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" /><span>Reprint</span>
+          </button>
+          <button
+            onClick={() => {
+              const r = rowMenu.row; setRowMenu(null);
+              if (r.isVoid) addToast('Transaksi Sudah dalam kondisi Void atau batal', 'info');
+              else handleOpenVoidModal(r, 'VOID');
+            }}
+            className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-500 hover:text-white cursor-pointer"
+          >
+            <Ban className="w-3.5 h-3.5" /><span>Void</span>
+          </button>
+          <button
+            onClick={() => {
+              const r = rowMenu.row; setRowMenu(null);
+              if (!r.isVoid) addToast('Transaksi Sudah dalam kondisi Unvoid atau Aktif', 'info');
+              else handleOpenVoidModal(r, 'UNVOID');
+            }}
+            className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-emerald-500 hover:text-white cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /><span>Unvoid</span>
+          </button>
+        </div>
+      )}
+
+      {/* Feedback while a receipt loads */}
+      {receiptLoadingId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 pointer-events-none">
+          <div className={`px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2 ${
+            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'
+          }`}>
+            <RefreshCw className="w-4 h-4 animate-spin text-indigo-500" />
+            <span>Memuat struk...</span>
+          </div>
+        </div>
+      )}
 
       {/* 🖨️ PRINTABLE POS RECEIPT STRUK MODAL */}
       {isPrintModalOpen && printData && (
