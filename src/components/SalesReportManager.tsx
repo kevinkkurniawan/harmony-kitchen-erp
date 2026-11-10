@@ -77,7 +77,7 @@ interface SalesReportManagerProps {
   isDark: boolean;
 }
 
-export default function SalesReportManager({ isDark }: SalesReportManagerProps) {
+export default function SalesReportManager({ isDark, canViewPrice = false }: SalesReportManagerProps) {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly' | 'items' | 'summary'>('daily');
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('All');
   // Report period, default the last 30 days (the API's own default)
@@ -294,7 +294,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
       `}</style>
 
       {/* 📈 KPI STATS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${canViewPrice ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         {/* Total Omset Bersih */}
         <div
           className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
@@ -339,27 +339,29 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
           </div>
         </div>
 
-        {/* Total Profit Margin */}
-        <div
-          className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
-            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
-          }`}
-        >
-          <div className="p-3 rounded-xl bg-purple-500/10 text-purple-500 font-bold">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-          <div>
-            <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-              Profit / Margin Keuntungan
-            </span>
-            <div className="text-lg font-black text-purple-400 mt-0.5">
-              {formatIDR(summaryData?.profit || 0)}
+        {/* Total Profit Margin (Admin only) */}
+        {canViewPrice && (
+          <div
+            className={`p-4 rounded-2xl border shadow-md flex items-center gap-4 ${
+              isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-300'
+            }`}
+          >
+            <div className="p-3 rounded-xl bg-purple-500/10 text-purple-500 font-bold">
+              <TrendingUp className="w-6 h-6" />
             </div>
-            <span className="text-[10px] text-purple-400 font-semibold">
-              Margin: {summaryData?.profitMarginPct || 0}%
-            </span>
+            <div>
+              <span className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                Profit / Margin Keuntungan
+              </span>
+              <div className="text-lg font-black text-purple-400 mt-0.5">
+                {formatIDR(summaryData?.profit || 0)}
+              </div>
+              <span className="text-[10px] text-purple-400 font-semibold">
+                Margin: {summaryData?.profitMarginPct || 0}%
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Payment Breakdown (QRIS & Cash) */}
         <div
@@ -435,7 +437,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
             }`}
           >
             <PieChart className="w-3.5 h-3.5" />
-            <span>Summary & Profit (Rpt_Summary)</span>
+            <span>{canViewPrice ? 'Summary & Profit (Rpt_Summary)' : 'Summary (Rpt_Summary)'}</span>
           </button>
         </div>
 
@@ -642,13 +644,15 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                   <th onClick={() => handleSort('totalQtySold')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-center"><span>Total Qty Terjual</span>{sortField === 'totalQtySold' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                   <th onClick={() => handleSort('avgUnitPrice')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Harga Jual Rata-rata</span>{sortField === 'avgUnitPrice' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
                   <th onClick={() => handleSort('totalRevenue')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Total Subtotal Revenue</span>{sortField === 'totalRevenue' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
-                  <th onClick={() => handleSort('profit')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Estimasi Profit</span>{sortField === 'profit' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  {canViewPrice && (
+                    <th onClick={() => handleSort('profit')} className="py-1.5 px-2 cursor-pointer hover:text-amber-400 transition-colors"><div className="flex items-center gap-1 justify-end"><span>Estimasi Profit</span>{sortField === 'profit' && (sortOrder === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-amber-400" /> : <ChevronDown className="w-3.5 h-3.5 text-amber-400" />)}</div></th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/40 text-xs">
                 {itemData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className={`py-12 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    <td colSpan={canViewPrice ? 6 : 5} className={`py-12 text-center font-medium ${isDark ? "text-slate-400" : "text-slate-600"}`}>
                       Belum ada data penjualan per barang.
                     </td>
                   </tr>
@@ -675,9 +679,11 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                       <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
                         {formatIDR(row.totalRevenue)}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-purple-400">
-                        {formatIDR(row.profit)}
-                      </td>
+                      {canViewPrice && (
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-purple-400">
+                          {formatIDR(row.profit)}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -689,7 +695,7 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
         {/* TAB 4: SUMMARY & PROFIT REPORT */}
         {activeTab === 'summary' && summaryData && (
           <div className="p-6 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className={`grid grid-cols-1 gap-6 ${canViewPrice ? 'md:grid-cols-2' : ''}`}>
               {/* Gross vs Net Revenue */}
               <div
                 className={`p-5 rounded-2xl border ${
@@ -724,35 +730,37 @@ export default function SalesReportManager({ isDark }: SalesReportManagerProps) 
                 </div>
               </div>
 
-              {/* Profit & Margin Breakdown */}
-              <div
-                className={`p-5 rounded-2xl border ${
-                  isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-white border-slate-300'
-                }`}
-              >
-                <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-4 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  Estimasi Margin & Keuntungan
-                </h3>
-                <div className="space-y-3 text-xs">
-                  <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Omset Bersih:</span>
-                    <strong className="font-mono text-emerald-400">{formatIDR(summaryData.netSales)}</strong>
-                  </div>
-                  <div className="flex justify-between py-1.5 border-b border-slate-800/40">
-                    <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Harga Pokok Penjualan (HPP):</span>
-                    <strong className="font-mono text-red-400">-{formatIDR(summaryData.totalCost)}</strong>
-                  </div>
-                  <div className="flex justify-between py-2 text-sm font-black">
-                    <span className="text-purple-400">Laba Bersih (Estimasi Net Profit):</span>
-                    <strong className="font-mono text-purple-400">{formatIDR(summaryData.profit)}</strong>
-                  </div>
-                  <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 flex justify-between items-center text-xs font-bold text-purple-300">
-                    <span>Persentase Margin Profit:</span>
-                    <span className="text-base font-black">{summaryData.profitMarginPct}%</span>
+              {/* Profit & Margin Breakdown (Admin only) */}
+              {canViewPrice && (
+                <div
+                  className={`p-5 rounded-2xl border ${
+                    isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-white border-slate-300'
+                  }`}
+                >
+                  <h3 className="text-xs font-black uppercase tracking-wider text-emerald-400 mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    Estimasi Margin & Keuntungan
+                  </h3>
+                  <div className="space-y-3 text-xs">
+                    <div className="flex justify-between py-1.5 border-b border-slate-800/40">
+                      <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Omset Bersih:</span>
+                      <strong className="font-mono text-emerald-400">{formatIDR(summaryData.netSales)}</strong>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-slate-800/40">
+                      <span className={` ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Harga Pokok Penjualan (HPP):</span>
+                      <strong className="font-mono text-red-400">-{formatIDR(summaryData.totalCost)}</strong>
+                    </div>
+                    <div className="flex justify-between py-2 text-sm font-black">
+                      <span className="text-purple-400">Laba Bersih (Estimasi Net Profit):</span>
+                      <strong className="font-mono text-purple-400">{formatIDR(summaryData.profit)}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 flex justify-between items-center text-xs font-bold text-purple-300">
+                      <span>Persentase Margin Profit:</span>
+                      <span className="text-base font-black">{summaryData.profitMarginPct}%</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}

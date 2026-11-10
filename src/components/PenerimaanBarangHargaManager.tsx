@@ -73,9 +73,12 @@ interface ToastMessage {
 
 interface PenerimaanBarangHargaManagerProps {
   isDark: boolean;
+  canViewPrice?: boolean;
 }
 
-export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBarangHargaManagerProps) {
+export default function PenerimaanBarangHargaManager({ isDark, canViewPrice = false }: PenerimaanBarangHargaManagerProps) {
+  // Saved purchase prices become HPP, so non-admins see them masked
+  const formatMoney = (value: number) => (canViewPrice ? `Rp ${value.toLocaleString('id-ID')}` : 'Rp ••••••');
   // Mode View: 'list' (Daftar Penerimaan) | 'create' (Form Input Baru)
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
 
@@ -298,7 +301,8 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
 
   // Add Product to Receipt Line Items
   const handleAddProductToItems = (prod: ERPProduct, keepSearch = false) => {
-    const initialPrice = prod.priceBuy > 0 ? prod.priceBuy : (prod.hpp > 0 ? prod.hpp : 10000);
+    // Non-admins don't get the last buy price, so they type it from the supplier invoice
+    const initialPrice = canViewPrice ? (prod.priceBuy > 0 ? prod.priceBuy : (prod.hpp > 0 ? prod.hpp : 10000)) : 0;
     setItems((prev) => {
       const existingIndex = prev.findIndex((i) => String(i.inventoryId) === String(prod.id));
       if (existingIndex >= 0) {
@@ -361,6 +365,10 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
   const handleSubmitReceipt = async () => {
     if (items.length === 0) {
       return addToast('Wajib menginput minimal 1 item barang yang diterima', 'warning');
+    }
+    // A zero price would overwrite the item's HPP with 0
+    if (items.some((it) => !(it.price > 0))) {
+      return addToast('Harga beli setiap barang wajib diisi (lebih dari 0)', 'warning');
     }
     setIsSubmitting(true);
     try {
@@ -528,7 +536,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
               <div>
                 <div className={`text-[11px] font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>Total Tagihan Penerimaan</div>
                 <div className={`text-lg font-black ${isDark ? 'text-emerald-300' : 'text-emerald-950'}`}>
-                  Rp {totalSumGrandTotal.toLocaleString('id-ID')}
+                  {formatMoney(totalSumGrandTotal)}
                 </div>
               </div>
             </div>
@@ -687,7 +695,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                         <td className={`py-3.5 px-4 font-mono font-bold ${isDark ? "text-slate-300" : "text-slate-700"}`}>{poNo}</td>
                         <td className={`py-3.5 px-4 font-bold ${isDark ? "text-slate-400" : "text-slate-600"}`}>{payType}</td>
                         <td className="py-3.5 px-4 text-right font-mono font-black text-emerald-400">
-                          Rp {Number(grandTotal).toLocaleString('id-ID')}
+                          {formatMoney(Number(grandTotal))}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           {row.isVoid ? (
@@ -906,7 +914,7 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                     >
                       <div>
                         <div className="font-black text-amber-400">{prod.inventoryName}</div>
-                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo} | Harga Beli: Rp {(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}</div>
+                        <div className={`text-[11px] font-mono ${isDark ? "text-slate-400" : "text-slate-600"}`}>SKU: {prod.inventoryNo}{canViewPrice ? ` | Harga Beli: Rp ${(prod.priceBuy || prod.hpp || 0).toLocaleString('id-ID')}` : ''}</div>
                       </div>
                       <div className="text-right">
                         <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[10px]">
@@ -1212,9 +1220,9 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                       <td className="p-2 font-bold border-r border-slate-300">{it.inventoryName}</td>
                       <td className="p-2 text-center border-r border-slate-300">{it.uomName}</td>
                       <td className="p-2 text-center font-black border-r border-slate-300">{it.qty}</td>
-                      <td className="p-2 text-right font-mono border-r border-slate-300">Rp {(it.price || 0).toLocaleString('id-ID')}</td>
+                      <td className="p-2 text-right font-mono border-r border-slate-300">{formatMoney(it.price || 0)}</td>
                       <td className="p-2 text-center border-r border-slate-300">{it.discPercentage ? `${it.discPercentage}%` : '-'}</td>
-                      <td className="p-2 text-right font-mono font-bold">Rp {(it.subtotal || 0).toLocaleString('id-ID')}</td>
+                      <td className="p-2 text-right font-mono font-bold">{formatMoney(it.subtotal || 0)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1225,15 +1233,15 @@ export default function PenerimaanBarangHargaManager({ isDark }: PenerimaanBaran
                 <div className="w-64 space-y-1.5 border p-4 rounded-xl bg-slate-50">
                   <div className="flex justify-between text-slate-600">
                     <span>Diskon Faktur:</span>
-                    <span>Rp {(printData.header.discValue || 0).toLocaleString('id-ID')}</span>
+                    <span>{formatMoney(printData.header.discValue || 0)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>PPn Pajak ({printData.header.ppnPercentage}%):</span>
-                    <span>Rp {(printData.header.ppnValue || 0).toLocaleString('id-ID')}</span>
+                    <span>{formatMoney(printData.header.ppnValue || 0)}</span>
                   </div>
                   <div className="flex justify-between text-slate-900 font-black text-sm pt-2 border-t border-slate-300">
                     <span>Grand Total:</span>
-                    <span className="text-amber-600">Rp {(printData.header.grandTotal || 0).toLocaleString('id-ID')}</span>
+                    <span className="text-amber-600">{formatMoney(printData.header.grandTotal || 0)}</span>
                   </div>
                 </div>
               </div>

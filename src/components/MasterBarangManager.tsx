@@ -29,6 +29,7 @@ import { ERPProduct } from '@/types/erp';
 import ColumnFilterRow, { columnFilterQuery, type ColumnFilterCell } from '@/components/ColumnFilterRow';
 import { useDebounce } from '@/hooks/useDebounce';
 import { normalizeInventoryName } from '@/lib/inventory-name';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 
 interface LookupItem {
   id: number;
@@ -76,6 +77,7 @@ interface MasterBarangManagerProps {
 }
 
 export default function MasterBarangManager({ isDark, mode = 'master', canViewPrice = false }: MasterBarangManagerProps) {
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
   // Main Data States
   const [products, setProducts] = useState<ERPProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -491,9 +493,9 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
 
   // Delete Item
   const handleDeleteProduct = async (product: ERPProduct) => {
-    if (!confirm(`Hapus barang "${product.inventoryName}"?
+    if (!(await confirmDialog(`Hapus barang "${product.inventoryName}"?
 
-Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar riwayat tetap utuh.`)) return;
+Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar riwayat tetap utuh.`))) return;
     try {
       const res = await fetch(`/api/inventory/${product.id}`, { method: 'DELETE' });
       const json = await res.json();
@@ -878,6 +880,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none relative">
+      {confirmDialogEl}
       {/* 🔔 FLOATING TOAST NOTIFICATION CONTAINER */}
       <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (

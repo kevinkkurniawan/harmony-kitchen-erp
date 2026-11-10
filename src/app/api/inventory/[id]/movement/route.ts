@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getCurrentUser } from '@/lib/session';
+import { canUserViewHpp } from '@/lib/capabilities';
 
 interface LedgerRow {
   source: string;
@@ -25,6 +27,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ success: false, error: 'Sesi login diperlukan.' }, { status: 401 });
+    const mayViewHpp = canUserViewHpp(user);
+
     const p = await params;
     const inventoryId = parseInt(p.id, 10);
     if (isNaN(inventoryId)) {
@@ -100,7 +106,7 @@ export async function GET(
         type: mapInvoiceType(r.type_id),
         qtyIn: Number(r.qty_in),
         qtyOut: Number(r.qty_out),
-        price: Number(r.price),
+        price: mayViewHpp ? Number(r.price) : 0,
         balance,
       };
     });

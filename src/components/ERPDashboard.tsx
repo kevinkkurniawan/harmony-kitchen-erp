@@ -95,7 +95,8 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
   const isDark = theme === 'dark';
   const isAdmin = currentUser?.userLevel === 'Admin';
-  const canViewHpp = isAdmin || userPermissions.find((permission) => permission.moduleCode === 'view-hpp')?.canView === true;
+  // Client rule: only Admin sees HPP, profit and margin
+  const canViewHpp = isAdmin;
 
   if (!isInitialized) {
     return (
@@ -409,9 +410,9 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp || hasPermission('master-barang', 'canViewPrice')} />}
-          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={hasPermission('inventory-stok', 'canViewPrice')} />}
-          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} />}
+          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} />}
+          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} />}
           {activeTab === 'cetak-barcode' && <BarcodePrintManager isDark={isDark} />}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}
@@ -419,11 +420,11 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
           {activeTab === 'master-supplier' && <MasterSupplierManager isDark={isDark} />}
 
           {activeTab === 'penerimaan-barang' && <PenerimaanBarangEkspressManager isDark={isDark} canViewPrice={hasPermission('penerimaan-barang', 'canViewPrice')} />}
-          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} />}
+          {activeTab === 'penerimaan-barang-harga' && <PenerimaanBarangHargaManager isDark={isDark} canViewPrice={canViewHpp} />}
 
           {activeTab === 'sales-monitoring' && <SalesMonitoringManager isDark={isDark} canViewPrice={hasPermission('sales-monitoring', 'canViewPrice')} />}
 
-          {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} canViewPrice={hasPermission('laporan-penjualan', 'canViewPrice')} />}
+          {activeTab === 'laporan-penjualan' && <SalesReportManager isDark={isDark} canViewPrice={canViewHpp} />}
 
           {activeTab === 'user-management' && <UserAccessManager isDark={isDark} />}
         </main>

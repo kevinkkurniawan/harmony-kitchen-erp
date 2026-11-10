@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
-import { hasCapability, requireCapability } from '@/lib/capabilities';
+import { canUserViewHpp, requireCapability } from '@/lib/capabilities';
 import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
 import { parseColumnFilters, buildInventorySearchConditions } from '@/lib/column-filter';
 import { apiError, apiSuccess } from '@/lib/api-response';
@@ -10,7 +10,7 @@ import { apiError, apiSuccess } from '@/lib/api-response';
 export async function GET(req: Request) {
   try {
     const user = await getCurrentUser();
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const { searchParams } = new URL(req.url);
     const paginationParams = getPaginationParams(req, 100, 5000);
@@ -120,7 +120,7 @@ export async function GET(req: Request) {
         description: i.description || '',
         hpp: mayViewHpp ? Number(i.hpp || 0) : 0,
         price: Number(i.price || 0),
-        priceBuy: Number(i.pricebuy || 0),
+        priceBuy: mayViewHpp ? Number(i.pricebuy || 0) : 0,
         grosir1: i.grosir1 ? Number(i.grosir1) : null,
         grosir2: i.grosir2 ? Number(i.grosir2) : null,
         grosir3: i.grosir3 ? Number(i.grosir3) : null,
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
     if ('errorResponse' in auth) return auth.errorResponse;
 
     const user = auth.user;
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const body = await req.json();
     const nameError = validateInventoryName(body.inventoryName || body.inventory_name);
@@ -180,7 +180,7 @@ export async function POST(req: Request) {
       description: body.description || '',
       hpp: mayViewHpp ? (Number(body.hpp) || 0) : 0,
       price: Number(body.price) || 0,
-      pricebuy: Number(body.priceBuy) || 0,
+      pricebuy: mayViewHpp ? (Number(body.priceBuy) || 0) : 0,
       grosir1: body.grosir1 ? Number(body.grosir1) : null,
       grosir2: body.grosir2 ? Number(body.grosir2) : null,
       grosir3: body.grosir3 ? Number(body.grosir3) : null,

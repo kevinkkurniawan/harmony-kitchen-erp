@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
-import { requireCapability } from '@/lib/capabilities';
+import { canUserViewHpp, requireCapability } from '@/lib/capabilities';
 import { saveOpnameTransaction, reverseOpnameTransaction, opnameModeOf } from '@/lib/stock-opname';
 import { apiError, apiSuccess } from '@/lib/api-response';
 
@@ -16,6 +16,8 @@ export async function GET(req: Request) {
     const paginationParams = getPaginationParams(req, 50);
 
     if (noTx) {
+      // Unit price can be the item's HPP (quick opname from Master Barang), so Admin-only
+      const mayViewHpp = canUserViewHpp(await getCurrentUser());
       const mode = opnameModeOf(noTx);
       const header = await prisma.t_opnameheader.findUnique({
         where: { notransaction: noTx },
@@ -72,7 +74,7 @@ export async function GET(req: Request) {
           qty: itemQty,
           systemQty: Number(d.systemqty ?? 0),
           differenceQty: Number(d.differenceqty ?? 0),
-          price: Number(d.unitprice || matched?.price || 0),
+          price: mayViewHpp ? Number(d.unitprice || matched?.price || 0) : null,
           notes: d.notes || '',
           description: d.notes || 'Stok Opname',
         };

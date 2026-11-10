@@ -5,7 +5,7 @@ import { SessionUser } from '@/lib/session';
 export const ERP_MODULE_CODES = [
   'memo-sync-stok', 'stok-opname', 'master-barang', 'inventory-stok', 'master-promo',
   'master-supplier', 'penerimaan-barang', 'penerimaan-barang-harga', 'sales-sync-stok',
-  'sales-monitoring', 'laporan-penjualan', 'user-management', 'view-hpp',
+  'sales-monitoring', 'laporan-penjualan', 'user-management',
 ] as const;
 
 export interface StoredPermission {
@@ -23,7 +23,7 @@ function defaultPermission(user: SessionUser, moduleCode: string): StoredPermiss
   return {
     userId: user.id,
     moduleCode,
-    canView: moduleCode === 'view-hpp' ? isAdmin : true,
+    canView: true,
     canAdd: isAdmin,
     canEdit: isAdmin,
     canDelete: isAdmin,
@@ -48,10 +48,7 @@ export async function getPermissionsForUser(user: SessionUser): Promise<StoredPe
 
 export async function canViewHpp(): Promise<boolean> {
   const user = await getCurrentUserSafely();
-  if (!user) return false;
-  if (user.userLevel === 'Admin') return true;
-  const permissions = await getPermissionsForUser(user);
-  return permissions.find((permission) => permission.moduleCode === 'view-hpp')?.canView === true;
+  return user?.userLevel === 'Admin';
 }
 
 async function getCurrentUserSafely(): Promise<SessionUser | null> {

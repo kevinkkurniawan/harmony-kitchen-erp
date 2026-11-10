@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/session';
-import { hasCapability, requireCapability } from '@/lib/capabilities';
+import { canUserViewHpp, requireCapability } from '@/lib/capabilities';
 import { normalizeInventoryName, validateInventoryName } from '@/lib/inventory-name';
 import { apiError, apiSuccess } from '@/lib/api-response';
 
@@ -9,7 +9,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params;
     const user = await getCurrentUser();
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const i = await prisma.m_inventory.findUnique({
       where: { id: Number(id) },
@@ -35,9 +35,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       brandName: i.m_brand?.brandname || 'General',
       uom_id: i.uomid ? Number(i.uomid) : null,
       uomName: i.m_uom?.uomname || 'Pcs',
-      ...(mayViewHpp ? { hpp: Number(i.hpp || 0) } : {}),
+      ...(mayViewHpp ? { hpp: Number(i.hpp || 0), priceBuy: Number(i.pricebuy || 0) } : {}),
       price: Number(i.price || 0),
-      priceBuy: Number(i.pricebuy || 0),
       grosir1: i.grosir1 ? Number(i.grosir1) : null,
       grosir2: i.grosir2 ? Number(i.grosir2) : null,
       grosir3: i.grosir3 ? Number(i.grosir3) : null,
@@ -60,7 +59,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if ('errorResponse' in auth) return auth.errorResponse;
 
     const user = auth.user;
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const { id } = await params;
     const body = await req.json();
@@ -89,7 +88,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       description: body.description,
       hpp: mayViewHpp && body.hpp !== undefined ? Number(body.hpp) : undefined,
       price: body.price !== undefined ? Number(body.price) : undefined,
-      pricebuy: body.priceBuy !== undefined ? Number(body.priceBuy) : undefined,
+      pricebuy: mayViewHpp && body.priceBuy !== undefined ? Number(body.priceBuy) : undefined,
       grosir1: body.grosir1 !== undefined ? (body.grosir1 ? Number(body.grosir1) : null) : undefined,
       grosir2: body.grosir2 !== undefined ? (body.grosir2 ? Number(body.grosir2) : null) : undefined,
       grosir3: body.grosir3 !== undefined ? (body.grosir3 ? Number(body.grosir3) : null) : undefined,

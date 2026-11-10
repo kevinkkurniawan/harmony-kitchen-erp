@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/session';
-import { hasCapability } from '@/lib/capabilities';
+import { canUserViewHpp } from '@/lib/capabilities';
 import { buildInventorySearchConditions } from '@/lib/column-filter';
 
 export async function GET(req: Request) {
   try {
     const user = await getCurrentUser();
-    const mayViewHpp = await hasCapability(user, 'VIEW_HPP_PROFIT');
+    const mayViewHpp = canUserViewHpp(user);
 
     const { searchParams } = new URL(req.url);
     const warehouseId = searchParams.get('warehouseId');
