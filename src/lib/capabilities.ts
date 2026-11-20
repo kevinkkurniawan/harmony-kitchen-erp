@@ -12,18 +12,6 @@ export interface CapabilityDefinition {
 
 export const SENSITIVE_CAPABILITIES: CapabilityDefinition[] = [
   {
-    code: 'OPNAME_POST',
-    name: 'Posting Stock Opname',
-    description: 'Posting draft opname menjadi pergerakan stok transaksi',
-    category: 'Inventory',
-  },
-  {
-    code: 'OPNAME_REVERSE',
-    name: 'Reversal Stock Opname',
-    description: 'Membatalkan opname yang sudah diposting dengan pergerakan kompensasi',
-    category: 'Inventory',
-  },
-  {
     code: 'INVENTORY_EDIT',
     name: 'Edit Master Barang',
     description: 'Menambah dan mengubah data barang di Master Barang',
@@ -81,6 +69,11 @@ export const SENSITIVE_CAPABILITIES: CapabilityDefinition[] = [
 
 // Client rule: only Admin sees HPP (cost, profit, margin); no per-user grant
 export function canUserViewHpp(user: SessionUser | null): boolean {
+  return user?.userLevel === 'Admin';
+}
+
+// Client doc (Inventory Stock): stock opname / sync / reset is locked to Admin ("admin utama"); no per-user grant
+export function canUserOpname(user: SessionUser | null): boolean {
   return user?.userLevel === 'Admin';
 }
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useConfirmDialog } from '@/components/ConfirmDialog';
 import {
   LegacyWindow, LegacyButton, LegacyGrid, LegacyPager, LegacyInput, GroupBox, fmtN0, fmtDate, lx, type LegacyColumn,
 } from '@/components/legacy';
@@ -67,6 +68,23 @@ export function groupMovementByMonth(rows: MovementRow[]): MonthRow[] {
     });
 }
 
+const STORE_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' });
+const SYNC_LABEL = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * Splits a newest-first stock card at the item's last sync (m_inventory.syncdate, a calendar date):
+ * `synced` = the sync's own opname row (SCO-) and everything older; without that row (legacy sync), every row dated
+ * on or before the sync day. The old Frm_InventoryStock showed synced history as one "Sync On <date>" row.
+ */
+export function splitAtLastSync(rows: MovementRow[], lastSync: string | null): { after: MovementRow[]; synced: MovementRow[] } {
+  if (!lastSync) return { after: rows, synced: [] };
+  const syncDay = lastSync.slice(0, 10);
+  const day = (r: MovementRow) => (r.date ? STORE_DAY.format(new Date(r.date)) : '');
+  let cut = rows.findIndex((r) => r.transactionNo.startsWith('SCO-') && day(r) === syncDay);
+  if (cut < 0) cut = rows.findIndex((r) => day(r) !== '' && day(r) <= syncDay);
+  return cut < 0 ? { after: rows, synced: [] } : { after: rows.slice(0, cut), synced: rows.slice(cut) };
+}
+
 /** Full stock card of one item (limit 5000: enough for the monthly summary to cover every month). */
 export async function fetchMovement(inventoryId: string): Promise<{ rows: MovementRow[]; total: number; lastOpnameDate: string | null }> {
   const json = await fetch(`/api/inventory/${inventoryId}/movement?limit=5000`).then((r) => r.json());
@@ -77,6 +95,8 @@ export async function fetchMovement(inventoryId: string): Promise<{ rows: Moveme
 interface InventoryStockManagerProps {
   canViewPrice?: boolean;
   isDark: boolean;
+  /** Admin only (client doc): the per-row Sync button */
+  canOpname?: boolean;
 }
 
 const PAGE_SIZE = 100;
@@ -107,8 +127,9 @@ function ReportDialog({ title, isDark, onClose, children }: { title: string; isD
 }
 
 /** Legacy Frm_InventoryStock (" Sync Stok dan Laporan"): stock list plus a ".:: Detail" side group with the stock card. */
-export default function InventoryStockManager({ isDark, canViewPrice = false }: InventoryStockManagerProps) {
+export default function InventoryStockManager({ isDark, canViewPrice = false, canOpname = false }: InventoryStockManagerProps) {
   const c = lx(isDark);
+  const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [totalItems, setTotalItems] = useState(0);
@@ -129,7 +150,33 @@ export default function InventoryStockManager({ isDark, canViewPrice = false }: 
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [lastOpnameDate, setLastOpnameDate] = useState<string | null>(null);
   const [isLoadingLedger, setIsLoadingLedger] = useState(false);
-  const months = useMemo(() => groupMovementByMonth(ledger), [ledger]);
+  // History up to the last sync is shown as one "Sync On <date>" row unless the user asks for all of it
+  const [showSyncedHistory, setShowSyncedHistory] = useState(false);
+  const { after: afterSync, synced } = useMemo(() => splitAtLastSync(ledger, lastOpnameDate), [ledger, lastOpnameDate]);
+  const syncLabel = lastOpnameDate ? `Sync On ${SYNC_LABEL.format(new Date(lastOpnameDate.slice(0, 10)))}` : '';
+  const compress = synced.length > 0 && !showSyncedHistory;
+  const ledgerRows = useMemo<MovementRow[]>(() => {
+    if (!compress) return ledger;
+    const sum = synced.reduce((a, r) => ({ qtyIn: a.qtyIn + r.qtyIn, qtyOut: a.qtyOut + r.qtyOut }), { qtyIn: 0, qtyOut: 0 });
+    return [...afterSync, { id: 'sync', date: lastOpnameDate, transactionNo: syncLabel, type: 'Sync', price: 0, balance: synced[0].balance, ...sum }];
+  }, [compress, ledger, afterSync, synced, lastOpnameDate, syncLabel]);
+  const months = useMemo<MonthRow[]>(() => {
+    if (!compress) return groupMovementByMonth(ledger);
+    const qty = synced.reduce((a, r) => a + r.qtyIn - r.qtyOut, 0);
+    const year = Number((lastOpnameDate || '').slice(0, 4));
+    return [...groupMovementByMonth(afterSync), { key: 'sync', year, month: 0, monthName: syncLabel, qty }];
+  }, [compress, ledger, afterSync, synced, lastOpnameDate, syncLabel]);
+
+  // Sync window (old Frm_SyncInventory): "Qty Opname :" for one item
+  const [syncItem, setSyncItem] = useState<InventoryItem | null>(null);
+  const [syncQty, setSyncQty] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   // "Laporan Stok Akhir" (legacy Rpt_InventoryStock): null while loading
   const [isStockReportOpen, setIsStockReportOpen] = useState(false);
@@ -185,6 +232,42 @@ export default function InventoryStockManager({ isDark, canViewPrice = false }: 
     setFocusedId(item.id);
     setDetailItem(item);
     loadLedger(item);
+  };
+
+  const openSync = (item: InventoryItem) => {
+    setFocusedId(item.id);
+    setSyncItem(item);
+    setSyncQty(String(item.stokAkhir ?? 0));
+  };
+
+  // Old sp_MDInventory_GetDataSync_Update: stock = Qty Opname, Last Sync = today. Posted as a direct COUNT opname so
+  // the stock card records the change and the sync date; the old confirm text is asked first.
+  const handleSync = async () => {
+    if (!syncItem || isSyncing) return;
+    const qty = Number(syncQty);
+    if (syncQty.trim() === '' || !Number.isInteger(qty)) {
+      setNotice({ type: 'error', text: 'Qty Opname harus angka bulat.' });
+      return;
+    }
+    if (!(await confirmDialog('Yakin Akan Melakukan Sync ? ', { title: 'Confirmation', confirmText: 'Yes' }))) return;
+    setIsSyncing(true);
+    try {
+      const json = await fetch('/api/inventory/opname', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'POST_DIRECT', inventoryId: syncItem.id, qtyOpname: qty, mode: 'set' }),
+      }).then((r) => r.json());
+      if (!json.success) throw new Error(typeof json.error === 'string' ? json.error : json.error?.message || 'Gagal sync stok');
+      setNotice({ type: 'success', text: `Sync "${syncItem.inventoryName}" berhasil: stok ${fmtN0(qty)}` });
+      const synced = syncItem;
+      setSyncItem(null);
+      await fetchItems();
+      if (detailItem?.id === synced.id) await loadLedger(synced);
+    } catch (e) {
+      setNotice({ type: 'error', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleRefresh = async () => {
@@ -267,6 +350,21 @@ export default function InventoryStockManager({ isDark, canViewPrice = false }: 
       key: 'stokAkhir', caption: 'Stok Terbaru', format: 'n0', sortKey: 'stokAkhir',
       render: (row) => <span className={row.stokAkhir < 0 ? 'text-rose-600 font-semibold' : ''}>{fmtN0(row.stokAkhir)}</span>,
     },
+    ...(canOpname
+      ? ([{
+          key: 'sync', caption: 'Sync', align: 'center', width: 48,
+          render: (row) => (
+            <button
+              type="button"
+              title="Sync stok"
+              onClick={(e) => { e.stopPropagation(); openSync(row); }}
+              className={`px-1.5 rounded border font-semibold cursor-pointer ${isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-400 hover:bg-slate-100'}`}
+            >
+              Sync
+            </button>
+          ),
+        }] as LegacyColumn<InventoryItem>[])
+      : []),
     {
       key: 'detail', caption: '=>', align: 'center', width: 40,
       render: (row) => (
@@ -361,6 +459,7 @@ export default function InventoryStockManager({ isDark, canViewPrice = false }: 
               columns={monthColumns}
               rows={months}
               rowKey={(r) => r.key}
+              rowClassName={(r) => (r.key === 'sync' ? 'italic font-semibold' : '')}
               loading={isLoadingLedger}
               emptyText={detailItem ? 'Belum ada transaksi.' : 'Klik => pada barang.'}
             />
@@ -369,19 +468,63 @@ export default function InventoryStockManager({ isDark, canViewPrice = false }: 
             <LegacyGrid
               isDark={isDark}
               columns={ledgerColumns}
-              rows={ledger}
+              rows={ledgerRows}
               rowKey={(r) => r.id}
               loading={isLoadingLedger}
               emptyText={detailItem ? 'Belum ada riwayat mutasi stok untuk barang ini.' : ''}
-              rowClassName={(r) => (r.qtyIn > 0 ? (isDark ? 'text-emerald-300' : 'text-emerald-800') : r.qtyOut > 0 ? (isDark ? 'text-rose-300' : 'text-rose-800') : '')}
+              rowClassName={(r) => (r.id === 'sync' ? 'italic font-semibold' : r.qtyIn > 0 ? (isDark ? 'text-emerald-300' : 'text-emerald-800') : r.qtyOut > 0 ? (isDark ? 'text-rose-300' : 'text-rose-800') : '')}
             />
           </div>
+          {synced.length > 0 && (
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={showSyncedHistory} onChange={(e) => setShowSyncedHistory(e.target.checked)} className="w-3.5 h-3.5" />
+              <span>Tampilkan riwayat sebelum sync ({fmtN0(synced.length)} transaksi)</span>
+            </label>
+          )}
           {ledgerTotal > ledger.length && (
             <div className={c.muted}>Menampilkan {fmtN0(ledger.length)} dari {fmtN0(ledgerTotal)} mutasi terbaru.</div>
           )}
         </GroupBox>
         )}
       </div>
+
+      {confirmDialogEl}
+      {notice && (
+        <div
+          role="status"
+          className={`absolute top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-xl border text-xs font-bold ${
+            notice.type === 'success' ? 'bg-emerald-800 text-white border-emerald-900' : 'bg-rose-800 text-white border-rose-900'
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      {syncItem && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50" onClick={() => !isSyncing && setSyncItem(null)}>
+          <form
+            role="dialog"
+            aria-label="Sync Stok"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => { e.preventDefault(); handleSync(); }}
+            className={`w-full max-w-sm flex flex-col border rounded shadow-2xl text-xs ${c.panel} ${isDark ? 'text-slate-100' : 'text-slate-900'}`}
+          >
+            <div className={`px-3 py-1.5 border-b font-bold text-[13px] ${c.bar}`}>Sync Stok</div>
+            <div className="p-3 flex flex-col gap-2">
+              <div className="font-semibold truncate" title={syncItem.inventoryName}>{syncItem.inventoryName}</div>
+              <div className={c.muted}>Stok Terbaru: {fmtN0(syncItem.stokAkhir)} · Last Sync: {syncItem.syncDate ? fmtDate(syncItem.syncDate) : '-'}</div>
+              <label className="flex items-center gap-2">
+                <span className="shrink-0">Qty Opname :</span>
+                <LegacyInput isDark={isDark} type="number" step={1} autoFocus value={syncQty} onChange={(e) => setSyncQty(e.target.value)} />
+              </label>
+              <div className="flex justify-end gap-2">
+                <LegacyButton isDark={isDark} type="submit" variant="primary" disabled={isSyncing}>{isSyncing ? 'Menyimpan...' : 'OK'}</LegacyButton>
+                <LegacyButton isDark={isDark} onClick={() => setSyncItem(null)} disabled={isSyncing}>Cancel</LegacyButton>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {isStockReportOpen && (
         <ReportDialog title="Laporan Stok Akhir" isDark={isDark} onClose={closeStockReport}>

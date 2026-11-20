@@ -13,20 +13,16 @@ import {
 } from '@/components/legacy';
 import { fetchMovement, groupMovementByMonth, movementMonthKey, type MovementRow, type MonthRow } from '@/components/InventoryStockManager';
 
-interface LookupItem {
-  id: number;
-  brandName?: string;
-  categoryName?: string;
-  uomName?: string;
-  [key: string]: unknown;
+/** Kategori Grosir from /api/inventory/lookups: an m_promo bundle (K1, K2, ...) with its qty band per Grosir tier */
+interface PromoBundle {
+  promoBundle: number;
+  name: string;
+  bands: { tier: number; qtyMin: number; qtyMax: number }[];
 }
 
-interface LookupsData {
-  brands: LookupItem[];
-  categories: LookupItem[];
-  uoms: LookupItem[];
-  wholesaleCategories: LookupItem[];
-}
+/** "K1 (Grosir 3: 12-59, Grosir 2: 60-119, Grosir 1: 120+ pcs)"; 999 is the old app's open-ended max */
+const promoBundleLabel = (b: PromoBundle) =>
+  `${b.name} (${b.bands.map((x) => `Grosir ${x.tier}: ${x.qtyMax >= 999 ? `${x.qtyMin}+` : `${x.qtyMin}-${x.qtyMax}`}`).join(', ')} pcs)`;
 
 interface ToastMessage {
   id: string;
@@ -58,6 +54,8 @@ interface MasterBarangManagerProps {
   /** 'stock' = read-only stock view (minus filter on, no add / edit / delete / opname) */
   mode?: 'master' | 'stock';
   canViewPrice?: boolean;
+  /** Admin only: Show Detail opname (Tambahkan Stok Opname / Reset Stok ke Nol) and the right-click Stok Opname */
+  canOpname?: boolean;
 }
 
 const EMPTY_FORM: Partial<ERPProduct> = {
@@ -96,7 +94,7 @@ function LegacyDialog({ title, isDark, onClose, children, className = 'max-w-3xl
 }
 
 /** Legacy Master_Data.Frm_Inventory ("Master Barang"): item grid, in-place edit form, "Show Detail" stock group. */
-export default function MasterBarangManager({ isDark, mode = 'master', canViewPrice = false }: MasterBarangManagerProps) {
+export default function MasterBarangManager({ isDark, mode = 'master', canViewPrice = false, canOpname = false }: MasterBarangManagerProps) {
   const c = lx(isDark);
   const readOnly = mode === 'stock';
   const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
@@ -116,7 +114,7 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   const [totals, setTotals] = useState<GridTotals | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [lookups, setLookups] = useState<LookupsData>({ brands: [], categories: [], uoms: [], wholesaleCategories: [] });
+  const [promoBundles, setPromoBundles] = useState<PromoBundle[]>([]);
 
   const [selectedProduct, setSelectedProduct] = useState<ERPProduct | null>(null);
   const [rowMenu, setRowMenu] = useState<ContextMenuState<ERPProduct> | null>(null);
@@ -172,10 +170,10 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
   const currentPage = pageState.key === pageKey ? pageState.page : 1;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
+  // Without a column sort the newest items come first, so a just-added item is on page 1 (client doc)
   const inventoryUrl = useCallback((page: number, limit: number) => {
-    let url = `/api/inventory?${filterQuery}&page=${page}&limit=${limit}`;
-    if (sort) url += `&sort=${sort.key}&order=${sort.order}`;
-    return url;
+    const s = sort ?? { key: 'id', order: 'desc' };
+    return `/api/inventory?${filterQuery}&page=${page}&limit=${limit}&sort=${s.key}&order=${s.order}`;
   }, [filterQuery, sort]);
 
   // Every matching item (Export Data and Laporan Stok), fetched in API-max batches
@@ -237,20 +235,12 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
     return loadProducts();
   }, [loadProducts]);
 
+  // Kategori Grosir choices of the edit form
   useEffect(() => {
     let isMounted = true;
     fetch('/api/inventory/lookups')
       .then((r) => r.json())
-      .then((json) => {
-        if (isMounted && json.success && json.data) {
-          setLookups({
-            brands: json.data.brands || [],
-            categories: json.data.categories || [],
-            uoms: json.data.uoms || [],
-            wholesaleCategories: json.data.wholesaleCategories || [],
-          });
-        }
-      })
+      .then((json) => { if (isMounted && json.success) setPromoBundles(json.data?.promoBundles || []); })
       .catch((err) => console.error('Error fetching lookups:', err));
     return () => { isMounted = false; };
   }, []);
@@ -284,13 +274,15 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       ...EMPTY_FORM,
       inventoryNo: `BRG-${Date.now().toString().slice(-4)}`,
       barcode: `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
-      inventoryBrandId: lookups.brands[0]?.id || 1,
-      inventoryCategoryId: lookups.categories[0]?.id || 1,
-      uoMId: lookups.uoms[0]?.id || 1,
-      wholesaleCategoryId: lookups.wholesaleCategories[0]?.id || 1,
+      // Merk / Kategori / Satuan are not on the form (client doc): no brand / category, Pcs (uom 1)
+      inventoryBrandId: undefined,
+      inventoryCategoryId: undefined,
+      uoMId: 1,
+      wholesaleCategoryId: undefined,
+      promoBundle: 0,
       kodeHarga: 'STD',
     });
-  }, [lookups, readOnly]);
+  }, [readOnly]);
 
   const handleOpenEdit = (product: ProductRow) => {
     if (readOnly) return;
@@ -342,13 +334,14 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       addToast('Tidak ada data barang untuk diexport', 'warning');
       return;
     }
-    const headers = ['No. Barang', 'Barcode', 'Nama', 'Stok', 'Aktif', 'Harga Retail', ...(canViewPrice ? ['Harga Beli', 'Total H.Stok'] : []), 'Total H.Jual'];
+    const headers = ['No. Barang', 'Barcode', 'Nama', 'Stok', 'Harga Retail', 'Grosir 1', 'Grosir 2', 'Grosir 3', ...(canViewPrice ? ['Harga Beli', 'Total H.Stok'] : []), 'Total H.Jual', 'Aktif'];
     const rows = rowsToExport.map((p) => {
       const stock = Number(p.stokAkhir || 0);
       return [
-        p.inventoryNo || '', p.barcode || '', p.inventoryName || '', stock, p.isActive ? 'Ya' : 'Tidak', Number(p.price || 0),
+        p.inventoryNo || '', p.barcode || '', p.inventoryName || '', stock, Number(p.price || 0),
+        Number(p.grosir1 || 0), Number(p.grosir2 || 0), Number(p.grosir3 || 0),
         ...(canViewPrice ? [Number(p.priceBuy || 0), stock * Number(p.priceBuy || 0)] : []),
-        stock * Number(p.price || 0),
+        stock * Number(p.price || 0), p.isActive ? 'Ya' : 'Tidak',
       ];
     });
     try {
@@ -532,26 +525,19 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
   const columns: LegacyColumn<ERPProduct>[] = [
     { key: 'inventoryNo', caption: 'No. Barang', sortKey: 'inventoryNo', filterKey: 'inventoryno' },
     { key: 'barcode', caption: 'Barcode', sortKey: 'barcode', filterKey: 'barcode' },
-    { key: 'inventoryName', caption: 'Nama', sortKey: 'inventoryName', filterKey: 'inventoryname' },
+    // Nama may wrap so the Grosir and Aktif columns still fit on a ~1366px screen
+    {
+      key: 'inventoryName', caption: 'Nama', sortKey: 'inventoryName', filterKey: 'inventoryname',
+      render: (p) => <span className="inline-block min-w-56 whitespace-normal">{p.inventoryName}</span>,
+    },
     {
       key: 'stokAkhir', caption: 'Stok', format: 'n0', sortKey: 'stokAkhir', footer: totals ? fmtN0(totals.stock) : '',
       render: (p) => <span className={p.stokAkhir < 0 ? 'text-rose-600 font-semibold' : ''}>{fmtN0(p.stokAkhir)}</span>,
     },
-    {
-      key: 'isActive', caption: '', align: 'center', width: 28,
-      render: (p) => (
-        <input
-          type="checkbox"
-          aria-label={`Aktif ${p.inventoryNo}`}
-          checked={Boolean(p.isActive)}
-          disabled={readOnly}
-          onClick={(e) => e.stopPropagation()}
-          onChange={() => handleToggleStatus(p)}
-          className="w-3.5 h-3.5 cursor-pointer align-middle"
-        />
-      ),
-    },
     { key: 'price', caption: 'Harga Retail', format: 'n0', sortKey: 'price' },
+    { key: 'grosir1', caption: 'Grosir 1', format: 'n0', sortKey: 'grosir1' },
+    { key: 'grosir2', caption: 'Grosir 2', format: 'n0', sortKey: 'grosir2' },
+    { key: 'grosir3', caption: 'Grosir 3', format: 'n0', sortKey: 'grosir3' },
     ...(canViewPrice
       ? ([
           { key: 'priceBuy', caption: 'Harga Beli', format: 'n0' },
@@ -564,6 +550,20 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
     {
       key: 'totalRetailValue', caption: 'Total H.Jual', format: 'n0', footer: totals ? fmtN0(totals.retailValue) : '',
       render: (p) => fmtN0(Number(p.stokAkhir || 0) * Number(p.price || 0)),
+    },
+    {
+      key: 'isActive', caption: 'Aktif', align: 'center', width: 44,
+      render: (p) => (
+        <input
+          type="checkbox"
+          aria-label={`Aktif ${p.inventoryNo}`}
+          checked={Boolean(p.isActive)}
+          disabled={readOnly}
+          onClick={(e) => e.stopPropagation()}
+          onChange={() => handleToggleStatus(p)}
+          className="w-3.5 h-3.5 cursor-pointer align-middle"
+        />
+      ),
     },
   ];
 
@@ -620,10 +620,6 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
     { key: 'inRetail', caption: 'IN H. Jual', format: 'n0', footer: fmtN0(reportSum.retail), render: (p) => fmtN0(Number(p.stokAkhir || 0) * Number(p.price || 0)) },
   ];
 
-  // Keeps the item's current brand / category selectable even when the lookup list lacks it
-  const withCurrent = (list: LookupItem[], id: number | undefined, label: string | undefined, field: 'brandName' | 'categoryName') =>
-    id != null && !list.some((o) => Number(o.id) === Number(id)) ? [{ id, [field]: label || String(id) } as LookupItem, ...list] : list;
-
   const num = (v: string) => parseFloat(v) || 0;
 
   const renderEditForm = () => (
@@ -649,25 +645,6 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
               onBlur={(e) => setFormData({ ...formData, inventoryName: normalizeInventoryName(e.target.value) })}
             />
           </FieldRow>
-          <FieldRow label="Kategori :" isDark={isDark}>
-            <LegacySelect isDark={isDark} value={formData.inventoryCategoryId ?? ''} onChange={(e) => setFormData({ ...formData, inventoryCategoryId: Number(e.target.value) })}>
-              {withCurrent(lookups.categories, formData.inventoryCategoryId, formData.categoryName, 'categoryName').map((o) => (
-                <option key={o.id} value={o.id}>{o.categoryName}</option>
-              ))}
-            </LegacySelect>
-          </FieldRow>
-          <FieldRow label="Merk :" isDark={isDark}>
-            <LegacySelect isDark={isDark} value={formData.inventoryBrandId ?? ''} onChange={(e) => setFormData({ ...formData, inventoryBrandId: Number(e.target.value) })}>
-              {withCurrent(lookups.brands, formData.inventoryBrandId, formData.brandName, 'brandName').map((o) => (
-                <option key={o.id} value={o.id}>{o.brandName}</option>
-              ))}
-            </LegacySelect>
-          </FieldRow>
-          <FieldRow label="Satuan :" isDark={isDark}>
-            <LegacySelect isDark={isDark} value={formData.uoMId || 1} onChange={(e) => setFormData({ ...formData, uoMId: parseInt(e.target.value) })}>
-              {lookups.uoms.map((u) => <option key={u.id} value={u.id}>{u.uomName}</option>)}
-            </LegacySelect>
-          </FieldRow>
           <FieldRow label="Harga Retail :" isDark={isDark}>
             <LegacyInput isDark={isDark} type="number" required value={formData.price ?? 0} onChange={(e) => setFormData({ ...formData, price: num(e.target.value) })} />
           </FieldRow>
@@ -684,15 +661,29 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
               </FieldRow>
             </>
           )}
-          <FieldRow label="Grosir 1 :" isDark={isDark}>
-            <LegacyInput isDark={isDark} type="number" value={formData.grosir1 ?? 0} onChange={(e) => setFormData({ ...formData, grosir1: num(e.target.value) })} />
-          </FieldRow>
-          <FieldRow label="Grosir 2 :" isDark={isDark}>
-            <LegacyInput isDark={isDark} type="number" value={formData.grosir2 ?? 0} onChange={(e) => setFormData({ ...formData, grosir2: num(e.target.value) })} />
-          </FieldRow>
-          <FieldRow label="Grosir 3 :" isDark={isDark}>
-            <LegacyInput isDark={isDark} type="number" value={formData.grosir3 ?? 0} onChange={(e) => setFormData({ ...formData, grosir3: num(e.target.value) })} />
-          </FieldRow>
+          <div className="md:col-span-2 xl:col-span-3">
+            <FieldRow label="Kategori Grosir :" isDark={isDark}>
+              <LegacySelect
+                isDark={isDark}
+                value={formData.promoBundle ?? 0}
+                onChange={(e) => setFormData({ ...formData, promoBundle: Number(e.target.value) })}
+              >
+                <option value={0}>-</option>
+                {/* A bundle without active grosir bands (not in the list) stays selectable on the item that has it */}
+                {!!formData.promoBundle && !promoBundles.some((b) => b.promoBundle === formData.promoBundle) && (
+                  <option value={formData.promoBundle}>{`Promo ${formData.promoBundle}`}</option>
+                )}
+                {promoBundles.map((b) => <option key={b.promoBundle} value={b.promoBundle}>{promoBundleLabel(b)}</option>)}
+              </LegacySelect>
+            </FieldRow>
+          </div>
+          <div className="md:col-span-2 xl:col-span-3">
+            <FieldRow label="Grosir 1 / 2 / 3 :" isDark={isDark}>
+              <LegacyInput isDark={isDark} type="number" aria-label="Grosir 1" value={formData.grosir1 ?? 0} onChange={(e) => setFormData({ ...formData, grosir1: num(e.target.value) })} />
+              <LegacyInput isDark={isDark} type="number" aria-label="Grosir 2" value={formData.grosir2 ?? 0} onChange={(e) => setFormData({ ...formData, grosir2: num(e.target.value) })} />
+              <LegacyInput isDark={isDark} type="number" aria-label="Grosir 3" value={formData.grosir3 ?? 0} onChange={(e) => setFormData({ ...formData, grosir3: num(e.target.value) })} />
+            </FieldRow>
+          </div>
           <div className="md:col-span-2">
             <FieldRow label="Keterangan :" isDark={isDark}>
               <LegacyInput isDark={isDark} value={formData.description || ''} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
@@ -819,7 +810,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
         {showDetail && (
           <GroupBox caption="Show Detail" isDark={isDark} className="lg:w-[380px] shrink-0 min-h-[320px]">
             <div className="font-bold text-[13px] truncate" title={selectedProduct?.inventoryName}>{selectedProduct?.inventoryName || 'Pilih Barang'}</div>
-            {!readOnly && (
+            {!readOnly && canOpname && (
               <>
                 <div className="flex items-center gap-1.5">
                   <div className="w-24 shrink-0">
@@ -879,7 +870,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
           items={[
             { label: 'Hapus Barang', icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: () => handleDeleteProduct(rowMenu.row) },
             { label: 'Detail Barang', icon: <Info className="w-3.5 h-3.5" />, onClick: () => openDetailBarang(rowMenu.row) },
-            { label: 'Stok Opname', icon: <Package className="w-3.5 h-3.5" />, onClick: () => openStockOpname(rowMenu.row) },
+            ...(canOpname ? [{ label: 'Stok Opname', icon: <Package className="w-3.5 h-3.5" />, onClick: () => openStockOpname(rowMenu.row) }] : []),
             { label: 'Cetak Barcode', icon: <Printer className="w-3.5 h-3.5" />, onClick: () => handleCetakBarcode(rowMenu.row) },
           ]}
         />

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
-import { canUserViewHpp, requireCapability } from '@/lib/capabilities';
+import { canUserViewHpp, canUserOpname } from '@/lib/capabilities';
 import { saveOpnameTransaction, reverseOpnameTransaction, opnameModeOf } from '@/lib/stock-opname';
 import { apiError, apiSuccess } from '@/lib/api-response';
 
@@ -194,7 +194,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const user = await getCurrentUser();
-    const actor = user?.username || 'system';
+    if (!user) return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
+    // Every opname write (draft, post, reverse, Master Barang / Inventory Stock direct opname) is Admin-only
+    if (!canUserOpname(user)) return apiError('FORBIDDEN', 'Stock opname hanya untuk Admin.', 403);
+    const actor = user.username || 'system';
     const body = await req.json();
     const rawAction = body.action || (body.isDraft ? 'draft' : 'post');
     const action = rawAction === 'POST_DIRECT' || rawAction === 'post' ? 'post' : rawAction === 'reverse' ? 'reverse' : 'draft';
@@ -208,9 +211,6 @@ export async function POST(req: Request) {
       if (!noTx) {
         return apiError('VALIDATION_ERROR', 'Nomor transaksi opname wajib diisi.', 400);
       }
-      const auth = await requireCapability('OPNAME_REVERSE');
-      if ('errorResponse' in auth) return auth.errorResponse;
-
       if (!body.reason) {
         return apiError('VALIDATION_ERROR', 'Alasan pembatalan opname (reversal) wajib diisi.', 400);
       }
@@ -223,12 +223,6 @@ export async function POST(req: Request) {
       });
 
       return apiSuccess(result, `Opname ${noTx} berhasil dibatalkan (reversed).`);
-    }
-
-    // Handle post or draft
-    if (action === 'post') {
-      const auth = await requireCapability('OPNAME_POST');
-      if ('errorResponse' in auth) return auth.errorResponse;
     }
 
     let items = body.items;

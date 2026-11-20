@@ -76,6 +76,8 @@ interface Warehouse {
 interface StockOpnameManagerProps {
   isDark: boolean;
   canViewPrice?: boolean;
+  /** Admin only (client doc: stock opname locked to "admin utama"); the server refuses opname writes for others */
+  canOpname?: boolean;
 }
 
 /** One label of "Print Barcode" (old Rpt_OpnameBarcode): retail price from the item, not the opname price. */
@@ -150,7 +152,7 @@ const MODES = [
   ['COUNT', 'Cek Stok (hitung fisik)', 'Isi jumlah hasil hitung; selisih dihitung otomatis'],
 ] as const;
 
-export default function StockOpnameManager({ isDark, canViewPrice = false }: StockOpnameManagerProps) {
+export default function StockOpnameManager({ isDark, canViewPrice = false, canOpname = false }: StockOpnameManagerProps) {
   const c = lx(isDark);
   const { confirmDialog, dialog: confirmDialogEl } = useConfirmDialog(isDark);
   // Opname prices can be HPP, so non-admins see them masked
@@ -922,6 +924,14 @@ export default function StockOpnameManager({ isDark, canViewPrice = false }: Sto
       : 'bg-amber-500 text-slate-950';
 
   const modalShell = `w-full flex flex-col rounded border shadow-2xl overflow-hidden text-xs ${c.panel}`;
+
+  if (!canOpname) {
+    return (
+      <LegacyWindow title="Input Stock" isDark={isDark}>
+        <div className={`flex-1 flex items-center justify-center p-6 text-center ${c.muted}`}>Stock opname hanya untuk Admin.</div>
+      </LegacyWindow>
+    );
+  }
 
   return (
     <div id="printable-opname-report" className="flex-1 flex flex-col h-full min-h-0 overflow-hidden relative">

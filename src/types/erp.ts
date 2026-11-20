@@ -24,6 +24,8 @@ export interface ERPProduct {
   grosir2: number;
   grosir3: number;
   wholesaleCategoryId?: number | null;
+  /** Kategori Grosir: m_promo bundle (K1, K2, ...); 0 = none */
+  promoBundle?: number;
   wholesaleCategoryName?: string;
   wholesaleCategory?: {
     id: number;

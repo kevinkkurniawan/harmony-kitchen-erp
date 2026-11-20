@@ -455,3 +455,24 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
     await staff.close();
   });
 });
+
+// Client doc (Inventory Stock): stock opname is locked to Admin
+test.describe('Menu 2: Stok Opname — non-admin lock', () => {
+  test('8. A non-admin sees the screen locked, without opname controls', async ({ page }) => {
+    await page.route('**/api/auth/session', async (route) => {
+      await route.fulfill({
+        json: {
+          success: true,
+          user: { id: 1, username: 'merry', fullName: 'Merry Kasir', userLevel: 'Kasir', isActive: true },
+          permissions: [{ moduleCode: 'stok-opname', canView: true }, { moduleCode: 'master-barang', canView: true }],
+        },
+      });
+    });
+    await page.route('**/api/inventory?*', (route) => route.fulfill({ json: { success: true, data: [], pagination: { total: 0, page: 1, limit: 100 } } }));
+    await page.route('**/api/inventory/lookups', (route) => route.fulfill({ json: { success: true, data: { promoBundles: [] } } }));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Stok Opname', exact: true }).first().click();
+    await expect(page.getByText('Stock opname hanya untuk Admin.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New Opname' })).toHaveCount(0);
+  });
+});

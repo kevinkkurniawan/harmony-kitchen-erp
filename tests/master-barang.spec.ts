@@ -20,6 +20,11 @@ const MOCK_LOOKUPS = {
       { id: 1, uomName: 'PCS' },
       { id: 2, uomName: 'SET' },
     ],
+    // Kategori Grosir = m_promo bundles (K1 / K2 as in prod)
+    promoBundles: [
+      { promoBundle: 1, name: 'K1', bands: [{ tier: 3, qtyMin: 12, qtyMax: 59 }, { tier: 2, qtyMin: 60, qtyMax: 119 }, { tier: 1, qtyMin: 120, qtyMax: 999 }] },
+      { promoBundle: 2, name: 'K2', bands: [{ tier: 3, qtyMin: 6, qtyMax: 29 }, { tier: 2, qtyMin: 30, qtyMax: 60 }, { tier: 1, qtyMin: 61, qtyMax: 999 }] },
+    ],
     wholesaleCategories: [
       {
         id: 1,
@@ -64,6 +69,7 @@ const MOCK_PRODUCTS = [
       tier3_minqty: 12,
     },
     kodeHarga: 'STD',
+    promoBundle: 2,
     description: 'Panci aluminium tebal',
     price: 85000,
     hpp: 65000,
@@ -208,6 +214,14 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     await expect(page.locator(SEARCH)).toBeVisible();
   });
 
+  test('1b. Without a column sort the newest items come first (sort=id desc)', async ({ page }) => {
+    const refresh = page.waitForRequest((req) => req.url().includes('/api/inventory?'));
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    const url = new URL((await refresh).url());
+    expect(url.searchParams.get('sort')).toBe('id');
+    expect(url.searchParams.get('order')).toBe('desc');
+  });
+
   test('1. Legacy title, toolbar, columns in order and footer totals', async ({ page }) => {
     await expect(page.getByText('Master Barang', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Cari Barang :', { exact: true })).toBeVisible();
@@ -218,14 +232,18 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     await expect(page.getByRole('button', { name: 'Laporan Stok', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Export Data', exact: true })).toBeVisible();
 
-    // Legacy GV_Inventory columns (admin sees Harga Beli / Total H.Stok); the 5th is the Aktif check column
+    // Legacy GV_Inventory columns plus Grosir 1-3 (admin sees Harga Beli / Total H.Stok); Aktif check column last
     const headers = page.locator('main table').first().locator('thead tr').first().locator('th');
-    await expect(headers).toHaveText(['No. Barang', 'Barcode', 'Nama', 'Stok', '', 'Harga Retail', 'Harga Beli', 'Total H.Stok', 'Total H.Jual']);
+    await expect(headers).toHaveText(['No. Barang', 'Barcode', 'Nama', 'Stok', 'Harga Retail', 'Grosir 1', 'Grosir 2', 'Grosir 3', 'Harga Beli', 'Total H.Stok', 'Total H.Jual', 'Aktif']);
+    const firstRow = page.locator('main table').first().locator('tbody tr').first().locator('td');
+    await expect(firstRow.nth(5)).toHaveText('82.000');
+    await expect(firstRow.nth(7)).toHaveText('75.000');
+    await expect(firstRow.nth(11).locator('input[type="checkbox"]')).toBeChecked();
 
     // Footer sums come from the server totals: Stok 25 + -2 = 23; Total H.Jual = 25*85000 - 2*150000
     const footer = page.locator('main table').first().locator('tfoot td');
     await expect(footer.nth(3)).toHaveText('23');
-    await expect(footer.nth(8)).toHaveText('1.825.000');
+    await expect(footer.nth(10)).toHaveText('1.825.000');
 
     // New-only UI removed
     await expect(page.locator('button', { hasText: 'Tambah Barang' })).toHaveCount(0);
@@ -308,9 +326,23 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
   test('4. New row: edit form with legacy labels, error preservation and save', async ({ page }) => {
     await page.getByRole('button', { name: 'Click here to add a new row' }).click();
 
-    for (const label of ['No. Barang :', 'Barcode :', 'Nama Barang :', 'Merk :', 'Kategori :', 'Satuan :', 'Harga Retail :', 'Harga Beli :', 'Keterangan :']) {
+    for (const label of ['No. Barang :', 'Barcode :', 'Nama Barang :', 'Harga Retail :', 'Harga Beli :', 'Grosir 1 / 2 / 3 :', 'Keterangan :']) {
       await expect(page.getByText(label, { exact: true })).toBeVisible();
     }
+    // Merk / Kategori / Satuan are not asked (client doc)
+    for (const label of ['Merk :', 'Kategori :', 'Satuan :']) {
+      await expect(page.getByText(label, { exact: true })).toHaveCount(0);
+    }
+    // Grosir 1-3 sit on one row
+    const g1 = await page.getByLabel('Grosir 1', { exact: true }).boundingBox();
+    const g3 = await page.getByLabel('Grosir 3', { exact: true }).boundingBox();
+    expect(Math.abs((g1?.y ?? 0) - (g3?.y ?? 1))).toBeLessThan(2);
+    await page.getByLabel('Grosir 2', { exact: true }).fill('12000');
+    // Kategori Grosir (K bundles of the old app): none for a new item, each choice shows its qty bands
+    const kategoriGrosir = page.getByLabel('Kategori Grosir :');
+    await expect(kategoriGrosir).toHaveValue('0');
+    await expect(kategoriGrosir.locator('option')).toHaveText(['-', 'K1 (Grosir 3: 12-59, Grosir 2: 60-119, Grosir 1: 120+ pcs)', 'K2 (Grosir 3: 6-29, Grosir 2: 30-60, Grosir 1: 61+ pcs)']);
+    await kategoriGrosir.selectOption('1');
     await expect(page.getByLabel('Barang Aktif', { exact: true })).toBeChecked();
 
     const nameInput = page.getByLabel('Nama Barang :');
@@ -338,6 +370,12 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     await page.getByRole('button', { name: 'Update', exact: true }).click();
     await expect.poll(() => savedPayload).not.toBeNull();
     expect(savedPayload.inventoryName).toBe('panci supra 20cm');
+    expect(savedPayload.grosir2).toBe(12000);
+    expect(savedPayload.uoMId).toBe(1);
+    expect(savedPayload.inventoryBrandId).toBeUndefined();
+    expect(savedPayload.inventoryCategoryId).toBeUndefined();
+    expect(savedPayload.promoBundle).toBe(1);
+    expect(savedPayload.wholesaleCategoryId).toBeUndefined();
     await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeHidden();
   });
 
@@ -347,6 +385,7 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     // Double-click opens the edit form on that item
     await firstRow.dblclick();
     await expect(page.getByLabel('Nama Barang :')).toHaveValue('Panci Maspion 24cm');
+    await expect(page.getByLabel('Kategori Grosir :')).toHaveValue('2');
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByLabel('Nama Barang :')).toHaveCount(0);
 
@@ -546,12 +585,21 @@ test.describe('Master Barang E2E Suite (Restricted Non-Admin Role without HPP Pe
       await route.fulfill({ json: MOCK_MOVEMENT });
     });
     await page.locator('main table').first().locator('tbody tr').first().click({ button: 'right' });
+    // Stock opname is Admin-only (client doc): no right-click Stok Opname
+    await expect(page.locator('div.fixed.z-50').getByRole('button', { name: 'Stok Opname' })).toHaveCount(0);
     await page.locator('div.fixed.z-50').getByRole('button', { name: 'Detail Barang' }).click();
     const dialog = page.getByRole('dialog', { name: 'Detail Barang' });
     await expect(dialog.locator('td', { hasText: 'MR-2026-0001' })).toBeVisible();
     await expect(dialog.getByTestId('hpp-history')).toHaveCount(0);
     await expect(dialog.getByText('No. Pembelian')).toHaveCount(0);
     expect(hppRequested).toBe(false);
+    await dialog.getByTitle('Close').click();
+
+    // Show Detail keeps the stock summary but has no opname controls
+    await page.getByRole('button', { name: 'Show Detail', exact: true }).click();
+    await expect(page.locator('th', { hasText: 'Bulan' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Tambahkan Stok Opname' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reset Stok ke Nol' })).toHaveCount(0);
   });
 });
 
@@ -620,7 +668,8 @@ test.describe('Master Barang Real Database & API Integration', () => {
 
     // Right-click Cetak Barcode on the first grid row -> saved list has that item
     const firstRow = page.locator('main table').first().locator('tbody tr').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
+    // Wait for a data row (its Aktif check box), not the "Memuat data..." placeholder row
+    await expect(firstRow.locator('input[type="checkbox"]')).toBeVisible({ timeout: 15000 });
     const before = (await (await page.request.get('/api/barcode-list')).json()).data as { inventoryNo: string; qty: number }[];
     const rowNo = (await firstRow.locator('td').first().textContent())?.trim() || '';
     await firstRow.click({ button: 'right' });

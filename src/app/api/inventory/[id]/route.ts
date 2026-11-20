@@ -95,6 +95,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       wholesalecategoryid: body.wholesaleCategoryId !== undefined 
         ? (body.wholesaleCategoryId ? Number(body.wholesaleCategoryId) : null) 
         : (body.wholesalecategoryid !== undefined ? (body.wholesalecategoryid ? Number(body.wholesalecategoryid) : null) : undefined),
+      // Kategori Grosir (m_promo bundle); 0 = none
+      promobundle: body.promoBundle !== undefined ? Number(body.promoBundle) || 0 : undefined,
       isactive: body.isActive !== undefined ? Boolean(body.isActive) : undefined,
       stokawal: body.stokAwal !== undefined ? Number(body.stokAwal) : undefined,
     };

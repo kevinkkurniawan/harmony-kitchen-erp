@@ -194,9 +194,9 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} />}
-          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} />}
-          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} canOpname={isAdmin} />}
+          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isAdmin} />}
+          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isAdmin} />}
           {activeTab === 'cetak-barcode' && <BarcodePrintManager isDark={isDark} />}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}

@@ -59,15 +59,17 @@ export async function GET(req: Request) {
     const SORTABLE: Record<string, string> = {
       inventoryNo: 'inventoryno', barcode: 'barcode', inventoryName: 'inventoryname', description: 'description',
       price: 'price', grosir1: 'grosir1', grosir2: 'grosir2', grosir3: 'grosir3', stokAkhir: 'stokupdate',
-      uomName: 'uomname',
+      uomName: 'uomname', id: 'id',
       ...(mayViewHpp ? { hpp: 'hpp' } : {}),
     };
     const sortCol = SORTABLE[searchParams.get('sort') || ''];
     const sortDir: Prisma.SortOrder = searchParams.get('order') === 'desc' ? 'desc' : 'asc';
     const orderBy: Prisma.m_inventoryOrderByWithRelationInput[] = [];
-    if (sortCol === 'uomname') orderBy.push({ m_uom: { uomname: sortDir } });
+    // sort=id&order=desc = newest items first (Master Barang default, client doc)
+    if (sortCol === 'id') orderBy.push({ id: sortDir });
+    else if (sortCol === 'uomname') orderBy.push({ m_uom: { uomname: sortDir } });
     else if (sortCol) orderBy.push({ [sortCol]: { sort: sortDir, nulls: 'last' } });
-    orderBy.push({ id: 'asc' });
+    if (sortCol !== 'id') orderBy.push({ id: 'asc' });
 
     // Optional grid footer totals over ALL matching rows (Master Barang: Stok, Total H.Stok, Total H.Jual).
     // Prisma cannot SUM a product (stok * price), and rebuilding these filters in raw SQL would duplicate the
@@ -154,6 +156,7 @@ export async function GET(req: Request) {
         grosir1: i.grosir1 ? Number(i.grosir1) : null,
         grosir2: i.grosir2 ? Number(i.grosir2) : null,
         grosir3: i.grosir3 ? Number(i.grosir3) : null,
+        promoBundle: Number(i.promobundle || 0),
         wholesaleCategoryId: i.wholesalecategoryid ? Number(i.wholesalecategoryid) : null,
         wholesaleCategoryName: wc ? wc.name : undefined,
         wholesaleCategory: wc ? {
@@ -214,8 +217,9 @@ export async function POST(req: Request) {
       inventoryno: body.inventoryNo || body.inventory_no || '',
       inventoryname: normalizeInventoryName(body.inventoryName || body.inventory_name),
       barcode: body.barcode || body.inventoryNo || body.inventory_no || '',
-      inventorybrandid: body.inventoryBrandId ? Number(body.inventoryBrandId) : 1,
-      inventorycategoryid: body.inventoryCategoryId ? Number(body.inventoryCategoryId) : 1,
+      // Master Barang no longer asks Merk / Kategori: an item without them stays empty (like most items), not id 1
+      inventorybrandid: body.inventoryBrandId ? Number(body.inventoryBrandId) : null,
+      inventorycategoryid: body.inventoryCategoryId ? Number(body.inventoryCategoryId) : null,
       inventoryproductid: body.inventoryProductId ? Number(body.inventoryProductId) : 1,
       uomid: body.uoMId ? Number(body.uoMId) : 1,
       minstock: Number(body.minStock) || 0,
@@ -229,6 +233,7 @@ export async function POST(req: Request) {
       grosir2: body.grosir2 ? Number(body.grosir2) : null,
       grosir3: body.grosir3 ? Number(body.grosir3) : null,
       wholesalecategoryid: body.wholesaleCategoryId ? Number(body.wholesaleCategoryId) : (body.wholesalecategoryid ? Number(body.wholesalecategoryid) : null),
+      promobundle: Number(body.promoBundle) || 0,
       isactive: body.isActive !== undefined ? Boolean(body.isActive) : true,
       stokawal: Number(body.stokAwal) || 0,
       stokupdate: Number(body.stokAwal) || 0,

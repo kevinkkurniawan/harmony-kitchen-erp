@@ -133,10 +133,10 @@ test.describe('Menu 4: Cetak Barcode — End-to-End Audit Suite', () => {
     await expect(cell0).toContainText('Rp ');
     expect(await page.evaluate(() => (window as unknown as { __printCalled: number }).__printCalled)).toBe(2);
 
-    // Header Toko still toggles the store name on the label
-    await expect(cell0).toContainText('HARMONY KITCHEN');
-    await page.click('label:has-text("Header Toko")');
+    // Client doc: only name + barcode, no store name (and no Header Toko toggle) and no No. Barang prefix
     await expect(cell0).not.toContainText('HARMONY KITCHEN');
+    await expect(page.locator('label:has-text("Header Toko")')).toHaveCount(0);
+    await expect(cell0.getByTestId('label-name')).toHaveText('Maslon Dutch Oven 26cm');
 
     await page.click('button:has-text("Hapus Data List Barcode")');
     await expect(page.locator('text=List barcode kosong.')).toBeVisible();
@@ -251,5 +251,70 @@ test.describe('Menu 4: Cetak Barcode — End-to-End Audit Suite', () => {
     const anon = await playwright.request.newContext({ baseURL: 'http://localhost:3000' });
     expect((await anon.get('/api/barcode-list')).status()).toBe(401);
     await anon.dispose();
+  });
+});
+
+// Mocked (no live print list): label content and fit, and the stock in the search list (client doc Cetak Barcode)
+test.describe('Menu 4: Cetak Barcode — label layout (mocked)', () => {
+  const LONG = [
+    { inventoryId: 1, barcode: '8990011010100', inventoryNo: '-', inventoryName: 'Sealion Panci Pancaguna Stainless + Tutup Kaca 26c', price: 350000, qty: 1 },
+    { inventoryId: 2, barcode: '0000261100310', inventoryNo: 'ERS-13', inventoryName: 'Damascus Slicing Knife 5"', price: 70000, qty: 1 },
+    { inventoryId: 3, barcode: '0000261100303', inventoryNo: 'X', inventoryName: 'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW', price: 1000, qty: 1 },
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    // Any other API (e.g. the default Master Barang screen) answers empty instead of 401 -> login form
+    await page.route('**/api/**', (route) => route.fulfill({ json: { success: true, data: [] } }));
+    await page.route('**/api/auth/session', (route) => route.fulfill({
+      json: { success: true, user: { id: 5, username: 'admin', fullName: 'Admin ERP', userLevel: 'Admin', isActive: true }, permissions: [] },
+    }));
+    await page.route('**/api/barcode-list*', (route) => route.fulfill({ json: { success: true, data: LONG } }));
+    await page.route('**/api/barcode/print', (route) => route.fulfill({ json: { success: true } }));
+    await page.route('**/api/inventory?*', (route) => route.fulfill({
+      json: {
+        success: true,
+        data: [{ id: '9', inventoryNo: 'BLG-PCD026', barcode: '8990011010100', inventoryName: 'Maslon Dutch Oven 26cm', price: 125000, stokAkhir: 12 },
+               { id: '10', inventoryNo: 'BLG-PCD024', barcode: '8990011010094', inventoryName: 'Maslon Dutch Oven 24cm', price: 115000, stokAkhir: -3 }],
+        pagination: { total: 2, page: 1, limit: 20 },
+      },
+    }));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Cetak Barcode', exact: true }).first().click();
+    await expect(page.locator('text=.: Barcode Print List :.')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('9. Roll label = name (max 2 lines, never cut) + barcode; no store name, no No. Barang', async ({ page }) => {
+    await page.evaluate(() => { window.print = () => {}; });
+    await page.click('button:has-text("Barcode Print With Price")');
+    await page.emulateMedia({ media: 'print' });
+    const cells = page.locator('#print-label-area .barcode-label-cell');
+    await expect(cells.first()).toBeVisible();
+    await expect(page.locator('#print-label-area')).not.toContainText('HARMONY KITCHEN');
+    await expect(cells.nth(0).getByTestId('label-name')).toHaveText(LONG[0].inventoryName);
+    await expect(cells.nth(1)).not.toContainText('ERS-13');
+
+    // Every label: the name wraps into at most 2 lines with nothing hidden for real names (<= 50 chars),
+    // and the name, bars, number and price stay inside the 18.2 mm cell
+    const fit = await cells.evaluateAll((els) => els.slice(0, 2).map((cell) => {
+      const name = cell.querySelector('[data-testid="label-name"]') as HTMLElement;
+      const lineH = parseFloat(getComputedStyle(name).lineHeight);
+      const last = cell.lastElementChild as HTMLElement;
+      return {
+        lines: Math.round(name.scrollHeight / lineH),
+        nameCut: name.scrollHeight > name.clientHeight + 1,
+        overflow: last.getBoundingClientRect().bottom > cell.getBoundingClientRect().bottom + 0.5,
+      };
+    }));
+    for (const f of fit) {
+      expect(f.lines).toBeLessThanOrEqual(2);
+      expect(f.nameCut).toBe(false);
+      expect(f.overflow).toBe(false);
+    }
+  });
+
+  test('10. Search list shows each item\'s stock', async ({ page }) => {
+    await page.locator('label:has-text("Cari Barang :") input').fill('maslon');
+    await expect(page.getByText('Stok: 12', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Stok: -3', { exact: true })).toBeVisible();
   });
 });

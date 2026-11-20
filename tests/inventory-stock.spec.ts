@@ -40,7 +40,7 @@ test.describe('Menu 3: Inventory Stock — legacy Sync Stok dan Laporan', () => 
 
     // Legacy GV_Header columns, in order (admin sees HPP and Total)
     const headers = page.locator('main table').first().locator('thead tr').first().locator('th');
-    await expect(headers).toHaveText(['No', 'PLU', 'Barcode', 'Nama Barang', 'Price', 'HPP', 'Total', 'Stok Terbaru', '=>', 'Last Sync']);
+    await expect(headers).toHaveText(['No', 'PLU', 'Barcode', 'Nama Barang', 'Price', 'HPP', 'Total', 'Stok Terbaru', 'Sync', '=>', 'Last Sync']);
 
     // New-only UI was removed: status badges, warehouse selector, minus filter, Excel / Cetak
     await expect(page.locator('th:has-text("Status")')).toHaveCount(0);
@@ -90,17 +90,18 @@ test.describe('Menu 3: Inventory Stock — legacy Sync Stok dan Laporan', () => 
     await expect(page.locator('th:has-text("Tgl. Transaksi")')).toBeVisible();
     await expect(page.locator('th:has-text("Saldo Akhir")')).toBeVisible();
     await expect(page.locator('text=Terakhir opname:')).toBeVisible();
+    // History up to the last sync is folded into "Sync On"; the tick shows every transaction again
+    const showAll = page.getByLabel(/Tampilkan riwayat sebelum sync/);
+    if (await showAll.isVisible({ timeout: 10000 }).catch(() => false)) await showAll.check();
     await expect(page.locator('td:has-text("23071801")').first()).toBeVisible({ timeout: 10000 });
   });
 
   test('5. Laporan Stok Akhir: toolbar button after Refresh, report of every active item with the legacy sums', async ({ page }) => {
     await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
 
-    // Legacy toolbar order: Refresh, then "Laporan Stok Akhir"; the hidden "Tampilkan Stok Tidak Sama" and Sync stay out
+    // Legacy toolbar order: Refresh, then "Laporan Stok Akhir"
     const toolbarButtons = page.locator('main button').filter({ hasText: /^(Refresh|Laporan Stok Akhir)$/ });
     await expect(toolbarButtons).toHaveText(['Refresh', 'Laporan Stok Akhir']);
-    await expect(page.locator('text=Tampilkan Stok Tidak Sama')).toHaveCount(0);
-    await expect(page.locator('th', { hasText: /^Sync$/ })).toHaveCount(0);
 
     // Expected sums straight from the API totals over the same list (active items)
     const totalsJson = await (await page.request.get('/api/inventory?onlyActive=true&totals=true&limit=1')).json();
@@ -117,6 +118,74 @@ test.describe('Menu 3: Inventory Stock — legacy Sync Stok dan Laporan', () => 
 
     await dialog.getByTitle('Close').click();
     await expect(dialog).toHaveCount(0);
+  });
+
+  test('7. Sync (old Frm_SyncInventory): Qty Opname, old confirm, posts a direct COUNT opname', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
+    // The opname POST is intercepted, so the live stock is not changed
+    const posts: any[] = [];
+    await page.route('**/api/inventory/opname', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      posts.push(route.request().postDataJSON());
+      await route.fulfill({ json: { success: true, data: {} } });
+    });
+    const grid = page.locator('main table').first();
+    await page.locator('input[placeholder="Enter text to search..."]').fill('BLG-PCD026');
+    await expect(grid.locator('tbody tr')).toHaveCount(1, { timeout: 10000 });
+
+    await grid.getByTitle('Sync stok').click();
+    const dialog = page.getByRole('dialog', { name: 'Sync Stok' });
+    await expect(dialog.getByText('Maslon Dutch Oven 26cm')).toBeVisible();
+    const qty = dialog.getByLabel('Qty Opname :');
+    await qty.fill('7');
+
+    // Cancel on the old confirm sends nothing
+    await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+    await expect(page.getByRole('alertdialog')).toContainText('Yakin Akan Melakukan Sync ?');
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Batal' }).click();
+    expect(posts).toHaveLength(0);
+
+    await dialog.getByRole('button', { name: 'OK', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Yes' }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0]).toMatchObject({ action: 'POST_DIRECT', qtyOpname: 7, mode: 'set' });
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('status')).toContainText('berhasil: stok 7');
+  });
+
+  test('8. .:: Detail compresses the history up to the last sync into one "Sync On" row', async ({ page }) => {
+    await expect(page.locator('text=Memuat data...')).toHaveCount(0, { timeout: 15000 });
+    // Newest first: one sale after the sync, the sync's SCO opname, and two older rows
+    await page.route('**/api/inventory/*/movement*', async (route) => {
+      await route.fulfill({
+        json: {
+          success: true, total: 4, currentStock: 9, lastOpnameDate: '2026-10-10T00:00:00.000Z',
+          data: [
+            { id: 'sale-9', date: '2026-11-02T03:00:00.000Z', transactionNo: 'POS-9', type: 'Penjualan', qtyIn: 0, qtyOut: 1, price: 0, balance: 9 },
+            { id: 'flow-3', date: '2026-10-10T05:00:00.000Z', transactionNo: 'SCO-2610101', type: 'Opname', qtyIn: 0, qtyOut: 2, price: 0, balance: 10 },
+            { id: 'sale-8', date: '2026-09-15T03:00:00.000Z', transactionNo: 'POS-8', type: 'Penjualan', qtyIn: 0, qtyOut: 3, price: 0, balance: 12 },
+            { id: 'receive-1', date: '2026-08-01T03:00:00.000Z', transactionNo: 'MR-1', type: 'Penerimaan', qtyIn: 15, qtyOut: 0, price: 0, balance: 15 },
+          ],
+        },
+      });
+    });
+    await page.locator('button[title="Detail"]').first().click();
+    const ledger = page.locator('table').filter({ has: page.locator('th:has-text("Saldo Akhir")') });
+    await expect(ledger.locator('tbody tr')).toHaveCount(2);
+    await expect(ledger.locator('tbody tr').nth(0)).toContainText('POS-9');
+    // Synced rows: in 15, out 2 + 3, balance at the sync 10
+    await expect(ledger.locator('tbody tr').nth(1)).toContainText('Sync On 10 Oktober 2026');
+    await expect(ledger.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('Sync On 10 Oktober 2026');
+    await expect(ledger.locator('tbody tr').nth(1).locator('td').nth(2)).toHaveText('Sync');
+    await expect(ledger.locator('tbody tr').nth(1).locator('td').nth(3)).toHaveText('15');
+    await expect(ledger.locator('tbody tr').nth(1).locator('td').nth(4)).toHaveText('5');
+    await expect(ledger.locator('tbody tr').nth(1).locator('td').nth(5)).toHaveText('10');
+    const months = page.locator('table').filter({ has: page.locator('th:has-text("Qty Transaksi")') });
+    await expect(months.locator('tbody tr')).toHaveText([/2026\s*November\s*-1/, /2026\s*Sync On 10 Oktober 2026\s*10/]);
+
+    // Display only: the full history is one tick away
+    await page.getByLabel('Tampilkan riwayat sebelum sync (3 transaksi)').check();
+    await expect(ledger.locator('tbody tr')).toHaveCount(4);
   });
 
   test('4. Refresh reloads the list', async ({ page }) => {

@@ -108,7 +108,6 @@ function A4LabelSheet({ labels }: { labels: LabelItem[] }) {
   );
 }
 
-const STORE_NAME = 'HARMONY KITCHEN';
 const noopSubscribe = () => () => {};
 const LABEL_SIZE = '108x18-3col';
 
@@ -130,7 +129,6 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
   // Set by the clicked print button right before window.print()
   const [includePrice, setIncludePrice] = useState<boolean>(true);
   const [printLayout, setPrintLayout] = useState<'roll' | 'a4'>('roll');
-  const [includeStoreName, setIncludeStoreName] = useState<boolean>(true);
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   // true only in the browser: the print area is portaled into <body>, which the server render does not have
@@ -405,7 +403,10 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                       <span className="block font-semibold truncate">{p.inventoryName}</span>
                       <span className={`block font-mono text-[10px] ${c.muted}`}>{p.inventoryNo} | {p.barcode}</span>
                     </span>
-                    <span className="shrink-0 tabular-nums">Rp {fmtN0(p.price || 0)}</span>
+                    <span className="shrink-0 text-right tabular-nums">
+                      <span className="block">Rp {fmtN0(p.price || 0)}</span>
+                      <span className={`block text-[10px] ${(p.stokAkhir ?? 0) < 0 ? 'text-rose-600 font-semibold' : c.muted}`}>Stok: {fmtN0(p.stokAkhir ?? 0)}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -522,10 +523,6 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
             Barcode Print With Price
           </LegacyButton>
         </div>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input type="checkbox" checked={includeStoreName} onChange={(e) => setIncludeStoreName(e.target.checked)} />
-          <span>Header Toko</span>
-        </label>
       </GroupBox>
 
       {rowMenu && (
@@ -549,15 +546,16 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                 <div key={colIdx} className="barcode-label-cell bg-white text-black">
                   {prod ? (
                     <>
-                      {includeStoreName && (
-                        <div style={{ fontSize: '5.5pt', fontWeight: 'bold', textTransform: 'uppercase', lineHeight: 1 }}>
-                          {STORE_NAME}
-                        </div>
-                      )}
-  
-                      {/* One line: a second line does not fit the 18.2mm label and was cut through the middle */}
-                      <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: '1.05', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', width: '100%' }}>
-                        {prod.inventoryNo} - {prod.inventoryName}
+                      {/* Client doc: only the product name + barcode (no store name, no No. Barang). Up to 2 lines,
+                          which fits the longest active name (50 chars) without cutting it */}
+                      <div
+                        data-testid="label-name"
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '6.5pt', fontWeight: 'bold', lineHeight: 1.1, width: '100%', overflow: 'hidden',
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {prod.inventoryName}
                       </div>
   
                       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.5mm 0' }}>
