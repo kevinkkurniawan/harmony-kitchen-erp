@@ -18,6 +18,8 @@ const WRITE_MODULE_RULES: { prefix: string; modules: string[] }[] = [
   // Master Barang "Tambahkan Stok Opname" posts to the opname API directly
   { prefix: '/api/inventory/opname', modules: ['stok-opname', 'master-barang'] },
   { prefix: '/api/inventory/usage', modules: [] },
+  // Staff stock check: the route itself only posts a count equal to the live stock
+  { prefix: '/api/inventory/stock-confirm', modules: ['konfirmasi-stok'] },
   { prefix: '/api/inventory', modules: ['master-barang'] },
   { prefix: '/api/wholesale-categories', modules: ['master-barang'] },
   { prefix: '/api/barcode', modules: ['cetak-barcode'] },
@@ -37,6 +39,7 @@ const WRITE_MODULE_RULES: { prefix: string; modules: string[] }[] = [
 const MODULE_LABELS: Record<string, string> = {
   'memo-sync-stok': 'Memo Sync Stok',
   'stok-opname': 'Stok Opname',
+  'konfirmasi-stok': 'Konfirmasi Stok',
   'master-barang': 'Master Barang',
   'cetak-barcode': 'Cetak Barcode',
   'master-promo': 'Master Promo',

@@ -47,6 +47,22 @@ describe('API guard rules', () => {
     assert.deepStrictEqual(writeModulesFor('/api/purchasing/payments'), []);
     assert.deepStrictEqual(writeModulesFor('/api/users/permissions'), []);
     assert.deepStrictEqual(writeModulesFor('/api/barcode/print'), ['cetak-barcode']);
+    assert.deepStrictEqual(writeModulesFor('/api/inventory/stock-confirm'), ['konfirmasi-stok']);
+  });
+
+  it('Konfirmasi Stok write needs its own tick, not Stok Opname or Master Barang', () => {
+    const onlyConfirm = [
+      { moduleCode: 'konfirmasi-stok', canView: true },
+      { moduleCode: 'stok-opname', canView: false },
+      { moduleCode: 'master-barang', canView: false },
+    ];
+    assert.deepStrictEqual(decideWrite('/api/inventory/stock-confirm', onlyConfirm), { allowed: true });
+    assert.strictEqual(decideWrite('/api/inventory/opname', onlyConfirm).allowed, false);
+    const noConfirm = decideWrite('/api/inventory/stock-confirm', [
+      { moduleCode: 'konfirmasi-stok', canView: false },
+      { moduleCode: 'stok-opname', canView: true },
+    ]);
+    assert.match(!noConfirm.allowed ? noConfirm.message : '', /Konfirmasi Stok/);
   });
 
   it('non-admin write needs the view tick of one owning module', () => {

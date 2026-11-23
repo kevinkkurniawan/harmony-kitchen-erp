@@ -23,6 +23,15 @@ New items save no brand / category (like ~6.5k existing items) and uom Pcs, inst
    OPNAME_POST / OPNAME_REVERSE per-user grants are removed; Stok Opname screen locked, Master Barang Show Detail
    opname buttons and right-click Stok Opname hidden, no Sync button. Not tested with a real staff login
    (none seeded).
+3. Confirm-only stock check for staff (Luki, 23 Nov): **deployed, waiting on Luki**; tested on local DB.
+   Luki is the only Admin; staff (e.g. Siti) must not +/- stock. Separate menu "Konfirmasi Stok" (`konfirmasi-stok`;
+   access is one tick per module, so it can't be a sub-right of Stok Opname), API `/api/inventory/stock-confirm`.
+   - Staff enter the counted qty blind (system stock hidden); count = stock -> SCO post with the row locked
+     (Last Sync = today, stock unchanged); mismatch -> refused "hubungi admin", Luki fixes it in Stok Opname.
+   - Every attempt logged as audit `STOCK_CONFIRM`: Admin sees all users with Stok Sistem, staff only their own.
+   - Blind only on this screen: GET /api/inventory still returns stock to any logged-in user.
+   - Phones (< 768 px): sidebar became a Menu button overlay and the header was compacted (all screens).
+   - Local test DB: `postgres-erp` container, db `harmony_local` (prisma db push + 2 live items, users luki / siti).
 
 ## Cetak Barcode: done (green), physical print to be confirmed by the client
 1. Roll label = product name + barcode (no "HARMONY KITCHEN", no Header Toko toggle, no No. Barang prefix).
@@ -43,4 +52,6 @@ the cashier did not fill in / save the receipts properly. Nothing to fix in the 
 ## Notes for the next session
 - `tests/cetak-barcode.spec.ts` (older tests) and the "Real" tests in other specs write to the live database
   (`DELETE /api/barcode-list?all=1`, opname posts); run mocked tests with `--grep-invert "Real"` / `--grep mocked`.
+- `tests/user-access.spec.ts` is all live-DB (creates Admin / Kasir users, password 4321) with no "Real" tag; a
+  timeout skips its cleanup (23 Nov: 3 users left, deleted by hand). Don't run it against the live database.
 - The `POS_DATABASE_URL` (Singapore) in `.env` is dead ("tenant not found") and unused by the code.

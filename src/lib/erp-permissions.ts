@@ -4,7 +4,7 @@ import { SessionUser } from '@/lib/session';
 
 // Menu keys of ERPDashboard; stored rows with other codes (old 'memo-sync-stok', 'sales-sync-stok') are ignored
 export const ERP_MODULE_CODES = [
-  'master-barang', 'inventory-stok', 'stok-opname', 'cetak-barcode', 'master-promo', 'master-supplier',
+  'master-barang', 'inventory-stok', 'konfirmasi-stok', 'stok-opname', 'cetak-barcode', 'master-promo', 'master-supplier',
   'penerimaan-barang', 'penerimaan-barang-harga', 'sales-monitoring', 'laporan-penjualan',
 ] as const;
 

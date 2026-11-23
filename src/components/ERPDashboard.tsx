@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Store, Sun, Moon, LogOut, KeyRound } from 'lucide-react';
+import { Store, Sun, Moon, LogOut, KeyRound, Menu } from 'lucide-react';
 import type { AuthenticatedUser } from '@/components/LoginModal';
 import type { ERPClientPermission } from '@/components/AuthGuard';
 import MasterBarangManager from '@/components/MasterBarangManager';
@@ -13,6 +13,7 @@ import PenerimaanBarangHargaManager from '@/components/PenerimaanBarangHargaMana
 
 import SalesMonitoringManager from '@/components/SalesMonitoringManager';
 import StockOpnameManager from '@/components/StockOpnameManager';
+import StockConfirmManager from '@/components/StockConfirmManager';
 import SalesReportManager from '@/components/SalesReportManager';
 import UserAccessManager from '@/components/UserAccessManager';
 import TableColumnResizer from '@/components/TableColumnResizer';
@@ -28,6 +29,7 @@ interface ERPDashboardProps {
 type TabKey = 
     | 'master-barang'
     | 'inventory-stok'
+    | 'konfirmasi-stok'
     | 'stok-opname'
     | 'cetak-barcode'
     | 'master-promo'
@@ -59,6 +61,8 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  // Phone only: the menu opens over the page instead of taking a fixed column
+  const [navOpen, setNavOpen] = useState(false);
 
   // Permission Check Helper Function (1:1 with Module Manager Isi_NavBarMenu)
   const canView = (moduleCode: string) => {
@@ -92,6 +96,7 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
       items: [
         { key: 'master-barang', label: 'Master Barang', visible: canView('master-barang') },
         { key: 'inventory-stok', label: 'Inventory Stock', visible: canView('inventory-stok') },
+        { key: 'konfirmasi-stok', label: 'Konfirmasi Stok', visible: canView('konfirmasi-stok') },
         { key: 'stok-opname', label: 'Stok Opname', visible: canView('stok-opname') },
         { key: 'cetak-barcode', label: 'Cetak Barcode', visible: canView('cetak-barcode') },
         { key: 'master-promo', label: 'Master Promo', visible: canView('master-promo') },
@@ -120,12 +125,20 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
       <TableColumnResizer />
       {/* Title bar, like the "Harmony - Module Manager" main window */}
       <header className={`h-10 px-3 border-b flex items-center justify-between shrink-0 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
-        <div className="flex items-center gap-2 font-bold text-[13px]">
-          <Store className="w-4 h-4 text-blue-600" />
-          <span>Harmony - Module Manager</span>
+        <div className="flex items-center gap-2 font-bold text-[13px] min-w-0">
+          <button
+            onClick={() => setNavOpen((o) => !o)}
+            aria-label="Menu"
+            className={`md:hidden px-1.5 py-1 rounded border cursor-pointer ${isDark ? 'border-slate-600 hover:bg-slate-800' : 'border-slate-400 hover:bg-slate-100'}`}
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+          <Store className="w-4 h-4 text-blue-600 shrink-0" />
+          <span className="truncate">Harmony - Module Manager</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Phones: the footer already shows the user */}
+          <span className={`hidden sm:inline ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
             Current User : <b>{currentUser.fullName || currentUser.username}</b> ({currentUser.userLevel || 'User'})
           </span>
           <button
@@ -137,10 +150,11 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
           </button>
           <button
             onClick={async () => { await onLogout(); }}
+            aria-label="Log Off"
             className={`px-2 py-1 rounded border inline-flex items-center gap-1 cursor-pointer ${isDark ? 'border-slate-600 hover:bg-slate-800' : 'border-slate-400 hover:bg-slate-100'}`}
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Log Off</span>
+            <span className="hidden sm:inline whitespace-nowrap">Log Off</span>
           </button>
           {/* Old ribbon "Action" group: Log In, Log Off, Change Password */}
           <button
@@ -156,9 +170,10 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
+        {navOpen && <div className="md:hidden absolute inset-0 z-30 bg-black/30" onClick={() => setNavOpen(false)} />}
         {/* Navigation (accordion groups like the old main window's menu) */}
-        <aside className={`w-56 border-r flex flex-col shrink-0 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
+        <aside className={`w-56 border-r flex-col shrink-0 ${navOpen ? 'flex absolute inset-y-0 left-0 z-40 shadow-lg' : 'hidden'} md:flex md:static md:shadow-none ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-300'}`}>
           <nav className="flex-1 overflow-y-auto py-1">
             {menu.map((g) => {
               const items = g.items.filter((i) => i.visible);
@@ -176,7 +191,7 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
                   {open && items.map((i) => (
                     <button
                       key={i.key}
-                      onClick={() => setActiveTab(i.key)}
+                      onClick={() => { setActiveTab(i.key); setNavOpen(false); }}
                       className={`w-full pl-6 pr-3 py-1.5 text-left cursor-pointer ${
                         activeTab === i.key
                           ? 'bg-blue-600 text-white font-semibold'
@@ -196,6 +211,7 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} canOpname={isAdmin} />}
           {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isAdmin} />}
+          {activeTab === 'konfirmasi-stok' && <StockConfirmManager isDark={isDark} isAdmin={isAdmin} />}
           {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isAdmin} />}
           {activeTab === 'cetak-barcode' && <BarcodePrintManager isDark={isDark} />}
 

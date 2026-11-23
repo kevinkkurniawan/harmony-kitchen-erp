@@ -58,6 +58,15 @@ export interface SaveOpnameParams {
   actor: string;
   action?: 'draft' | 'post';
   idempotencyKey?: string;
+  /** Konfirmasi Stok: post only when every counted qty equals the live stock, else throw StockMismatchError */
+  requireMatch?: boolean;
+}
+
+/** Counted qty differs from the live stock in a requireMatch save; nothing was written. */
+export class StockMismatchError extends Error {
+  constructor(public inventoryId: number, public countedQty: number, public systemQty: number) {
+    super('Hasil hitung tidak sama dengan stok sistem.');
+  }
 }
 
 export interface ReverseOpnameParams {
@@ -101,6 +110,10 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
 
     // 2. Resolve items against current authoritative database stock
     const invIds = items.map((it) => Number(it.inventoryId)).filter(Boolean);
+    // A confirm must compare against stock no sale can change before the post: lock the rows until commit
+    if (params.requireMatch && invIds.length > 0) {
+      await tx.$queryRaw`SELECT id::text FROM m_inventory WHERE id IN (${Prisma.join(invIds)}) FOR UPDATE`;
+    }
     const inventories = await tx.m_inventory.findMany({
       where: { id: { in: invIds } },
     });
@@ -123,6 +136,9 @@ export async function saveOpnameTransaction(params: SaveOpnameParams) {
         );
       }
       const diffQty = targetQty - currentLiveStock;
+      if (params.requireMatch && diffQty !== 0) {
+        throw new StockMismatchError(Number(it.inventoryId), targetQty, currentLiveStock);
+      }
       const unitPrice = it.unitPrice !== undefined ? Number(it.unitPrice) : Number(inv.hpp || inv.price || 0);
 
       return {

@@ -30,6 +30,7 @@ export interface ModulePermission {
 export const MODULE_LABEL_MAP: Record<string, { label: string; group: string }> = {
   'master-barang': { label: 'Master Barang', group: 'Master Data' },
   'inventory-stok': { label: 'Inventory Stock', group: 'Master Data' },
+  'konfirmasi-stok': { label: 'Konfirmasi Stok', group: 'Master Data' },
   'stok-opname': { label: 'Stok Opname', group: 'Master Data' },
   'cetak-barcode': { label: 'Cetak Barcode', group: 'Master Data' },
   'master-promo': { label: 'Master Promo', group: 'Master Data' },
