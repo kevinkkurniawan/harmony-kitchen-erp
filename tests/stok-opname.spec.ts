@@ -46,6 +46,8 @@ test.describe('Menu 2: Stok Opname — E2E Audit & Unified Qty Verification', ()
     for (const name of ['New Opname', 'Refresh', 'Print', 'Print Barcode', 'Input', 'Simpan']) {
       await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
     }
+    // No bulk "Load Data" (not in the old opname program; Luki, 23 Nov): items are added by scan / search
+    await expect(page.getByRole('button', { name: /Load Data/ })).toHaveCount(0);
     for (const label of ['Barcode :', 'No. Transaksi :', 'Gudang :', 'Nama Barang :', 'Opname History :', 'Qty :', 'Desc :']) {
       await expect(page.getByText(label, { exact: true })).toBeVisible();
     }

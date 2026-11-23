@@ -302,8 +302,8 @@ export default function StockOpnameManager({ isDark, canViewPrice = false, canOp
 
       if (seq !== loadSeqRef.current) return;
 
-      // Start empty: posting marks every listed item as checked today, so the full
-      // catalog is only loaded on purpose via "Load Data" (COUNT mode)
+      // Start empty and add items by scan / search, like the old opname program (no bulk "Load Data":
+      // it loaded an arbitrary 500 items and posting them marked all of them as checked today)
       void itemsArray;
       setOpnameItems([]);
       setHasUnsavedChanges(false);
@@ -368,37 +368,6 @@ export default function StockOpnameManager({ isDark, canViewPrice = false, canOp
   const handleNewOpname = async () => {
     if (!(await confirmDiscardUnsaved())) return;
     resetToNewOpname();
-  };
-
-  // Handle Populate All Products for Bulk Opname
-  const handlePopulateAll = () => {
-    if (inventoryList.length === 0) {
-      showToast('Daftar barang inventori belum dimuat', 'info');
-      return;
-    }
-    if (isReadOnly) {
-      showToast('Transaksi yang sudah diposting/dibatalkan tidak dapat diubah. Klik "New Opname" terlebih dahulu.', 'error');
-      return;
-    }
-    if (opnameMode === 'ADJUST') {
-      showToast('Muat semua barang hanya untuk mode Cek Stok (hitung fisik).', 'info');
-      return;
-    }
-    const allItems: OpnameEntry[] = inventoryList.map((item) => {
-      const itemQty = item.stokAkhir !== undefined ? Number(item.stokAkhir) : Number(item.stock || 0);
-      return {
-        inventoryId: Number(item.id),
-        inventoryNo: item.inventoryNo,
-        barcode: item.barcode || item.inventoryNo,
-        inventoryName: item.inventoryName,
-        qty: itemQty,
-        price: Number(item.price || 0),
-        description: 'Auto-Populate Opname Massal',
-      };
-    });
-    setOpnameItems(allItems);
-    setHasUnsavedChanges(true);
-    showToast(`Semua ${allItems.length} barang berhasil dimuat ke tabel opname!`, 'success');
   };
 
   // Handle Barcode Auto-Fill
@@ -1125,14 +1094,6 @@ export default function StockOpnameManager({ isDark, canViewPrice = false, canOp
               </button>
             );
           })}
-          <LegacyButton
-            isDark={isDark}
-            onClick={handlePopulateAll}
-            disabled={isReadOnly}
-            title="Muat seluruh barang master inventori ke tabel opname (maks. 500)"
-          >
-            Load Data ({inventoryList.length})
-          </LegacyButton>
           <span className={`text-[11px] ${c.muted}`}>
             {opnameMode === 'ADJUST'
               ? 'Qty = perubahan stok (+ tambah, - kurang). Stok akhir tidak boleh minus.'
