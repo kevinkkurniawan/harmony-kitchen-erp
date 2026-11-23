@@ -79,6 +79,9 @@ export async function GET(req: Request) {
     const banks = await prisma.m_bank.findMany({ select: { id: true, bankname: true } });
     const bankName = new Map(banks.map((b: any) => [Number(b.id), b.bankname || '']));
 
+    // The reason typed at Void / Unvoid is kept in the audit log; show the latest one in Keterangan
+    const statusNotes = await loadVoidNotes(transactions.map((t: any) => Number(t.id)));
+
     // Columns of the legacy Bill Opname grid (Frm_BillOpname); the amount lands in one payment column
     const mapped = transactions.map((s: any) => {
       const payments = paymentsByHeader.get(Number(s.id)) || [];
@@ -121,7 +124,7 @@ export async function GET(req: Request) {
         finalDiscount,
         paymentValue: unpaid ? 0 : Number(pay?.paymentvalue ?? net),
         changeValue: unpaid ? 0 : Number(pay?.changevalue ?? 0),
-        remarks: s.remarks || '',
+        remarks: [s.remarks, statusNotes.get(Number(s.id))].filter(Boolean).join(' | '),
         tunai: amountIn(group === 'CASH'),
         debit: amountIn(group === 'CARD' && !isCreditCard),
         qris: amountIn(group === 'QRIS'),
@@ -139,6 +142,29 @@ export async function GET(req: Request) {
     console.error('Error in GET /api/sales/monitoring:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
+}
+
+// Latest Void / Unvoid per sale as "VOID oleh <user>: <alasan>" (t_auditevent, written by PATCH /api/sales/monitoring/[id])
+async function loadVoidNotes(headerIds: number[]) {
+  const notes = new Map<number, string>();
+  for (let i = 0; i < headerIds.length; i += 10000) {
+    const events = await prisma.t_auditevent.findMany({
+      where: {
+        entitytype: 'SALES_POS',
+        eventtype: { in: ['SALES_VOID', 'SALES_UNVOID'] },
+        entityid: { in: headerIds.slice(i, i + 10000).map(String) },
+      },
+      orderBy: { id: 'desc' },
+      select: { entityid: true, eventtype: true, actor: true, reason: true },
+    });
+    for (const e of events) {
+      const id = Number(e.entityid);
+      if (notes.has(id)) continue; // newest first: keep the latest only
+      const label = e.eventtype === 'SALES_VOID' ? 'VOID' : 'UNVOID';
+      notes.set(id, `${label} oleh ${e.actor}: ${e.reason || '-'}`);
+    }
+  }
+  return notes;
 }
 
 // Payments for the given sales, queried in chunks to stay under Postgres's bind-parameter limit.

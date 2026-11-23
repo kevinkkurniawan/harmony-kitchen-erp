@@ -79,6 +79,19 @@ Doc note added green + bold (first version wrongly said "tidak terpotong lagi"; 
    "Print A4" still prints the name on one line (old Rpt_PrintOpname, not in the complaint).
 3. Search list shows "Stok: N".
 
+## Sales Monitoring, round 2 (doc, 23 Nov): 3 points
+1. "Void & unvoid diminta alasan, tapi alasan tidak keluar dimanapun": **fixed in code, not pushed / live yet**. The
+   reason was only in `t_auditevent` (SALES_VOID / SALES_UNVOID). GET /api/sales/monitoring now adds the latest one to
+   Keterangan as "VOID oleh <user>: <alasan>" (`loadVoidNotes`). Live example: sale 900000165, VOID "Ngetest" then
+   UNVOID "Tidak jadi" (admin, 23 Nov). The 520 voided sales before that have no reason (old app / earlier voids).
+   Not run against a DB (docker was off); typecheck passes. Doc note to write once live.
+2. "Dipisahkan per segmen antar user": **unclear, ask Luki** (group the rows per User with a subtotal? or a separate
+   total per user like the POS "Rekap Penjualan Harian"?). Old sources are not on this PC, so the old grid can't be read.
+3. "Coba cek kok ada yang bisa belum bayar": BELUM BAYAR rows are old desktop POS notes with no payment row (linda /
+   lia, ~100 a month, only ~25% have items, rest are empty notes opened and left). They are shown with Rp 0 and left
+   out of totals since `657af97`. **Ask Luki**: hide them (like the old lists?) or keep them visible?
+
+### Earlier (round 1)
 ## Sales Monitoring: closed, not an app bug
 "Nota seminggu terakhir tidak tampil": not an ERP bug, the notes are not in the database. Confirmed 2026-11-20:
 the cashier did not fill in / save the receipts properly. Nothing to fix in the ERP.
