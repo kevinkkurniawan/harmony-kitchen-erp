@@ -234,16 +234,18 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
 
     // Legacy GV_Inventory columns plus Grosir 1-3 (admin sees Harga Beli / Total H.Stok); Aktif check column last
     const headers = page.locator('main table').first().locator('thead tr').first().locator('th');
-    await expect(headers).toHaveText(['No. Barang', 'Barcode', 'Nama', 'Stok', 'Harga Retail', 'Grosir 1', 'Grosir 2', 'Grosir 3', 'Harga Beli', 'Total H.Stok', 'Total H.Jual', 'Aktif']);
+    // Deskripsi and Kode follow Nama like the old grid (Luki, 23 Nov)
+    await expect(headers).toHaveText(['No. Barang', 'Barcode', 'Nama', 'Deskripsi', 'Kode', 'Stok', 'Harga Retail', 'Grosir 1', 'Grosir 2', 'Grosir 3', 'Harga Beli', 'Total H.Stok', 'Total H.Jual', 'Aktif']);
     const firstRow = page.locator('main table').first().locator('tbody tr').first().locator('td');
-    await expect(firstRow.nth(5)).toHaveText('82.000');
-    await expect(firstRow.nth(7)).toHaveText('75.000');
-    await expect(firstRow.nth(11).locator('input[type="checkbox"]')).toBeChecked();
+    await expect(firstRow.nth(4)).toHaveText('STD');
+    await expect(firstRow.nth(7)).toHaveText('82.000');
+    await expect(firstRow.nth(9)).toHaveText('75.000');
+    await expect(firstRow.nth(13).locator('input[type="checkbox"]')).toBeChecked();
 
     // Footer sums come from the server totals: Stok 25 + -2 = 23; Total H.Jual = 25*85000 - 2*150000
     const footer = page.locator('main table').first().locator('tfoot td');
-    await expect(footer.nth(3)).toHaveText('23');
-    await expect(footer.nth(10)).toHaveText('1.825.000');
+    await expect(footer.nth(5)).toHaveText('23');
+    await expect(footer.nth(12)).toHaveText('1.825.000');
 
     // New-only UI removed
     await expect(page.locator('button', { hasText: 'Tambah Barang' })).toHaveCount(0);
@@ -333,6 +335,12 @@ test.describe('Master Barang E2E Suite (Admin Role)', () => {
     for (const label of ['Merk :', 'Kategori :', 'Satuan :']) {
       await expect(page.getByText(label, { exact: true })).toHaveCount(0);
     }
+    // Luki, 23 Nov: Kode starts empty (no "STD"), HPP comes from Penerimaan Barang dengan harga (read-only),
+    // and the form keeps a compact width instead of stretching over the whole screen
+    await expect(page.getByLabel('Kode :')).toHaveValue('');
+    await expect(page.getByLabel('HPP', { exact: true })).toHaveAttribute('readonly', '');
+    const formWidth = await page.getByLabel('Kategori Grosir :').evaluate((el) => el.closest('form')!.querySelector('.grid')!.getBoundingClientRect().width);
+    expect(formWidth).toBeLessThanOrEqual(1024);
     // Grosir 1-3 sit on one row
     const g1 = await page.getByLabel('Grosir 1', { exact: true }).boundingBox();
     const g3 = await page.getByLabel('Grosir 3', { exact: true }).boundingBox();

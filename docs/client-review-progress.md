@@ -11,6 +11,14 @@ Doc and rules: see `AGENTS.md` ("Client review doc"). Status as of 2026-11-20 (a
 
 New items save no brand / category (like ~6.5k existing items) and uom Pcs, instead of the first lookup or id 1.
 
+Round 2 (doc items, 23 Nov; built, tested on local DB, not committed). Old screen read from `Master_Data.dll`
+(ilspycmd with `DOTNET_ROOT=~/git/POS/dotnet`): grid No. Barang, Barcode, Nama, Description, Kode, ...; HPP is
+not on the old form, only Harga Beli.
+1. HPP read-only on the form, never saved from it (set by Penerimaan Barang dengan harga); Harga Beli editable.
+2. Form capped at 1024 px, Nama Barang two columns wide.
+3. Kode: no "STD" default (API mapped empty to STD and the form would save it; 0 live rows had it). Empty like old.
+4. Grid and Export Data add Deskripsi (cut, full text in tooltip) and Kode after Nama; still fits 1366 px.
+
 ## Inventory Stock
 1. Sync (old `Frm_SyncInventory`, SPs read from the MSSQL backup): **done (green)**.
    - Per-row Sync button (Admin): "Qty Opname :", old confirm "Yakin Akan Melakukan Sync ?", posts a direct
@@ -52,6 +60,18 @@ the cashier did not fill in / save the receipts properly. Nothing to fix in the 
   in the database. The production POS deployments (10 and 16 Nov) reach the Seoul database.
 - Asked Luki: which app the cashiers use since 12 Nov, the address opened, any save error, whether the notes
   still exist in the old app.
+
+## Komplain Kasir (POS app, repo harmony-kitchen-pos): built 23 Nov, tested on a local DB, not committed
+Old POS behaviour read from `~/git/POS/pos_decompiled.cs`.
+1. Relogin timeout: session slides (renewed on use, ends after 7 days unused or Logout); was a fixed 12 h.
+2. Receipt: grosir line prints "@ <retail>", Sub Total at retail, then "-- Potongan Diskon <tier>" -(saving)
+   (old SP: 'Potongan Diskon ' + grosir tier); manual potongan is its own "-- Potongan @ x" row.
+3. X-Report: adds the old "Rekap Penjualan Harian" (per cashier, notes grouped by payment, totals, Dicetak);
+   report day is now WIB (was server UTC). The 0 omset in Luki's 20 Nov photo was real: no web POS sales that day.
+4. Name search shows G1 / G2 / G3 under the retail price (old lookup grid had Grosir1-3 columns).
+5. Override Grosir 1 asks "Nama Reseller" (min 3 chars, as the old Frm_MemberValidation) with the PIN; saved in
+   t_salesposheader.customername, printed "Reseller : <name>".
+- Seen, not fixed: Reprint Bill prints the current cashier, not the sale's; lia has 2 completed CASH sales of 0.
 
 ## Notes for the next session
 - `tests/cetak-barcode.spec.ts` (older tests) and the "Real" tests in other specs write to the live database

@@ -86,7 +86,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       maxstock: body.maxStock !== undefined ? Number(body.maxStock) : undefined,
       kodeharga: body.kodeHarga,
       description: body.description,
-      hpp: mayViewHpp && body.hpp !== undefined ? Number(body.hpp) : undefined,
+      // HPP is set by Penerimaan Barang dengan harga only (old app: not on the item form)
       price: body.price !== undefined ? Number(body.price) : undefined,
       pricebuy: mayViewHpp && body.priceBuy !== undefined ? Number(body.priceBuy) : undefined,
       grosir1: body.grosir1 !== undefined ? (body.grosir1 ? Number(body.grosir1) : null) : undefined,

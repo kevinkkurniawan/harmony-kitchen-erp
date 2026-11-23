@@ -280,7 +280,8 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       uoMId: 1,
       wholesaleCategoryId: undefined,
       promoBundle: 0,
-      kodeHarga: 'STD',
+      // Old app leaves Kode (kodeharga) empty unless typed (Luki, 23 Nov)
+      kodeHarga: '',
     });
   }, [readOnly]);
 
@@ -334,11 +335,11 @@ export default function MasterBarangManager({ isDark, mode = 'master', canViewPr
       addToast('Tidak ada data barang untuk diexport', 'warning');
       return;
     }
-    const headers = ['No. Barang', 'Barcode', 'Nama', 'Stok', 'Harga Retail', 'Grosir 1', 'Grosir 2', 'Grosir 3', ...(canViewPrice ? ['Harga Beli', 'Total H.Stok'] : []), 'Total H.Jual', 'Aktif'];
+    const headers = ['No. Barang', 'Barcode', 'Nama', 'Deskripsi', 'Kode', 'Stok', 'Harga Retail', 'Grosir 1', 'Grosir 2', 'Grosir 3', ...(canViewPrice ? ['Harga Beli', 'Total H.Stok'] : []), 'Total H.Jual', 'Aktif'];
     const rows = rowsToExport.map((p) => {
       const stock = Number(p.stokAkhir || 0);
       return [
-        p.inventoryNo || '', p.barcode || '', p.inventoryName || '', stock, Number(p.price || 0),
+        p.inventoryNo || '', p.barcode || '', p.inventoryName || '', p.description || '', p.kodeHarga || '', stock, Number(p.price || 0),
         Number(p.grosir1 || 0), Number(p.grosir2 || 0), Number(p.grosir3 || 0),
         ...(canViewPrice ? [Number(p.priceBuy || 0), stock * Number(p.priceBuy || 0)] : []),
         stock * Number(p.price || 0), p.isActive ? 'Ya' : 'Tidak',
@@ -528,8 +529,15 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
     // Nama may wrap so the Grosir and Aktif columns still fit on a ~1366px screen
     {
       key: 'inventoryName', caption: 'Nama', sortKey: 'inventoryName', filterKey: 'inventoryname',
-      render: (p) => <span className="inline-block min-w-56 whitespace-normal">{p.inventoryName}</span>,
+      render: (p) => <span className="inline-block min-w-36 whitespace-normal">{p.inventoryName}</span>,
     },
+    // Old GV_Inventory shows Description and Kode right after Nama (Luki, 23 Nov); long descriptions are cut,
+    // the full text is in the tooltip
+    {
+      key: 'description', caption: 'Deskripsi', sortKey: 'description', filterKey: 'description',
+      render: (p) => <span className="block max-w-24 truncate" title={p.description || ''}>{p.description}</span>,
+    },
+    { key: 'kodeHarga', caption: 'Kode' },
     {
       key: 'stokAkhir', caption: 'Stok', format: 'n0', sortKey: 'stokAkhir', footer: totals ? fmtN0(totals.stock) : '',
       render: (p) => <span className={p.stokAkhir < 0 ? 'text-rose-600 font-semibold' : ''}>{fmtN0(p.stokAkhir)}</span>,
@@ -625,7 +633,8 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
   const renderEditForm = () => (
     <GroupBox caption={editingId === 'new' ? 'Barang Baru' : formData.inventoryName || formData.inventoryNo} isDark={isDark} className="shrink-0">
       <form onSubmit={handleSaveForm} className="flex flex-col gap-2">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-1.5">
+        {/* Compact like the old edit form (Luki, 23 Nov): capped width instead of three columns over the whole screen */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-1.5 max-w-5xl">
           <FieldRow label="No. Barang :" isDark={isDark}>
             <LegacyInput isDark={isDark} required value={formData.inventoryNo || ''} onChange={(e) => setFormData({ ...formData, inventoryNo: e.target.value })} />
           </FieldRow>
@@ -635,16 +644,19 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
           <FieldRow label="Kode :" isDark={isDark}>
             <LegacyInput isDark={isDark} value={formData.kodeHarga || ''} onChange={(e) => setFormData({ ...formData, kodeHarga: e.target.value })} />
           </FieldRow>
-          <FieldRow label="Nama Barang :" isDark={isDark}>
-            <LegacyInput
-              isDark={isDark}
-              required
-              value={formData.inventoryName || ''}
-              title="Nama akan dirapikan otomatis."
-              onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
-              onBlur={(e) => setFormData({ ...formData, inventoryName: normalizeInventoryName(e.target.value) })}
-            />
-          </FieldRow>
+          {/* Nama Barang takes two columns so long names stay readable */}
+          <div className="md:col-span-2">
+            <FieldRow label="Nama Barang :" isDark={isDark}>
+              <LegacyInput
+                isDark={isDark}
+                required
+                value={formData.inventoryName || ''}
+                title="Nama akan dirapikan otomatis."
+                onChange={(e) => setFormData({ ...formData, inventoryName: e.target.value })}
+                onBlur={(e) => setFormData({ ...formData, inventoryName: normalizeInventoryName(e.target.value) })}
+              />
+            </FieldRow>
+          </div>
           <FieldRow label="Harga Retail :" isDark={isDark}>
             <LegacyInput isDark={isDark} type="number" required value={formData.price ?? 0} onChange={(e) => setFormData({ ...formData, price: num(e.target.value) })} />
           </FieldRow>
@@ -653,15 +665,16 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
               <FieldRow label="Harga Beli :" isDark={isDark}>
                 <LegacyInput isDark={isDark} type="number" value={formData.priceBuy ?? 0} onChange={(e) => setFormData({ ...formData, priceBuy: num(e.target.value) })} />
               </FieldRow>
+              {/* HPP comes from Penerimaan Barang dengan harga, as in the old app (not editable, Luki 23 Nov) */}
               <FieldRow label="HPP :" isDark={isDark}>
-                <LegacyInput isDark={isDark} type="number" value={formData.hpp ?? 0} onChange={(e) => setFormData({ ...formData, hpp: num(e.target.value) })} />
+                <LegacyInput isDark={isDark} readOnly tabIndex={-1} aria-label="HPP" value={fmtN0(formData.hpp ?? 0)} title="Otomatis dari Penerimaan Barang dengan harga" className={`cursor-default focus:ring-0 ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`} />
               </FieldRow>
               <FieldRow label="Stok Awal :" isDark={isDark}>
                 <LegacyInput isDark={isDark} type="number" value={formData.stokAwal ?? 0} onChange={(e) => setFormData({ ...formData, stokAwal: parseInt(e.target.value) || 0 })} />
               </FieldRow>
             </>
           )}
-          <div className="md:col-span-2 xl:col-span-3">
+          <div className="md:col-span-3">
             <FieldRow label="Kategori Grosir :" isDark={isDark}>
               <LegacySelect
                 isDark={isDark}
@@ -677,7 +690,7 @@ Jika barang sudah punya riwayat transaksi, barang hanya akan dinonaktifkan agar 
               </LegacySelect>
             </FieldRow>
           </div>
-          <div className="md:col-span-2 xl:col-span-3">
+          <div className="md:col-span-3">
             <FieldRow label="Grosir 1 / 2 / 3 :" isDark={isDark}>
               <LegacyInput isDark={isDark} type="number" aria-label="Grosir 1" value={formData.grosir1 ?? 0} onChange={(e) => setFormData({ ...formData, grosir1: num(e.target.value) })} />
               <LegacyInput isDark={isDark} type="number" aria-label="Grosir 2" value={formData.grosir2 ?? 0} onChange={(e) => setFormData({ ...formData, grosir2: num(e.target.value) })} />

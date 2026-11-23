@@ -51,7 +51,7 @@ export async function POST(req: Request) {
           inventorycategoryid: 1,
           inventoryproductid: 1,
           uomid: 1,
-          kodeharga: text(body.kodeHarga) || 'STD',
+          kodeharga: text(body.kodeHarga),
           description: text(body.description),
           price: 0,
           hpp: 0,
