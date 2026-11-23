@@ -137,7 +137,10 @@ export async function GET(req: Request) {
       };
     });
 
-    return createPaginatedResponse(mapped, total, paginationParams);
+    // The old Bill Opname (sp_SPSalesPOS_OpnameGetSummary) is T_SalesPOSHeader INNER JOIN T_SalesPayment: a note that
+    // was never paid is not listed at all (client doc: "kok ada yang bisa belum bayar")
+    const paid = mapped.filter((r: any) => !r.isUnpaid);
+    return createPaginatedResponse(paid, total - (mapped.length - paid.length), paginationParams);
   } catch (error: any) {
     console.error('Error in GET /api/sales/monitoring:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

@@ -78,6 +78,8 @@ export interface MonitoringRow {
   cashierName: string;
   isVoid: boolean;
   isUnpaid: boolean;
+  /** Synthetic "Subtotal <kasir>" row added by the grid (not a sale) */
+  isSubtotal?: boolean;
 }
 
 interface ToastMessage {
@@ -213,13 +215,46 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   const sortedRows = useMemo(() => {
     if (!sortField) return transactions;
     return [...transactions].sort((a, b) => {
-      const valA = a[sortField];
-      const valB = b[sortField];
+      const valA = a[sortField] as string | number | boolean;
+      const valB = b[sortField] as string | number | boolean;
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
   }, [transactions, sortField, sortOrder]);
+
+  // Notes grouped per kasir (client doc: "dipisahkan per segmen antar user"), each group closed by a subtotal row.
+  // Only when more than one kasir sold that day (one kasir's subtotal would repeat the footer). A legacy user is
+  // "DESKTOP-xxx/linda", the web POS "linda": same person, same group. Void notes are not money received.
+  const displayRows = useMemo<MonitoringRow[]>(() => {
+    const userOf = (r: MonitoringRow) => (r.cashierName.split('/').pop() || '').trim().toLowerCase() || '-';
+    const groups = new Map<string, MonitoringRow[]>();
+    for (const row of sortedRows) {
+      const u = userOf(row);
+      if (!groups.has(u)) groups.set(u, []);
+      groups.get(u)!.push(row);
+    }
+    if (groups.size < 2) return sortedRows;
+    const out: MonitoringRow[] = [];
+    let subtotalId = -1;
+    for (const [user, rows] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      out.push(...rows);
+      const sub: MonitoringRow = {
+        id: subtotalId--, invoiceNo: `Subtotal ${user} (${rows.length} nota)`, paymentType: '', bankName: '',
+        transactionValue: 0, finalDiscount: 0, paymentValue: 0, changeValue: 0, remarks: '',
+        tunai: 0, debit: 0, qris: 0, creditCard: 0, other: 0, cashierName: user,
+        isVoid: false, isUnpaid: false, isSubtotal: true,
+      };
+      for (const row of rows) {
+        if (row.isVoid || row.isUnpaid) continue;
+        for (const col of COLUMNS) {
+          if (col.total) (sub[col.key] as number) += Number(row[col.key] || 0);
+        }
+      }
+      out.push(sub);
+    }
+    return out;
+  }, [sortedRows]);
 
   // Footer totals, like the legacy grid footer; void and unpaid notes are not money received
   const totals = useMemo(() => {
@@ -356,7 +391,7 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
   const gridColumns: LegacyColumn<MonitoringRow>[] = [
     {
       key: 'isVoid', caption: '.::.', align: 'center', width: 36,
-      render: (row) => <input type="checkbox" checked={row.isVoid} readOnly tabIndex={-1} aria-label={row.isVoid ? 'VOID' : 'Tidak void'} className="pointer-events-none" />,
+      render: (row) => row.isSubtotal ? null : <input type="checkbox" checked={row.isVoid} readOnly tabIndex={-1} aria-label={row.isVoid ? 'VOID' : 'Tidak void'} className="pointer-events-none" />,
     },
     ...COLUMNS.map((col): LegacyColumn<MonitoringRow> => ({
       key: col.key,
@@ -364,10 +399,14 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
       format: col.numeric ? 'n0' : 'text',
       sortKey: col.key,
       footer: col.total ? fmt(totals[col.key] || 0) : undefined,
+      // A subtotal row only carries the sums: other cells stay empty
+      render: (row) => row.isSubtotal && !col.total && col.key !== 'invoiceNo' && col.key !== 'cashierName'
+        ? null
+        : col.numeric ? fmt(Number(row[col.key] || 0)) : String(row[col.key] ?? ''),
     })),
     {
       key: 'actions', caption: 'Aksi', align: 'center',
-      render: (row) => (
+      render: (row) => row.isSubtotal ? null : (
         <div className="flex items-center justify-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); handleViewReceipt(row.id); }} className="p-0.5 rounded hover:bg-blue-500/20 text-blue-600 cursor-pointer" title="Lihat & Cetak Struk">
             {receiptLoadingId === row.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
@@ -447,15 +486,15 @@ export default function SalesMonitoringManager({ isDark }: SalesMonitoringManage
       <LegacyGrid
         isDark={isDark}
         columns={gridColumns}
-        rows={sortedRows}
+        rows={displayRows}
         rowKey={(row) => row.id}
         loading={isLoading}
         emptyText="Tidak ada nota pada tanggal ini."
         sort={sortField ? { key: sortField, order: sortOrder } : null}
         onSort={(key) => handleSort(key as keyof MonitoringRow)}
-        onRowDoubleClick={(row) => handleViewReceipt(row.id)}
-        onRowContextMenu={(row, e) => setRowMenu(menuAt(e, row))}
-        rowClassName={(row) => (row.isVoid ? (isDark ? 'bg-rose-950/30 text-slate-500 line-through' : 'bg-rose-50 text-slate-400 line-through') : '')}
+        onRowDoubleClick={(row) => { if (!row.isSubtotal) handleViewReceipt(row.id); }}
+        onRowContextMenu={(row, e) => { if (!row.isSubtotal) setRowMenu(menuAt(e, row)); }}
+        rowClassName={(row) => row.isSubtotal ? (isDark ? 'bg-slate-800 font-bold' : 'bg-slate-200 font-bold') : (row.isVoid ? (isDark ? 'bg-rose-950/30 text-slate-500 line-through' : 'bg-rose-50 text-slate-400 line-through') : '')}
         showFooter
       />
 

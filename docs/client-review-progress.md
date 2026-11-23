@@ -85,11 +85,17 @@ Doc note added green + bold (first version wrongly said "tidak terpotong lagi"; 
    Keterangan as "VOID oleh <user>: <alasan>" (`loadVoidNotes`). Live example: sale 900000165, VOID "Ngetest" then
    UNVOID "Tidak jadi" (admin, 23 Nov). The 520 voided sales before that have no reason (old app / earlier voids).
    Not run against a DB (docker was off); typecheck passes. Doc note to write once live.
-2. "Dipisahkan per segmen antar user": **unclear, ask Luki** (group the rows per User with a subtotal? or a separate
-   total per user like the POS "Rekap Penjualan Harian"?). Old sources are not on this PC, so the old grid can't be read.
+2. "Dipisahkan per segmen antar user": Luki (23 Nov): **per kasir with a subtotal each**. Old Bill Opname
+   (`sp_SPSalesPOS_OpnameGetSummary`) is one flat list with no per-user subtotal, so this is new. **Built, not live
+   yet**: the grid groups notes per kasir (legacy "DESKTOP-x/linda" and web "linda" = one group) and closes each group
+   with a bold "Subtotal <kasir> (N nota)" row, void notes not counted; only when 2+ kasir sold that day. Mocked test
+   `tests/sales-monitoring-mocked.spec.ts` passes.
 3. "Coba cek kok ada yang bisa belum bayar": BELUM BAYAR rows are old desktop POS notes with no payment row (linda /
-   lia, ~100 a month, only ~25% have items, rest are empty notes opened and left). They are shown with Rp 0 and left
-   out of totals since `657af97`. **Ask Luki**: hide them (like the old lists?) or keep them visible?
+   lia, ~100 a month, only ~25% have items, rest are empty notes opened and left). Old Bill Opname is
+   `T_SalesPOSHeader INNER JOIN T_SalesPayment`, so a never-paid note was NOT listed there. **Fixed in code, not live
+   yet**: GET /api/sales/monitoring leaves them out (count adjusted). Old sources are in `C:\GitHub\Module Manager`
+   and `C:\GitHub\POS` on this PC (no .NET decompiler installed; stored procedures read from
+   `database_backup/HM_241115.bak` with a Python regex on `create proc`, ASCII text).
 
 ### Earlier (round 1)
 ## Sales Monitoring: closed, not an app bug
