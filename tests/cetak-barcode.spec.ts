@@ -298,7 +298,7 @@ test.describe('Menu 4: Cetak Barcode — label layout (mocked)', () => {
     const fit = await cells.evaluateAll((els) => els.slice(0, 2).map((cell) => {
       const name = cell.querySelector('[data-testid="label-name"]') as HTMLElement;
       const lineH = parseFloat(getComputedStyle(name).lineHeight);
-      const last = cell.lastElementChild as HTMLElement;
+      const last = (cell.querySelector('[data-testid="label-block"]') as HTMLElement).lastElementChild as HTMLElement;
       const digits = cell.querySelector('[data-testid="label-digits"]') as HTMLElement;
       const cellBox = cell.getBoundingClientRect();
       const dBox = digits.getBoundingClientRect();
@@ -322,6 +322,39 @@ test.describe('Menu 4: Cetak Barcode — label layout (mocked)', () => {
       expect(f.digitsSlack).toBeGreaterThan(19); // ~5 mm under the number
       expect(f.overflow).toBe(false);
     }
+  });
+
+  test('9b. Name + barcode + number are centered on the label; "Geser vertikal" moves them and is remembered', async ({ page }) => {
+    await page.evaluate(() => { window.print = () => {}; });
+    const offset = page.getByLabel('Geser vertikal (mm)');
+    await expect(offset).toHaveValue('-2'); // default: a printer feeds the label ~3.5 mm low
+
+    const gaps = async () => page.locator('#print-label-area .barcode-label-cell').first().evaluate((cell) => {
+      const block = cell.querySelector('[data-testid="label-block"]') as HTMLElement;
+      const c = cell.getBoundingClientRect();
+      const b = block.getBoundingClientRect();
+      return { top: b.top - c.top, bottom: c.bottom - b.bottom };
+    });
+
+    // 0 mm: the block sits in the middle of the 18.2 mm label (within 0.4 mm)
+    await offset.fill('0');
+    await page.click('button:has-text("Barcode Print w/o Price")');
+    await page.emulateMedia({ media: 'print' });
+    const centered = await gaps();
+    expect(Math.abs(centered.top - centered.bottom)).toBeLessThan(1.5);
+
+    // -2 mm moves it up by 2 mm (7.56 px) and the value survives a reload
+    await page.emulateMedia({ media: 'screen' });
+    await offset.fill('-2');
+    await page.emulateMedia({ media: 'print' });
+    const moved = await gaps();
+    expect(centered.top - moved.top).toBeGreaterThan(7);
+    expect(centered.top - moved.top).toBeLessThan(8);
+    await page.emulateMedia({ media: 'screen' });
+    await offset.fill('-3');
+    await page.reload();
+    await page.getByRole('button', { name: 'Cetak Barcode', exact: true }).first().click();
+    await expect(page.getByLabel('Geser vertikal (mm)')).toHaveValue('-3');
   });
 
   test('10. Search list shows each item\'s stock', async ({ page }) => {

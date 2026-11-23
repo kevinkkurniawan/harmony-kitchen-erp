@@ -110,6 +110,8 @@ function A4LabelSheet({ labels }: { labels: LabelItem[] }) {
 
 const noopSubscribe = () => () => {};
 const LABEL_SIZE = '108x18-3col';
+const OFFSET_STORAGE_KEY = 'barcodeLabelOffsetMm';
+const DEFAULT_OFFSET_MM = -2;
 
 /** Old ".: Barcode Print List :." panel of Master_Data.Frm_InvList: list Barcode | Inventory No | Qty and the print buttons. */
 export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintManagerProps) {
@@ -129,6 +131,22 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
   // Set by the clicked print button right before window.print()
   const [includePrice, setIncludePrice] = useState<boolean>(true);
   const [printLayout, setPrintLayout] = useState<'roll' | 'a4'>('roll');
+
+  // Vertical nudge of the roll label (mm, negative = up): the label block is centered on the label, and a thermal
+  // printer feeds the label a few mm low (client photo: ~3.5 mm), so the print starts a little higher. Kept per PC.
+  const [offsetMm, setOffsetMm] = useState<number>(DEFAULT_OFFSET_MM);
+  useEffect(() => {
+    try {
+      const saved = parseFloat(localStorage.getItem(OFFSET_STORAGE_KEY) ?? '');
+      if (Number.isFinite(saved)) setOffsetMm(Math.min(6, Math.max(-6, saved)));
+    } catch { /* storage blocked: keep the default */ }
+  }, []);
+  const changeOffset = (raw: string) => {
+    const v = parseFloat(raw);
+    const next = Number.isFinite(v) ? Math.min(6, Math.max(-6, v)) : 0;
+    setOffsetMm(next);
+    try { localStorage.setItem(OFFSET_STORAGE_KEY, String(next)); } catch { /* ignore */ }
+  };
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   // true only in the browser: the print area is portaled into <body>, which the server render does not have
@@ -485,12 +503,12 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
             height: 18.2mm !important;
             max-height: 18.2mm !important;
             box-sizing: border-box !important;
-            padding: 0.6mm 1.5mm 0 !important;
+            padding: 0 1.5mm !important;
             display: flex !important;
             flex-direction: column !important;
-            /* Packed to the top (not space-between): the number sits just under the bars and the free space is at
-               the bottom edge, so a small printer feed offset cuts empty label, not the number ("angka kepotong") */
-            justify-content: flex-start !important;
+            /* Name + barcode + number are one block centered on the label (the block is shifted by the
+               "Geser vertikal" setting, see .barcode-label-block); the number stays right under the bars */
+            justify-content: center !important;
             align-items: center !important;
             text-align: center !important;
             font-family: monospace, sans-serif !important;
@@ -517,6 +535,20 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
         <LegacyButton isDark={isDark} icon={<Printer className="w-3.5 h-3.5" />} onClick={() => handlePrint(false, 'a4')} disabled={queue.length === 0} className="justify-center">
           Print A4
         </LegacyButton>
+        {/* Roll labels only: nudges the whole label up (minus) or down (plus) if the printer feeds the label off-center */}
+        <FieldRow label="Geser vertikal (mm) :" isDark={isDark} labelWidth="w-auto">
+          <LegacyInput
+            isDark={isDark}
+            type="number"
+            step="0.5"
+            min="-6"
+            max="6"
+            aria-label="Geser vertikal (mm)"
+            title="Minus = label naik, plus = turun. Cetak satu label dulu, atur sampai nama + barcode tepat di tengah."
+            value={offsetMm}
+            onChange={(e) => changeOffset(e.target.value)}
+          />
+        </FieldRow>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <LegacyButton isDark={isDark} icon={<Printer className="w-3.5 h-3.5" />} onClick={() => handlePrint(false)} disabled={queue.length === 0} className="justify-center">
             Barcode Print w/o Price
@@ -547,7 +579,11 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
               {rowSlots.map((prod, colIdx) => (
                 <div key={colIdx} className="barcode-label-cell bg-white text-black">
                   {prod ? (
-                    <>
+                    <div
+                      className="barcode-label-block"
+                      data-testid="label-block"
+                      style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', top: `${offsetMm}mm` }}
+                    >
                       {/* Client doc: only the product name + barcode (no store name, no No. Barang). Up to 2 lines,
                           which fits the longest active name (50 chars) without cutting it */}
                       <div
@@ -574,7 +610,7 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                           Rp {(prod.price || 0).toLocaleString('id-ID')}
                         </div>
                       )}
-                    </>
+                    </div>
                   ) : null}
                 </div>
               ))}

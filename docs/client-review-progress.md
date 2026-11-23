@@ -73,6 +73,12 @@ No. Barang prefix; the fix `31618a9` was live on Production 20 Nov 14:45) printe
 screen render fit, the physical printer clips the bottom edge because the cell used `space-between` (number on the
 last millimetre). Fix: content packed to the top, bars 5 mm, ~5 mm free under the number (test 9 asserts it).
 Pushed 23 Nov (Vercel success); doc note reworded to match (ruang kosong di bawah angka, mohon dicoba cetak ulang).
+Measured from the photo (~4.7 px/mm): the print lands ~3.5 mm lower than the layout (printer / label feed offset), so the
+number fell ~3 mm past the 18.2 mm label. The first fix (content packed to the top) only left ~1 mm of margin.
+Round 2b (23 Nov, Luki wants name + barcode centered like the photo target): the roll label is now ONE block (name,
+bars 5 mm, number) centered on the label, shifted by a per-PC "Geser vertikal (mm)" field (localStorage
+`barcodeLabelOffsetMm`, default -2, range -6..6, minus = up). Test 9b asserts centered at 0 and the 2 mm move.
+To calibrate: print one label, if the number still touches the bottom lower the value; note the value that centers it.
 (Round 1 status below.)
 1. Roll label = product name + barcode (no "HARMONY KITCHEN", no Header Toko toggle, no No. Barang prefix).
 2. Name wraps to 2 lines in Arial 6.5pt; fits the longest active name (50 chars) on the 36 x 18.2 mm label.
