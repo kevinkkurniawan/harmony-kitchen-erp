@@ -9,8 +9,8 @@ Doc and rules: see `AGENTS.md` ("Client review doc"). Status as of 2026-11-23.
 | Master Barang | done, live, green with notes (`50e2855`) |
 | Inventory Stock | green (nothing new) |
 | Stock Opname | done, live, green with note (`6af7622`, "Load Data" removed) |
-| Cetak Barcode | **next**: not checked this round |
-| Sales Monitoring | **after that**: not checked this round |
+| Cetak Barcode | done, live (`6ce6cfb`), green with note; **waiting on Luki: physical print** |
+| Sales Monitoring | done, live (`8feb088`, `ec61286`), green with notes (3 points) |
 
 Open, not in the doc:
 - Luki asked why user `admin` shows the Otorisasi Aksi Sensitif ticks empty: Admin (username `admin` or User
@@ -72,7 +72,7 @@ Round 2 (doc, 23 Nov 16:06): Luki's photo "Barcode masih belum pas, angka kepoto
 No. Barang prefix; the fix `31618a9` was live on Production 20 Nov 14:45) printed with the number cut off. The
 screen render fit, the physical printer clips the bottom edge because the cell used `space-between` (number on the
 last millimetre). Fix: content packed to the top, bars 5 mm, ~5 mm free under the number (test 9 asserts it).
-Doc note added green + bold (first version wrongly said "tidak terpotong lagi"; reworded once the fix was live).
+Pushed 23 Nov (Vercel success); doc note reworded to match (ruang kosong di bawah angka, mohon dicoba cetak ulang).
 (Round 1 status below.)
 1. Roll label = product name + barcode (no "HARMONY KITCHEN", no Header Toko toggle, no No. Barang prefix).
 2. Name wraps to 2 lines in Arial 6.5pt; fits the longest active name (50 chars) on the 36 x 18.2 mm label.
@@ -80,20 +80,18 @@ Doc note added green + bold (first version wrongly said "tidak terpotong lagi"; 
 3. Search list shows "Stok: N".
 
 ## Sales Monitoring, round 2 (doc, 23 Nov): 3 points
-1. "Void & unvoid diminta alasan, tapi alasan tidak keluar dimanapun": **fixed in code, not pushed / live yet**. The
+1. "Void & unvoid diminta alasan, tapi alasan tidak keluar dimanapun": **done, live (`8feb088`), green with note**. The
    reason was only in `t_auditevent` (SALES_VOID / SALES_UNVOID). GET /api/sales/monitoring now adds the latest one to
    Keterangan as "VOID oleh <user>: <alasan>" (`loadVoidNotes`). Live example: sale 900000165, VOID "Ngetest" then
    UNVOID "Tidak jadi" (admin, 23 Nov). The 520 voided sales before that have no reason (old app / earlier voids).
    Not run against a DB (docker was off); typecheck passes. Doc note to write once live.
 2. "Dipisahkan per segmen antar user": Luki (23 Nov): **per kasir with a subtotal each**. Old Bill Opname
-   (`sp_SPSalesPOS_OpnameGetSummary`) is one flat list with no per-user subtotal, so this is new. **Built, not live
-   yet**: the grid groups notes per kasir (legacy "DESKTOP-x/linda" and web "linda" = one group) and closes each group
+   (`sp_SPSalesPOS_OpnameGetSummary`) is one flat list with no per-user subtotal, so this is new. **Done, live (`ec61286`), green with note**: the grid groups notes per kasir (legacy "DESKTOP-x/linda" and web "linda" = one group) and closes each group
    with a bold "Subtotal <kasir> (N nota)" row, void notes not counted; only when 2+ kasir sold that day. Mocked test
    `tests/sales-monitoring-mocked.spec.ts` passes.
 3. "Coba cek kok ada yang bisa belum bayar": BELUM BAYAR rows are old desktop POS notes with no payment row (linda /
    lia, ~100 a month, only ~25% have items, rest are empty notes opened and left). Old Bill Opname is
-   `T_SalesPOSHeader INNER JOIN T_SalesPayment`, so a never-paid note was NOT listed there. **Fixed in code, not live
-   yet**: GET /api/sales/monitoring leaves them out (count adjusted). Old sources are in `C:\GitHub\Module Manager`
+   `T_SalesPOSHeader INNER JOIN T_SalesPayment`, so a never-paid note was NOT listed there. **Done, live (`ec61286`), green with note**: GET /api/sales/monitoring leaves them out (count adjusted). Old sources are in `C:\GitHub\Module Manager`
    and `C:\GitHub\POS` on this PC (no .NET decompiler installed; stored procedures read from
    `database_backup/HM_241115.bak` with a Python regex on `create proc`, ASCII text).
 
