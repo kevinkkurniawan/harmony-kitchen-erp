@@ -299,15 +299,27 @@ test.describe('Menu 4: Cetak Barcode — label layout (mocked)', () => {
       const name = cell.querySelector('[data-testid="label-name"]') as HTMLElement;
       const lineH = parseFloat(getComputedStyle(name).lineHeight);
       const last = cell.lastElementChild as HTMLElement;
+      const digits = cell.querySelector('[data-testid="label-digits"]') as HTMLElement;
+      const cellBox = cell.getBoundingClientRect();
+      const dBox = digits.getBoundingClientRect();
       return {
+        // the barcode number under the bars must be fully inside the cell (client: "angka kepotong")
+        digitsCut: dBox.bottom > cellBox.bottom - 0.5 || dBox.left < cellBox.left || dBox.right > cellBox.right
+          || digits.scrollWidth > digits.clientWidth + 1,
         lines: Math.round(name.scrollHeight / lineH),
         nameCut: name.scrollHeight > name.clientHeight + 1,
         overflow: last.getBoundingClientRect().bottom > cell.getBoundingClientRect().bottom + 0.5,
+        // free space left under the last row (px at 96 dpi): ~1.5 mm = 5.7 px so a printer feed offset does not cut it
+        slack: cell.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom,
+        digitsSlack: cellBox.bottom - dBox.bottom,
       };
     }));
     for (const f of fit) {
       expect(f.lines).toBeLessThanOrEqual(2);
       expect(f.nameCut).toBe(false);
+      expect(f.digitsCut).toBe(false);
+      expect(f.slack).toBeGreaterThan(5.7); // even with the price line
+      expect(f.digitsSlack).toBeGreaterThan(19); // ~5 mm under the number
       expect(f.overflow).toBe(false);
     }
   });

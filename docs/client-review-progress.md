@@ -68,7 +68,12 @@ so it was removed; items are added by scan / search (works for every item). Doc 
 it is gone, in plain words for Luki.
 
 ## Cetak Barcode: done (green), physical print to be confirmed by the client
-(Round 1 status below; round 2 of the doc not checked yet.)
+Round 2 (doc, 23 Nov 16:06): Luki's photo "Barcode masih belum pas, angka kepotong" shows the NEW layout (2-line name, no
+No. Barang prefix; the fix `31618a9` was live on Production 20 Nov 14:45) printed with the number cut off. The
+screen render fit, the physical printer clips the bottom edge because the cell used `space-between` (number on the
+last millimetre). Fix: content packed to the top, bars 5 mm, ~5 mm free under the number (test 9 asserts it).
+Doc note added green + bold (first version wrongly said "tidak terpotong lagi"; reworded once the fix was live).
+(Round 1 status below.)
 1. Roll label = product name + barcode (no "HARMONY KITCHEN", no Header Toko toggle, no No. Barang prefix).
 2. Name wraps to 2 lines in Arial 6.5pt; fits the longest active name (50 chars) on the 36 x 18.2 mm label.
    "Print A4" still prints the name on one line (old Rpt_PrintOpname, not in the complaint).

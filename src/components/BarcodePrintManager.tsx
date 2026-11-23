@@ -485,10 +485,12 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
             height: 18.2mm !important;
             max-height: 18.2mm !important;
             box-sizing: border-box !important;
-            padding: 1mm 1.5mm !important;
+            padding: 0.6mm 1.5mm 0 !important;
             display: flex !important;
             flex-direction: column !important;
-            justify-content: space-between !important;
+            /* Packed to the top (not space-between): the number sits just under the bars and the free space is at
+               the bottom edge, so a small printer feed offset cuts empty label, not the number ("angka kepotong") */
+            justify-content: flex-start !important;
             align-items: center !important;
             text-align: center !important;
             font-family: monospace, sans-serif !important;
@@ -558,11 +560,11 @@ export default function BarcodePrintManager({ isDark, onBack }: BarcodePrintMana
                         {prod.inventoryName}
                       </div>
   
-                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.5mm 0' }}>
+                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0.4mm 0' }}>
                         <div style={{ width: '96%' }}>
-                          <BarcodeBars value={prod.barcode || prod.inventoryNo} height="5.5mm" />
+                          <BarcodeBars value={prod.barcode || prod.inventoryNo} height="5mm" />
                         </div>
-                        <div style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.5px', lineHeight: 1 }}>
+                        <div data-testid="label-digits" style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.5px', lineHeight: 1, whiteSpace: 'nowrap' }}>
                           {prod.barcode || prod.inventoryNo}
                         </div>
                       </div>
