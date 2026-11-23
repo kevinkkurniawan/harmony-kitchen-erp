@@ -31,6 +31,10 @@ New items save no brand / category (like ~6.5k existing items) and uom Pcs, inst
    - Every attempt logged as audit `STOCK_CONFIRM`: Admin sees all users with Stok Sistem, staff only their own.
    - Blind only on this screen: GET /api/inventory still returns stock to any logged-in user.
    - Phones (< 768 px): sidebar became a Menu button overlay and the header was compacted (all screens).
+   - Owner rule (Luki keeps Siti as User Type Admin): only the login `admin` (Luki) changes stock: opname / sync /
+     reset, `/api/inventory/usage`, `/api/purchasing/returns`, and sees every user's confirmations with Stok Sistem.
+     Other Admins keep all other rights, but cannot edit / delete the `admin` account or take the name `admin`.
+     Siti as Admin still sees stock in Master Barang / Inventory Stock, so her count is not blind.
    - Local test DB: `postgres-erp` container, db `harmony_local` (prisma db push + 2 live items, users luki / siti).
 
 ## Cetak Barcode: done (green), physical print to be confirmed by the client

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { getCurrentUser } from '@/lib/session';
+import { canUserOpname } from '@/lib/capabilities';
 import { buildInventorySearchConditions } from '@/lib/column-filter';
 import { saveOpnameTransaction, StockMismatchError } from '@/lib/stock-opname';
 import { recordAuditEvent } from '@/lib/audit-event';
@@ -25,12 +26,13 @@ interface ConfirmLog {
 }
 
 // GET ?q=      item search (no stock in the result)
-// GET ?log=1   today's confirmations (WIB): Admin sees everyone's with the system stock, staff only their own
+// GET ?log=1   today's confirmations (WIB): the owner (who fixes the stock) sees everyone's with the system
+//              stock; everyone else, other Admins included, only their own and blind
 export async function GET(req: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
-    const isAdmin = user.userLevel === 'Admin';
+    const isAdmin = canUserOpname(user);
     const { searchParams } = new URL(req.url);
 
     if (searchParams.get('log') === '1') {

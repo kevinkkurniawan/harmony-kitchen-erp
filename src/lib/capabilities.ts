@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { getCurrentUser, SessionUser } from '@/lib/session';
 import { ApiErrors } from '@/lib/api-response';
 import { NextResponse } from 'next/server';
+import { isOwnerUsername } from '@/lib/owner';
 
 export interface CapabilityDefinition {
   code: string;
@@ -72,9 +73,9 @@ export function canUserViewHpp(user: SessionUser | null): boolean {
   return user?.userLevel === 'Admin';
 }
 
-// Client doc (Inventory Stock): stock opname / sync / reset is locked to Admin ("admin utama"); no per-user grant
+// Stock opname / sync / reset: owner login "admin" only (Luki, 23 Nov); Siti stays Admin but only confirms stock
 export function canUserOpname(user: SessionUser | null): boolean {
-  return user?.userLevel === 'Admin';
+  return user?.userLevel === 'Admin' && isOwnerUsername(user.username);
 }
 
 export async function hasCapability(user: SessionUser | null, capabilityCode: string): Promise<boolean> {

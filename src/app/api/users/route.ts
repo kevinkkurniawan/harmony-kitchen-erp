@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { usernameEquals } from '@/lib/username';
+import { isOwnerUsername } from '@/lib/owner';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
 import { getCurrentUser } from '@/lib/session';
 
@@ -70,6 +71,9 @@ export async function POST(req: Request) {
 
     // Usernames are stored in lowercase: the POS login looks them up in lowercase
     const normalizedUsername = String(username).trim().toLowerCase();
+    if (isOwnerUsername(normalizedUsername) && !isOwnerUsername(currentUser.username)) {
+      return NextResponse.json({ success: false, error: 'Username admin (owner) hanya dapat dibuat oleh owner.' }, { status: 403 });
+    }
 
     // Check if user already exists (ignoring case, so "Dwi" and "dwi" can't both exist)
     const existing = await prisma.m_user.findFirst({

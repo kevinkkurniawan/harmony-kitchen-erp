@@ -19,6 +19,7 @@ import UserAccessManager from '@/components/UserAccessManager';
 import TableColumnResizer from '@/components/TableColumnResizer';
 import BarcodePrintManager from '@/components/BarcodePrintManager';
 import ChangePasswordDialog from '@/components/ChangePasswordDialog';
+import { isOwnerUsername } from '@/lib/owner';
 
 interface ERPDashboardProps {
   currentUser: AuthenticatedUser;
@@ -74,6 +75,8 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
   const isDark = theme === 'dark';
   const isAdmin = currentUser?.userLevel === 'Admin';
+  // Stock changes (opname / sync) and the full Konfirmasi Stok list: owner login only, mirrors canUserOpname
+  const isOwner = isAdmin && isOwnerUsername(currentUser?.username);
   // Client rule: only Admin sees HPP, profit and margin
   const canViewHpp = isAdmin;
 
@@ -209,10 +212,10 @@ export default function ERPDashboard({ currentUser, userPermissions, onLogout }:
 
         {/* TAB CONTENTS */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} canOpname={isAdmin} />}
-          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isAdmin} />}
-          {activeTab === 'konfirmasi-stok' && <StockConfirmManager isDark={isDark} isAdmin={isAdmin} />}
-          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isAdmin} />}
+          {activeTab === 'master-barang' && <MasterBarangManager isDark={isDark} mode="master" canViewPrice={canViewHpp} canOpname={isOwner} />}
+          {activeTab === 'inventory-stok' && <InventoryStockManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isOwner} />}
+          {activeTab === 'konfirmasi-stok' && <StockConfirmManager isDark={isDark} isAdmin={isOwner} />}
+          {activeTab === 'stok-opname' && <StockOpnameManager isDark={isDark} canViewPrice={canViewHpp} canOpname={isOwner} />}
           {activeTab === 'cetak-barcode' && <BarcodePrintManager isDark={isDark} />}
 
           {activeTab === 'master-promo' && <MasterPromoManager isDark={isDark} />}

@@ -195,8 +195,8 @@ export async function POST(req: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) return apiError('UNAUTHORIZED', 'Sesi login diperlukan.', 401);
-    // Every opname write (draft, post, reverse, Master Barang / Inventory Stock direct opname) is Admin-only
-    if (!canUserOpname(user)) return apiError('FORBIDDEN', 'Stock opname hanya untuk Admin.', 403);
+    // Every opname write (draft, post, reverse, Master Barang / Inventory Stock direct opname) is owner-only
+    if (!canUserOpname(user)) return apiError('FORBIDDEN', 'Stock opname hanya untuk akun admin (owner).', 403);
     const actor = user.username || 'system';
     const body = await req.json();
     const rawAction = body.action || (body.isDraft ? 'draft' : 'post');

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getPaginationParams, createPaginatedResponse } from '@/lib/pagination';
+import { getCurrentUser } from '@/lib/session';
+import { canUserOpname } from '@/lib/capabilities';
 
 export async function GET(req: Request) {
   try {
@@ -62,6 +64,10 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    // Lowers stock directly and no ERP screen calls it: owner only, like opname
+    if (!canUserOpname(await getCurrentUser())) {
+      return NextResponse.json({ success: false, error: 'Perubahan stok hanya untuk akun admin (owner).' }, { status: 403 });
+    }
     const body = await req.json();
     const { return_no, return_date, mr_no, supplier_name, return_reason, items } = body;
 

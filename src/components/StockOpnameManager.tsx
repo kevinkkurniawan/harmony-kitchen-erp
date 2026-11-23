@@ -928,7 +928,7 @@ export default function StockOpnameManager({ isDark, canViewPrice = false, canOp
   if (!canOpname) {
     return (
       <LegacyWindow title="Input Stock" isDark={isDark}>
-        <div className={`flex-1 flex items-center justify-center p-6 text-center ${c.muted}`}>Stock opname hanya untuk Admin.</div>
+        <div className={`flex-1 flex items-center justify-center p-6 text-center ${c.muted}`}>Stock opname hanya untuk akun admin (owner).</div>
       </LegacyWindow>
     );
   }

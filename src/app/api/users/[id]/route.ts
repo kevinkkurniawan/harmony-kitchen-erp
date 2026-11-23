@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { usernameEquals } from '@/lib/username';
+import { isOwnerUsername } from '@/lib/owner';
 import { createSession, getCurrentUser } from '@/lib/session';
 import { recordAuditEvent } from '@/lib/audit-event';
 import { USER_TYPES } from '@/lib/user-types';
@@ -37,6 +38,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const body = await req.json();
     const existing = await prisma.m_user.findUnique({ where: { id: userId } });
     if (!existing) return NextResponse.json({ success: false, error: 'User tidak ditemukan.' }, { status: 404 });
+    // Another Admin must not reset the owner's password or take the owner name (the owner alone changes stock)
+    const renamesToOwner = typeof body.username === 'string' && isOwnerUsername(body.username);
+    if (!isOwnerUsername(currentUser.username) && (isOwnerUsername(existing.username) || renamesToOwner)) {
+      return NextResponse.json({ success: false, error: 'Akun admin (owner) hanya dapat diubah oleh owner.' }, { status: 403 });
+    }
 
     const data: { username?: string; password?: string; modifieduser: string; modifieddate: Date } = {
       modifieduser: currentUser.username,
@@ -156,6 +162,9 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     }
     const existing = await prisma.m_user.findUnique({ where: { id: userId } });
     if (!existing) return NextResponse.json({ success: false, error: 'User tidak ditemukan.' }, { status: 404 });
+    if (isOwnerUsername(existing.username) && !isOwnerUsername(currentUser.username)) {
+      return NextResponse.json({ success: false, error: 'Akun admin (owner) hanya dapat diubah oleh owner.' }, { status: 403 });
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.t_userpermission.deleteMany({ where: { userid: userId } });

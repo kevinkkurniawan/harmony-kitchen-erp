@@ -75,6 +75,9 @@ export default function StockConfirmManager({ isDark, isAdmin }: { isDark: boole
     search(debouncedQuery).then((items) => { if (req === searchReqRef.current) setResults(items); });
   }, [debouncedQuery, search]);
 
+  // Focus Qty Hitung once its row has rendered (a timer can fire before that after a scanner's Enter)
+  useEffect(() => { if (selected) qtyRef.current?.focus(); }, [selected]);
+
   const pick = (item: ConfirmItem) => {
     searchReqRef.current++;
     setSelected(item);
@@ -82,7 +85,6 @@ export default function StockConfirmManager({ isDark, isAdmin }: { isDark: boole
     setResults([]);
     setQty('');
     setResult(null);
-    setTimeout(() => qtyRef.current?.focus(), 0);
   };
 
   // Scanners press Enter before the debounce fires: look the value up at once and take the exact match

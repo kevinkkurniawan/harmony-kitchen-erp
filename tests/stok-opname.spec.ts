@@ -472,7 +472,7 @@ test.describe('Menu 2: Stok Opname — non-admin lock', () => {
     await page.route('**/api/inventory/lookups', (route) => route.fulfill({ json: { success: true, data: { promoBundles: [] } } }));
     await page.goto('/');
     await page.getByRole('button', { name: 'Stok Opname', exact: true }).first().click();
-    await expect(page.getByText('Stock opname hanya untuk Admin.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Stock opname hanya untuk akun admin (owner).', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'New Opname' })).toHaveCount(0);
   });
 });

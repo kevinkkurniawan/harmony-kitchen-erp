@@ -3,11 +3,11 @@ import { test, expect, type Page } from '@playwright/test';
 // Konfirmasi Stok (client, 23 Nov), mocked: no request reaches the database.
 const ITEM = { id: 77, barcode: '8990001112223', inventoryNo: 'HK-077', inventoryName: 'Panci Uji 20cm', lastSync: null };
 
-async function mockSession(page: Page, userLevel: 'Admin' | 'Staff') {
+async function mockSession(page: Page, userLevel: 'Admin' | 'Staff', username = userLevel === 'Admin' ? 'admin' : 'siti') {
   await page.route('**/api/auth/session', (route) => route.fulfill({
     json: {
       success: true,
-      user: { id: 9, username: userLevel === 'Admin' ? 'luki' : 'siti', fullName: userLevel, userLevel, isActive: true },
+      user: { id: 9, username, fullName: username, userLevel, isActive: true },
       // Staff with only the new tab ticked
       permissions: userLevel === 'Admin' ? [] : [
         'master-barang', 'inventory-stok', 'stok-opname', 'cetak-barcode', 'master-promo', 'master-supplier',
@@ -48,6 +48,8 @@ test.describe('Konfirmasi Stok (mocked)', () => {
     await scan.fill(ITEM.barcode);
     await scan.press('Enter');
     await expect(page.getByText(ITEM.inventoryName)).toBeVisible();
+    // A scanner's Enter moves the cursor to Qty Hitung, so the count is not typed into the scan box
+    await expect(page.getByRole('textbox', { name: 'Qty Hitung', exact: true })).toBeFocused();
     await expect(page.getByText(/Stok Sistem/)).toHaveCount(0);
 
     await page.getByRole('textbox', { name: 'Qty Hitung', exact: true }).fill('10');
@@ -63,7 +65,7 @@ test.describe('Konfirmasi Stok (mocked)', () => {
     await expect(page.getByText('Hari ini: 2 konfirmasi, 1 tidak sama')).toBeVisible();
   });
 
-  test('2. Admin sees every user and the system stock in the list', async ({ page }) => {
+  test('2. The owner (admin login) sees every user and the system stock in the list', async ({ page }) => {
     await mockSession(page, 'Admin');
     await page.route('**/api/inventory?*', (route) => route.fulfill({ json: { success: true, data: [], pagination: { total: 0, page: 1, limit: 100 } } }));
     await page.route('**/api/inventory/lookups', (route) => route.fulfill({ json: { success: true, data: { promoBundles: [] } } }));
@@ -78,5 +80,18 @@ test.describe('Konfirmasi Stok (mocked)', () => {
     await expect(row).toContainText(ITEM.barcode);
     await expect(row).toContainText('12');
     await expect(row).toContainText('Tidak Sama');
+  });
+
+  test('3. Another Admin (User Type Admin, not the owner) counts blind and cannot open Stok Opname', async ({ page }) => {
+    await mockSession(page, 'Admin', 'siti');
+    await page.route('**/api/inventory?*', (route) => route.fulfill({ json: { success: true, data: [], pagination: { total: 0, page: 1, limit: 100 } } }));
+    await page.route('**/api/inventory/lookups', (route) => route.fulfill({ json: { success: true, data: { promoBundles: [] } } }));
+    await page.route('**/api/inventory/stock-confirm?*', (route) => route.fulfill({ json: { success: true, data: [] } }));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Konfirmasi Stok', exact: true }).click();
+    await expect(page.getByText('.:: Konfirmasi Saya Hari Ini ::.')).toBeVisible();
+    await expect(page.getByText('Stok Sistem')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Stok Opname', exact: true }).click();
+    await expect(page.getByText('Stock opname hanya untuk akun admin (owner).', { exact: true })).toBeVisible();
   });
 });
