@@ -1,6 +1,22 @@
 # Client review progress (doc "Clarimity HM")
 
-Doc and rules: see `AGENTS.md` ("Client review doc"). Status as of 2026-11-20 (all four tabs closed).
+Doc and rules: see `AGENTS.md` ("Client review doc"). Status as of 2026-11-23.
+
+## Where we are (2026-11-23, round 2 of the doc)
+| Doc tab | Status |
+|---|---|
+| Komplain Kasir (POS) | done, live, green with notes (POS `b540db3`, follow-up `6878583`) |
+| Master Barang | done, live, green with notes (`50e2855`) |
+| Inventory Stock | green (nothing new) |
+| Stock Opname | done, live, green with note (`6af7622`, "Load Data" removed) |
+| Cetak Barcode | **next**: not checked this round |
+| Sales Monitoring | **after that**: not checked this round |
+
+Open, not in the doc:
+- Luki asked why user `admin` shows the Otorisasi Aksi Sensitif ticks empty: Admin (username `admin` or User
+  Type Admin) ignores all ticks and has full access (stock changes: login `admin` only). Ticks matter only for
+  non-admin users. Offered (not built): show an Admin's ticks all checked and locked with "Admin: akses penuh".
+- His screenshot still had "konfirmasi-stok" under "Lainnya" = browser on the old bundle; refresh fixes it.
 
 ## Master Barang: done (green)
 1. Form without Kategori / Merk / Satuan; Kategori Grosir = the old K1–K5 bundles (`m_promo` via
@@ -11,7 +27,7 @@ Doc and rules: see `AGENTS.md` ("Client review doc"). Status as of 2026-11-20 (a
 
 New items save no brand / category (like ~6.5k existing items) and uom Pcs, instead of the first lookup or id 1.
 
-Round 2 (doc items, 23 Nov; built, tested on local DB, not committed). Old screen read from `Master_Data.dll`
+Round 2 (doc items, 23 Nov): **done, live (`50e2855`), green with notes**. Old screen read from `Master_Data.dll`
 (ilspycmd with `DOTNET_ROOT=~/git/POS/dotnet`): grid No. Barang, Barcode, Nama, Description, Kode, ...; HPP is
 not on the old form, only Harga Beli.
 1. HPP read-only on the form, never saved from it (set by Penerimaan Barang dengan harga); Harga Beli editable.
@@ -45,7 +61,14 @@ not on the old form, only Harga Beli.
      Siti as Admin still sees stock in Master Barang / Inventory Stock, so her count is not blind.
    - Local test DB: `postgres-erp` container, db `harmony_local` (prisma db push + 2 live items, users luki / siti).
 
+## Stock Opname: done (green, `6af7622`)
+"Load Data 500 itu apa ya?": the bulk "Load Data (N)" button loaded the first 500 of ~5,800 items with their
+system stock; posting unchanged marked all as checked today. Not in the old opname program (`Mod_Opname.dll`),
+so it was removed; items are added by scan / search (works for every item). Doc note explains what it did and why
+it is gone, in plain words for Luki.
+
 ## Cetak Barcode: done (green), physical print to be confirmed by the client
+(Round 1 status below; round 2 of the doc not checked yet.)
 1. Roll label = product name + barcode (no "HARMONY KITCHEN", no Header Toko toggle, no No. Barang prefix).
 2. Name wraps to 2 lines in Arial 6.5pt; fits the longest active name (50 chars) on the 36 x 18.2 mm label.
    "Print A4" still prints the name on one line (old Rpt_PrintOpname, not in the complaint).
@@ -61,7 +84,7 @@ the cashier did not fill in / save the receipts properly. Nothing to fix in the 
 - Asked Luki: which app the cashiers use since 12 Nov, the address opened, any save error, whether the notes
   still exist in the old app.
 
-## Komplain Kasir (POS app, repo harmony-kitchen-pos): built 23 Nov, tested on a local DB, not committed
+## Komplain Kasir (POS app, repo harmony-kitchen-pos): done, live (`b540db3`, `6878583`), green with notes
 Old POS behaviour read from `~/git/POS/pos_decompiled.cs`.
 1. Relogin timeout: session slides (renewed on use, ends after 7 days unused or Logout); was a fixed 12 h.
 2. Receipt: grosir line prints "@ <retail>", Sub Total at retail, then "-- Potongan Diskon <tier>" -(saving)
@@ -71,6 +94,10 @@ Old POS behaviour read from `~/git/POS/pos_decompiled.cs`.
 4. Name search shows G1 / G2 / G3 under the retail price (old lookup grid had Grosir1-3 columns).
 5. Override Grosir 1 asks "Nama Reseller" (min 3 chars, as the old Frm_MemberValidation) with the PIN; saved in
    t_salesposheader.customername, printed "Reseller : <name>".
+6. Follow-up (Luki 23 Nov photos): the bill panel next to the cart shows the same rows as the receipt, so the
+   potongan is visible before printing; reseller mode (Override Grosir 1) is labelled "Potongan Reseller", bands
+   "Potongan Diskon N" (old `sp_SPSalesPOSDetail_CalculateDiscount` in the MSSQL backup). Shared helper
+   `src/lib/receipt-lines.ts` (POS repo).
 - Seen, not fixed: Reprint Bill prints the current cashier, not the sale's; lia has 2 completed CASH sales of 0.
 
 ## Notes for the next session
